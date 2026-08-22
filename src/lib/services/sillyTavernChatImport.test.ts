@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { convertSillyTavernChat } from './sillyTavernChatImport';
+import { convertSillyTavernChat, readChatCharacterName } from './sillyTavernChatImport';
 
 // A trimmed but faithful slice of a real SillyTavern chat export: metadata header,
 // a greeting (single swipe), a user turn, then an assistant turn with two swipes
@@ -239,5 +239,33 @@ describe('convertSillyTavernChat: hidden/ghosted messages', () => {
 		// The chain stays intact through the hidden turns.
 		expect(user.parentId).toBe(greeting.id);
 		expect(reply.parentId).toBe(user.id);
+	});
+});
+
+describe('readChatCharacterName', () => {
+	it('reads the name off the header line', () => {
+		expect(
+			readChatCharacterName([JSON.stringify({ chat_metadata: {}, character_name: ' Seraphina ' })])
+		).toBe('Seraphina');
+	});
+
+	it('skips blank lines before the header', () => {
+		expect(
+			readChatCharacterName(['', '  ', JSON.stringify({ chat_metadata: {}, character_name: 'Aria' })])
+		).toBe('Aria');
+	});
+
+	it('is null when the header names nobody', () => {
+		expect(readChatCharacterName([JSON.stringify({ chat_metadata: {} })])).toBeNull();
+		expect(
+			readChatCharacterName([JSON.stringify({ chat_metadata: {}, character_name: '   ' })])
+		).toBeNull();
+	});
+
+	it('is null when the first line is not a header', () => {
+		// A message's own `name` is whoever spoke that turn, so it must not stand in.
+		expect(readChatCharacterName([JSON.stringify({ name: 'Seraphina', mes: 'hi' })])).toBeNull();
+		expect(readChatCharacterName(['not json'])).toBeNull();
+		expect(readChatCharacterName([])).toBeNull();
 	});
 });

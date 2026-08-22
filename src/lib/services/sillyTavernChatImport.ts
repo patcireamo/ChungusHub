@@ -103,6 +103,29 @@ function spanBetween(started: string | undefined, finished: string | undefined):
 }
 
 /**
+ * The character a chat file names, off its `chat_metadata` header line.
+ *
+ * Only that line is read: a message's own `name` is whoever spoke the turn, which on a user
+ * turn is the persona. Null when the first line is not the header or names nobody, so a
+ * caller offering this as a target has an empty answer to show rather than a guessed one.
+ */
+export function readChatCharacterName(lines: string[]): string | null {
+	const header = lines.find((line) => line.trim() !== '');
+	if (!header) return null;
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(header);
+	} catch {
+		return null;
+	}
+	if (!parsed || typeof parsed !== 'object' || !('chat_metadata' in parsed)) return null;
+
+	const name = (parsed as { character_name?: unknown }).character_name;
+	return typeof name === 'string' && name.trim() !== '' ? name.trim() : null;
+}
+
+/**
  * Convert the raw lines of a SillyTavern chat file into a message tree.
  *
  * @param lines   The file split on newlines (blank lines tolerated).

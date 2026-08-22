@@ -32,6 +32,7 @@
 	import ChatListRow from './ChatListRow.svelte';
 	import ChatPreviewPane from './ChatPreviewPane.svelte';
 	import DuplicateChatDialog from './DuplicateChatDialog.svelte';
+	import ImportChatsDialog from './ImportChatsDialog.svelte';
 	import { duplicateAsksAboutMemory } from '$lib/types/chat';
 	import type { Chat, ChatListStats, ChatMemoryFootprint } from '$lib/types/chat';
 	import { db } from '$lib/services/database';
@@ -437,6 +438,28 @@
 		}
 	}
 
+	// SillyTavern chat files, brought onto the character the list is narrowed to. Nothing is
+	// written until the dialog confirms it, since which character a file lands on is the one
+	// thing this app cannot undo afterwards.
+	let chatFileInput = $state<HTMLInputElement | null>(null);
+	let importPick = $state<{ files: File[]; characterId: string; characterName: string } | null>(null);
+
+	function handlePickedChatFiles(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const picked = input.files ? Array.from(input.files) : [];
+		// Cleared so picking the same file twice in a row still fires a change event.
+		input.value = '';
+		if (picked.length === 0 || !scopedCharacterId || !scopeCharacter) return;
+		// The target is taken HERE and carried, never read live by the dialog: a pick is for
+		// the character it was made from, and a scope that moved underneath must not move
+		// where those files land.
+		importPick = {
+			files: picked,
+			characterId: scopedCharacterId,
+			characterName: scopeCharacter.name
+		};
+	}
+
 	// ===== Row actions =====
 
 	/** The panel is a backdrop-filtered, overflow-hidden surface, which makes it the
@@ -758,6 +781,23 @@
 			</div>
 
 			<div class="overlay-actions">
+				<!-- Only while the list is narrowed to somebody, because that character IS the
+				     target: scoped to everything there is nobody to import onto, and the
+				     alternative is a picker over a library that runs to thousands of entries.
+				     Hidden rather than shown inert, the same rule every other control here
+				     follows. Icon only, so the row still fits a phone beside the labelled
+				     button that is the panel's actual subject. -->
+				{#if scopedCharacterId}
+					<button
+						type="button"
+						class="overlay-action-btn"
+						title="Import SillyTavern chats"
+						aria-label="Import SillyTavern chats"
+						onclick={() => chatFileInput?.click()}
+					>
+						<Icon name="download" class="w-4 h-4" />
+					</button>
+				{/if}
 				<button type="button" class="chats-new-button" onclick={handleNewChat}>
 					<Icon name="plus" class="w-4 h-4" />
 					New chat
@@ -1199,6 +1239,24 @@
 		}}
 	/>
 {/if}
+
+{#if importPick}
+	<ImportChatsDialog
+		files={importPick.files}
+		characterId={importPick.characterId}
+		characterName={importPick.characterName}
+		onClose={() => (importPick = null)}
+	/>
+{/if}
+
+<input
+	bind:this={chatFileInput}
+	type="file"
+	class="hidden"
+	accept=".jsonl"
+	multiple
+	onchange={handlePickedChatFiles}
+/>
 
 <style>
 	.chats-view {
