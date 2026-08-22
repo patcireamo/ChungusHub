@@ -12,6 +12,13 @@
  * irreversible writes and this app has no undo: the counts belong on screen while the answer
  * is still no.
  *
+ * That step is also where the pick is narrowed, and the two costs are deliberately unequal.
+ * **Everything is on by default, so bringing a whole profile over is still the pick and one
+ * press**, with nothing to open and nothing to tick; only somebody who wants less pays for it.
+ * Narrowing is subtraction and nothing else (`excluded` → `withoutKeys`), so the importer is
+ * handed a smaller bundle rather than a bundle plus instructions, and there is no second place
+ * where a file can be decided against.
+ *
  * **A run can be stopped and there is no resuming it**, by decision. What continues a stopped
  * import is running the same folder again: every file that landed is claimed in the import
  * ledger (architecture/server-core.md), so the next scan finds only what is left. That is the
@@ -32,15 +39,22 @@ import {
 	type ImportReport
 } from '$lib/services/sillyTavernFolderImport';
 import {
+	cardStemFromKey,
 	countFiles,
+	planGroups,
+	readPersonaSettings,
 	scanSillyTavernFolder,
-	withoutImported,
+	stemOf,
+	strandedByChoice,
+	withoutKeys,
 	type FolderScan,
 	type ImportedSource
 } from '$lib/services/sillyTavernFolderScan';
 import { db } from '$lib/services/database';
 import { isReachable, onReachabilityChange } from '$lib/services/transport';
+import { characterLibraryStore } from './characterLibrary.svelte';
 import { failureText, toastStore } from './toast.svelte';
+import { SvelteSet } from 'svelte/reactivity';
 
 /** A pick that was not a profile folder. It names what to pick instead, since "not found"
  *  without a way forward is where an import stops for good. */
@@ -57,11 +71,38 @@ class ImportRunStore {
 	/** What the ledger already holds, read when the folder was picked and handed to the run so
 	 *  it can bind this folder's chats to cards an earlier run brought over. */
 	private claims = $state<ImportedSource[]>([]);
-	private known = $derived(new Set(this.claims.map((c) => c.key)));
+	/**
+	 * Which claims still stand.
+	 *
+	 * **A claim that names what it became is only worth as much as that thing still existing.**
+	 * Cards and personas record their library entry, so one the reader has since deleted by hand
+	 * stops counting and the file is offered again: skipping it would be the card stating
+	 * something about the library that is not true any more, with the reader's own deletion as
+	 * the reason. The kinds that record nothing (lorebooks, backgrounds, chats, sprites) cannot
+	 * be asked, so their claims stand and the checkbox below stays the way back to them.
+	 */
+	private known = $derived.by(() => {
+		const live = new Set(characterLibraryStore.entries.map((entry) => entry.id));
+		const keys = new Set<string>();
+		for (const claim of this.claims) {
+			if (claim.entityId && !live.has(claim.entityId)) continue;
+			keys.add(claim.key);
+		}
+		return keys;
+	});
 	/** Bring the already-imported files over a second time. Off by default and deliberately
 	 *  reachable even when everything in the folder is known, since re-importing something the
 	 *  reader has since deleted is the one thing skipping would otherwise make impossible. */
 	bringKnownAgain = $state(false);
+	/**
+	 * Source keys the reader has switched off on the confirm card.
+	 *
+	 * Held as EXCLUSIONS rather than as a selection, and the difference shows the moment the
+	 * plan grows: a file arriving because the ledger checkbox was ticked is on, which is the
+	 * answer somebody who never opened that group expects. A stored selection would have to
+	 * guess, and would guess "off" for everything nobody has touched.
+	 */
+	excluded = $state(new SvelteSet<string>());
 
 	running = $state(false);
 	progress = $state<ImportProgress | null>(null);
@@ -74,14 +115,74 @@ class ImportRunStore {
 
 	/** The pick minus what the ledger already holds. Stands on its own rather than living inside
 	 *  `plan`, so the count below can be measured against it whatever the checkbox says. */
-	private fresh = $derived(this.pending ? withoutImported(this.pending, this.known) : null);
+	private fresh = $derived(this.pending ? withoutKeys(this.pending, this.known) : null);
 
-	/** What Import would actually write: the pick minus what the ledger already holds, unless
-	 *  the reader asked for all of it. */
-	plan = $derived.by(() => {
+	/**
+	 * Everything on offer: the pick minus what the ledger already holds, unless the reader
+	 * asked for all of it. This is what the card DRAWS, switched off rows included, because a
+	 * row that vanished when it was unticked would take its own way back with it.
+	 */
+	private offered = $derived.by(() => {
 		if (!this.pending) return null;
 		return this.bringKnownAgain ? this.pending : this.fresh;
 	});
+
+	/** What Import would actually write: everything on offer, minus what has been switched off. */
+	plan = $derived(this.offered ? withoutKeys(this.offered, this.excluded) : null);
+
+	/** Persona display names, read off the picked profile's `settings.json` when the folder was
+	 *  chosen. It is the only label on this card that does not come off a path. */
+	private personaNames = $state<Record<string, string>>({});
+
+	/** The rows themselves, in the order the import writes them. */
+	groups = $derived(
+		this.offered ? planGroups(this.offered, { personas: this.personaNames }) : []
+	);
+
+	/** How many files Import would write, which is the number the button carries. */
+	planned = $derived(this.plan ? countFiles(this.plan) : 0);
+
+	/**
+	 * Every name a chat or sprite folder could bind to: the character cards this run would
+	 * write, the ones an earlier run claimed that the library still holds, and the display
+	 * names already in the library. **The importer's own three sources, restated here to ask
+	 * before the run what the report would otherwise only answer after it.** The two move
+	 * together: a change to how `sillyTavernFolderImport` resolves a folder belongs here in the
+	 * same piece of work, or this card warns about the wrong files.
+	 */
+	private resolvableCharacters = $derived.by(() => {
+		const names = new Set<string>();
+		const live = new Set(characterLibraryStore.entries.map((entry) => entry.id));
+		for (const claimed of this.claims) {
+			const stem = cardStemFromKey(claimed.key);
+			if (stem && claimed.entityId && live.has(claimed.entityId)) names.add(stem);
+		}
+		for (const entry of characterLibraryStore.entries) {
+			if (entry.type !== 'character') continue;
+			const name = entry.identity.name?.trim().toLowerCase();
+			if (name) names.add(name);
+		}
+		for (const file of this.plan?.characters ?? []) names.add(stemOf(file.name).toLowerCase());
+		return names;
+	});
+
+	/** The card stems this card is OFFERING, which is what "tick it back on" can reach. A card
+	 *  an earlier run already claimed is not among them and does not need to be: it resolves
+	 *  above, so nothing of its ever reads as stranded. */
+	private offeredStems = $derived.by(() => {
+		const stems = new Set<string>();
+		for (const file of this.offered?.characters ?? []) stems.add(stemOf(file.name).toLowerCase());
+		return stems;
+	});
+
+	/** Chats and sprite packs the plan would send to a character the reader switched off.
+	 *  Measured against the PLAN, so unticking the character that strands them is what makes
+	 *  the warning appear, and ticking it back is what makes it go. */
+	stranded = $derived(
+		this.plan
+			? strandedByChoice(this.plan, this.resolvableCharacters, this.offeredStems)
+			: { chats: 0, sprites: 0 }
+	);
 
 	/** How many of the picked files this folder has sent before. Measured against the pick and
 	 *  never against the plan: off the plan it collapses to zero the moment the reader ticks the
@@ -109,6 +210,9 @@ class ImportRunStore {
 		this.error = null;
 		this.stoppedBy = null;
 		this.bringKnownAgain = false;
+		// A new pick is a clean slate: keys from the last folder would switch off files in this
+		// one that happen to sit at the same path, which is every second SillyTavern profile.
+		this.excluded.clear();
 		this.pending = null;
 
 		const found = scanSillyTavernFolder(files);
@@ -127,7 +231,43 @@ class ImportRunStore {
 			this.error = failureText('check what has already been imported', e);
 			return;
 		}
+
+		// A persona's name lives in settings.json rather than in its picture's filename, so the
+		// card reads that one file to label those rows. A profile with none, or one whose
+		// settings cannot be parsed, leaves the rows on the filename, which is not a failure
+		// papered over: it is the same name the run itself would write for that persona, and a
+		// file that will not parse is reported by the run in its own words.
+		this.personaNames = {};
+		if (found.settingsFile) {
+			try {
+				this.personaNames = readPersonaSettings(await found.settingsFile.text()).names;
+			} catch (e) {
+				console.error('Reading SillyTavern persona names failed:', e);
+			}
+		}
 		this.pending = found;
+	}
+
+	/** Switch a row on or off. A row is its whole key list, so a sprite pack and a character's
+	 *  chat history move as the one thing they are written as. */
+	setKeys(keys: string[], on: boolean): void {
+		for (const key of keys) {
+			if (on) this.excluded.delete(key);
+			else this.excluded.add(key);
+		}
+	}
+
+	/** Everything on, or everything off. Off is what makes "only these two characters" two
+	 *  clicks instead of one per group, and it is why it sits beside All rather than being
+	 *  reachable only by unticking each heading. */
+	setAll(on: boolean): void {
+		if (on) {
+			this.excluded.clear();
+			return;
+		}
+		for (const group of this.groups) {
+			for (const item of group.items) this.setKeys(item.keys, false);
+		}
 	}
 
 	discard(): void {

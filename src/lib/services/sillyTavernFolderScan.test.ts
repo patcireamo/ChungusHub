@@ -2,9 +2,12 @@ import { describe, it, expect } from 'bun:test';
 import {
 	cardStemFromKey,
 	countFiles,
+	planGroups,
+	readPersonaSettings,
 	scanSillyTavernFolder,
 	sourceKey,
-	withoutImported
+	strandedByChoice,
+	withoutKeys
 } from './sillyTavernFolderScan';
 
 /** A picked file, spelled the way the browser hands one over: a flat list, each entry carrying
@@ -91,7 +94,7 @@ describe('the import ledger', () => {
 		const scan = scanSillyTavernFolder(pick(PROFILE))!;
 		expect(countFiles(scan)).toBe(8);
 
-		const fresh = withoutImported(
+		const fresh = withoutKeys(
 			scan,
 			new Set([
 				'sillytavern:characters/Alice.png',
@@ -109,7 +112,7 @@ describe('the import ledger', () => {
 
 	it('drops a sprite folder whose whole pack is already here', () => {
 		const scan = scanSillyTavernFolder(pick(PROFILE))!;
-		const fresh = withoutImported(
+		const fresh = withoutKeys(
 			scan,
 			new Set(['sillytavern:characters/Alice/joy.png', 'sillytavern:characters/Alice/anger.png'])
 		);
@@ -118,7 +121,18 @@ describe('the import ledger', () => {
 
 	it('leaves everything standing when the ledger is empty', () => {
 		const scan = scanSillyTavernFolder(pick(PROFILE))!;
-		expect(countFiles(withoutImported(scan, new Set()))).toBe(countFiles(scan));
+		expect(countFiles(withoutKeys(scan, new Set()))).toBe(countFiles(scan));
+	});
+
+	// The confirm card asks the same filter with what the reader switched off, so the two
+	// narrowings compose into one bundle rather than into a bundle plus instructions.
+	it('narrows a second time for the reader, on top of the ledger', () => {
+		const scan = scanSillyTavernFolder(pick(PROFILE))!;
+		const fresh = withoutKeys(scan, new Set(['sillytavern:characters/Alice.png']));
+		const chosen = withoutKeys(fresh, new Set(['sillytavern:backgrounds/tavern.jpg']));
+		expect(chosen.characters.map((f) => f.name)).toEqual(['Bob.json']);
+		expect(chosen.backgrounds.length).toBe(0);
+		expect(countFiles(chosen)).toBe(countFiles(fresh) - 1);
 	});
 
 	// What a later run binds this folder's chats and sprites with: the card's own filename,
@@ -129,5 +143,137 @@ describe('the import ledger', () => {
 		expect(cardStemFromKey('sillytavern:characters/Jason/joy.png')).toBeNull();
 		expect(cardStemFromKey('sillytavern:chats/Jason/2026.jsonl')).toBeNull();
 		expect(cardStemFromKey('sillytavern:backgrounds/tavern.jpg')).toBeNull();
+	});
+});
+
+describe('planGroups', () => {
+	it('names every row off a path, so nothing has to be opened to draw the card', () => {
+		const groups = planGroups(scanSillyTavernFolder(pick(PROFILE))!);
+		const byId = new Map(groups.map((g) => [g.id, g]));
+
+		expect(byId.get('characters')!.items.map((i) => i.label).sort()).toEqual(['Alice', 'Bob']);
+		expect(byId.get('worlds')!.items.map((i) => i.label)).toEqual(['Kingdom']);
+		expect(byId.get('backgrounds')!.items.map((i) => i.label)).toEqual(['tavern']);
+		expect(byId.get('personas')!.items.map((i) => i.label)).toEqual(['me']);
+	});
+
+	// A persona's name lives in settings.json, so it is the one label that has to be handed in,
+	// and it falls back to the filename exactly as the import itself does.
+	it('names a persona what the import will name it', () => {
+		const scan = scanSillyTavernFolder(
+			pick(['default-user/User Avatars/me.png', 'default-user/User Avatars/spare.png'])
+		)!;
+		const labelled = planGroups(scan, { personas: { 'me.png': ' Anon ' } });
+		expect(labelled[0].items.map((i) => i.label)).toEqual(['Anon', 'spare']);
+
+		const unlabelled = planGroups(scan, { personas: { 'me.png': '  ' } });
+		expect(unlabelled[0].items.map((i) => i.label)).toEqual(['me', 'spare']);
+	});
+
+	it('makes a sprite pack and a character history one row each, carrying all their keys', () => {
+		const groups = planGroups(scanSillyTavernFolder(pick(PROFILE))!);
+		const sprites = groups.find((g) => g.id === 'sprites')!;
+		expect(sprites.items).toHaveLength(1);
+		expect(sprites.items[0].label).toBe('Alice');
+		expect(sprites.items[0].keys.sort()).toEqual([
+			'sillytavern:characters/Alice/anger.png',
+			'sillytavern:characters/Alice/joy.png'
+		]);
+
+		const chats = groups.find((g) => g.id === 'chats')!;
+		expect(chats.items).toHaveLength(1);
+		expect(chats.items[0].label).toBe('Alice');
+		expect(chats.items[0].keys).toEqual(['sillytavern:chats/Alice/2026-01-01.jsonl']);
+	});
+
+	it('drops an empty group rather than drawing a heading nothing sits under', () => {
+		const scan = scanSillyTavernFolder(pick(['Lib/characters/Alice.png']))!;
+		expect(planGroups(scan).map((g) => g.id)).toEqual(['characters']);
+	});
+
+	it('gives every row a key nothing else in its group holds', () => {
+		const groups = planGroups(scanSillyTavernFolder(pick(PROFILE))!);
+		for (const group of groups) {
+			const ids = group.items.map((item) => item.id);
+			expect(new Set(ids).size).toBe(ids.length);
+		}
+	});
+
+	// Selecting a row is selecting its files, so the rows must add up to the whole bundle or
+	// something in the folder would be unreachable from the card that claims to list it.
+	it('accounts for every file the import would write', () => {
+		const scan = scanSillyTavernFolder(pick(PROFILE))!;
+		const keys = planGroups(scan).flatMap((g) => g.items.flatMap((i) => i.keys));
+		expect(keys).toHaveLength(countFiles(scan));
+		expect(new Set(keys).size).toBe(countFiles(scan));
+	});
+});
+
+describe('readPersonaSettings', () => {
+	it('reads both halves of a persona identity, keyed by avatar filename', () => {
+		const settings = JSON.stringify({
+			power_user: {
+				personas: { 'anon.png': 'Anon', 'user-default.png': 'Traveller' },
+				persona_descriptions: { 'anon.png': { description: 'Quiet type' } }
+			},
+			// The rest of a real settings.json, which is most of it, is not ours to read.
+			theme: 'Dark Lite'
+		});
+		expect(readPersonaSettings(settings)).toEqual({
+			names: { 'anon.png': 'Anon', 'user-default.png': 'Traveller' },
+			descriptions: { 'anon.png': 'Quiet type' }
+		});
+	});
+
+	it('answers empty rather than undefined for a profile that names no persona', () => {
+		expect(readPersonaSettings('{}')).toEqual({ names: {}, descriptions: {} });
+		expect(readPersonaSettings(JSON.stringify({ power_user: {} }))).toEqual({
+			names: {},
+			descriptions: {}
+		});
+	});
+
+	it('drops a description entry that carries no description', () => {
+		const settings = JSON.stringify({
+			power_user: { persona_descriptions: { 'anon.png': { position: 0 } } }
+		});
+		expect(readPersonaSettings(settings).descriptions).toEqual({});
+	});
+
+	// The run reports this in its own words rather than importing personas under half a file.
+	it('throws on a settings file that will not parse', () => {
+		expect(() => readPersonaSettings('{ not json')).toThrow();
+	});
+});
+
+describe('strandedByChoice', () => {
+	const ORPHANS = scanSillyTavernFolder(
+		pick([
+			'default-user/chats/Alice/one.jsonl',
+			'default-user/chats/Alice/two.jsonl',
+			'default-user/characters/Alice/joy.png',
+			'default-user/characters/Alice/anger.png'
+		])
+	)!;
+
+	it('counts chats as files and sprite packs as folders, matching what the run reports', () => {
+		// Alice is on the card and switched off: two chats and one pack, all fixable by a tick.
+		expect(strandedByChoice(ORPHANS, new Set(), new Set(['alice']))).toEqual({
+			chats: 2,
+			sprites: 1
+		});
+	});
+
+	it('is silent once the character resolves, whatever case the folder is spelled in', () => {
+		expect(strandedByChoice(ORPHANS, new Set(['alice']), new Set(['alice']))).toEqual({
+			chats: 0,
+			sprites: 0
+		});
+	});
+
+	// A card deleted in SillyTavern leaves its chat folder behind. Nothing on the confirm card
+	// would switch that character on, so warning about it is a sentence with no answer to it.
+	it('says nothing about a folder whose character is not in the profile at all', () => {
+		expect(strandedByChoice(ORPHANS, new Set(), new Set())).toEqual({ chats: 0, sprites: 0 });
 	});
 });

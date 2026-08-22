@@ -3,6 +3,7 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
 	import Alert from '$lib/components/ui/Alert.svelte';
+	import SillyTavernPlan from './SillyTavernPlan.svelte';
 	import { importRun } from '$lib/stores/import-run.svelte';
 
 	let folderInput = $state<HTMLInputElement | undefined>(undefined);
@@ -33,26 +34,10 @@
 		void importRun.scan(files);
 	}
 
-	// What Import would write, which is the pick minus whatever has come over before. The
-	// counts move when the reader asks for all of it again, so the card always states the
+	// How many files Import would write: the pick, minus what has come over before, minus
+	// whatever the reader switched off. The button carries it, so the card always states the
 	// number it is about to act on.
-	let plan = $derived(importRun.plan);
-
-	let foundLines = $derived(
-		plan
-			? [
-					{ label: 'Characters', count: plan.characters.length },
-					{
-						label: 'Sprites',
-						count: [...plan.spritesByFolder.values()].reduce((n, f) => n + f.length, 0)
-					},
-					{ label: 'Personas', count: plan.avatars.length },
-					{ label: 'Chats', count: plan.chats.length },
-					{ label: 'Lorebooks', count: plan.worlds.length },
-					{ label: 'Backgrounds', count: plan.backgrounds.length }
-				].filter((line) => line.count > 0)
-			: []
-	);
+	let planned = $derived(importRun.planned);
 
 	interface Line {
 		label: string;
@@ -85,8 +70,8 @@
 		</div>
 		<div class="card-body">
 			<p class="lede font-ui">
-				Point this at your SillyTavern profile folder, <code>data/default-user</code>, and it all
-				comes over in one pass.
+				Point this at your SillyTavern profile folder, <code>data/default-user</code>. It all comes
+				over in one pass, or you can leave parts of it behind before the run starts.
 			</p>
 
 			<ul class="what font-ui">
@@ -107,19 +92,7 @@
 
 			{#if pending}
 				<div class="report">
-					<span class="section-label">Found in {pending.root || 'the folder you picked'}</span>
-					{#if foundLines.length > 0}
-						<ul class="report-list font-ui">
-							{#each foundLines as line (line.label)}
-								<li>
-									<span class="report-label">{line.label}</span>
-									<span class="report-count">{line.count}</span>
-								</li>
-							{/each}
-						</ul>
-					{:else}
-						<p class="note font-ui">Every file in there has come over already</p>
-					{/if}
+					<SillyTavernPlan root={pending.root} />
 
 					<!-- One fixed sentence naming what ticking the box does, never a report of what
 					     the box is currently doing: a label that swaps meaning on click leaves the
@@ -145,10 +118,10 @@
 						<Button
 							variant="primary"
 							size="sm"
-							disabled={foundLines.length === 0}
+							disabled={planned === 0}
 							onclick={() => importRun.start()}
 						>
-							Import
+							Import {planned} file{planned === 1 ? '' : 's'}
 						</Button>
 						<Button variant="secondary" size="sm" onclick={() => importRun.discard()}>
 							Cancel
