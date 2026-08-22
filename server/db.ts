@@ -1914,15 +1914,28 @@ class ServerDatabase {
 		return rows.map((r) => ({ key: r.source_key, entityId: r.entity_id }));
 	}
 
-	/** Claim these source files. Written in batches as an import walks, never once at the end,
-	 *  so a run that is stopped or dies keeps what it already landed. */
+	/**
+	 * Claim these source files. Written in batches as an import walks, never once at the end,
+	 * so a run that is stopped or dies keeps what it already landed.
+	 *
+	 * **A second claim on the same file refreshes what it became**, which is what makes
+	 * `entity_id` mean the entry that exists rather than one that used to. A file only arrives
+	 * twice because the reader asked for it (the confirm card's include-known box, or an entry
+	 * they deleted being offered again), and it makes a NEW entry each time; leaving the first
+	 * id standing would point the claim at a deleted row for good, and a reader who deleted
+	 * that entry would then be handed the same file on every run forever. `created_at` is not
+	 * touched, since it records when this file first came over, and a claim carrying no id
+	 * cannot blank one that is already there.
+	 */
 	recordImportedSources(claims: { key: string; entityId?: string | null }[]): void {
 		if (claims.length === 0) return;
 		const now = Date.now();
 		const tx = this.db.transaction(() => {
 			for (const claim of claims) {
 				this.execute(
-					'INSERT OR IGNORE INTO import_sources (source_key, entity_id, created_at) VALUES (?, ?, ?)',
+					`INSERT INTO import_sources (source_key, entity_id, created_at) VALUES (?, ?, ?)
+					 ON CONFLICT(source_key) DO UPDATE SET entity_id = excluded.entity_id
+					 WHERE excluded.entity_id IS NOT NULL`,
 					[claim.key, claim.entityId ?? null, now]
 				);
 			}

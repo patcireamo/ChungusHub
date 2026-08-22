@@ -35,9 +35,12 @@ import { db } from '$lib/services/database';
 import type { LibrarySeed } from '$lib/types/library';
 import {
 	cardStemFromKey,
+	readPersonaSettings,
 	sourceKey,
+	stemOf,
 	type FolderScan,
-	type ImportedSource
+	type ImportedSource,
+	type PersonaSettings
 } from '$lib/services/sillyTavernFolderScan';
 
 export interface ImportProgress {
@@ -115,25 +118,12 @@ function openLedger(root: string, report: ImportReport) {
 	};
 }
 
-/** SillyTavern settings.json: only the persona bits we read. */
-interface STSettings {
-	power_user?: {
-		personas?: Record<string, string>;
-		persona_descriptions?: Record<string, { description?: string }>;
-	};
-}
-
 function emptyCategory(): CategoryResult {
 	return { imported: 0, failed: [] };
 }
 
 function reason(e: unknown): string {
 	return e instanceof Error ? e.message : String(e);
-}
-
-/** Filename without its extension. SillyTavern's chat folders are named by the avatar stem. */
-function fileStem(name: string): string {
-	return name.replace(/\.[^.]+$/, '');
 }
 
 /**
@@ -164,10 +154,10 @@ export async function importSillyTavernFolder(
 	const stopped = () => signal?.aborted === true;
 
 	// Parse settings.json up front (personas need it).
-	let stSettings: STSettings = {};
+	let personaSettings: PersonaSettings = { names: {}, descriptions: {} };
 	if (scan.settingsFile) {
 		try {
-			stSettings = JSON.parse(await scan.settingsFile.text());
+			personaSettings = readPersonaSettings(await scan.settingsFile.text());
 		} catch (e) {
 			report.personas.failed.push(`settings.json: ${reason(e)}`);
 		}
@@ -201,7 +191,7 @@ export async function importSillyTavernFolder(
 			const result = await importSillyTavernCard(file);
 			// Full migration: bring embedded character books along and link them.
 			const entry = await characterLibraryStore.importFromSillyTavern(result, { importLorebook: true });
-			charByFileStem.set(fileStem(file.name).toLowerCase(), entry.id);
+			charByFileStem.set(stemOf(file.name).toLowerCase(), entry.id);
 			report.characters.imported++;
 			await ledger.claim(file, entry.id);
 		} catch (e) {
@@ -285,25 +275,28 @@ export async function importSillyTavernFolder(
 	}
 
 	// ---- Personas (User Avatars image + settings.json name/description) ----
-	const personaNames = stSettings.power_user?.personas ?? {};
-	const personaDescs = stSettings.power_user?.persona_descriptions ?? {};
 	for (let i = 0; i < avatars.length; i++) {
 		if (stopped()) break;
 		const file = avatars[i];
 		onProgress?.({ phase: 'Personas', done: i, total: avatars.length });
 		try {
 			const imageUrl = await imageService.saveImage(file, 'personas');
-			const name = personaNames[file.name] || fileStem(file.name);
-			const description = personaDescs[file.name]?.description ?? '';
 			const seed: LibrarySeed = {
 				id: crypto.randomUUID(),
-				name,
+				name: personaSettings.names[file.name] || stemOf(file.name),
 				imageUrl,
-				traits: { personality: '', description, background: '' }
+				traits: {
+					personality: '',
+					description: personaSettings.descriptions[file.name] ?? '',
+					background: ''
+				}
 			};
 			await characterLibraryStore.savePersona(seed);
 			report.personas.imported++;
-			await ledger.claim(file);
+			// Claimed WITH what it became, the same as a card. A claim that names its entry stops
+			// counting the moment that entry is deleted, which is what lets a persona somebody
+			// removed by hand be offered again instead of being skipped forever.
+			await ledger.claim(file, seed.id);
 		} catch (e) {
 			report.personas.failed.push(`${file.name}: ${reason(e)}`);
 		}
