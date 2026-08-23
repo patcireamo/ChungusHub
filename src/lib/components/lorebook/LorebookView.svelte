@@ -105,10 +105,14 @@
 			}
 		];
 		if (a.recursiveScanning) {
+			// While books recurse together there is one shared loop, so the cap that runs is the
+			// global one; printing the book's own here would name a number the scan never uses.
+			const passes = globals.crossBookRecursion ? globals.maxRecursionSteps : a.maxRecursionSteps;
 			out.push({
-				text: a.maxRecursionSteps > 0 ? `≤${a.maxRecursionSteps} passes` : '∞ passes',
-				set: a.maxRecursionSteps !== globals.maxRecursionSteps
+				text: passes > 0 ? `≤${passes} passes` : '∞ passes',
+				set: !globals.crossBookRecursion && a.maxRecursionSteps !== globals.maxRecursionSteps
 			});
+			if (globals.crossBookRecursion) out.push({ text: 'books together', set: false });
 		}
 		out.push({
 			text: `case ${a.caseSensitive ? 'on' : 'off'}`,

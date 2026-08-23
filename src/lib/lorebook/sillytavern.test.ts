@@ -271,3 +271,93 @@ describe('matching fields cross the boundary', () => {
 		expect(e.key).toEqual(['/dr[ae]gon/i']);
 	});
 });
+
+describe('recursion settings cross the boundary under both spellings', () => {
+	/** A native World Info entry with every recursion flag set. */
+	const NATIVE = {
+		entries: {
+			'0': {
+				key: ['citadel'],
+				content: 'lore',
+				excludeRecursion: true,
+				preventRecursion: true,
+				delayUntilRecursion: 3
+			}
+		}
+	};
+
+	/** The same entry as a character card carries it: snake_case, inside extensions. */
+	const CARD = {
+		name: 'c',
+		entries: [
+			{
+				keys: ['citadel'],
+				content: 'lore',
+				extensions: {
+					exclude_recursion: true,
+					prevent_recursion: true,
+					delay_until_recursion: 3
+				}
+			}
+		]
+	};
+
+	const nativeEntry = (book: ReturnType<typeof parseLorebook>) =>
+		(toNativeWorldInfo(book) as { entries: Record<string, any> }).entries['0'];
+	const cardExtensions = (book: ReturnType<typeof parseLorebook>) =>
+		(toCharacterBook(book) as { entries: any[] }).entries[0].extensions;
+
+	test('native import models the flags instead of parking them in rest', () => {
+		const e = parseLorebook(NATIVE, 'x').entries[0];
+		expect(e.excludeRecursion).toBe(true);
+		expect(e.preventRecursion).toBe(true);
+		expect(e.delayUntilRecursion).toBe(3);
+		expect('excludeRecursion' in e.rest).toBe(false);
+	});
+
+	test('a card-embedded book reads the same flags off its snake_case names', () => {
+		const e = parseLorebook(CARD, 'x').entries[0];
+		expect(e.excludeRecursion).toBe(true);
+		expect(e.preventRecursion).toBe(true);
+		expect(e.delayUntilRecursion).toBe(3);
+		expect('exclude_recursion' in e.rest).toBe(false);
+	});
+
+	test('a card-imported book exports to native World Info with its flags intact', () => {
+		const e = nativeEntry(parseLorebook(CARD, 'x'));
+		expect(e.excludeRecursion).toBe(true);
+		expect(e.preventRecursion).toBe(true);
+		expect(e.delayUntilRecursion).toBe(3);
+		// The spelling the other shape reads must not ship beside the one this shape reads.
+		expect('exclude_recursion' in e).toBe(false);
+	});
+
+	test('a native-imported book exports to a card with its flags intact', () => {
+		const ext = cardExtensions(parseLorebook(NATIVE, 'x'));
+		expect(ext.exclude_recursion).toBe(true);
+		expect(ext.prevent_recursion).toBe(true);
+		expect(ext.delay_until_recursion).toBe(3);
+		expect('excludeRecursion' in ext).toBe(false);
+	});
+
+	test('an entry that names none exports them all as off', () => {
+		const e = nativeEntry(parseLorebook({ entries: { '0': { key: ['x'], content: 'y' } } }, 'x'));
+		expect(e.excludeRecursion).toBe(false);
+		expect(e.preventRecursion).toBe(false);
+		expect(e.delayUntilRecursion).toBe(false);
+	});
+
+	test('the first recursion level exports as `true`, the way SillyTavern writes it', () => {
+		const book = parseLorebook({ entries: { '0': { content: 'y', delayUntilRecursion: 1 } } }, 'x');
+		expect(nativeEntry(book).delayUntilRecursion).toBe(true);
+	});
+
+	test('a copy an older row left in rest is exported once, from the resolved value', () => {
+		const book = parseLorebook({ entries: { '0': { content: 'y' } } }, 'x');
+		// The shape a row stored before these fields were modelled still carries.
+		book.entries[0].rest.preventRecursion = true;
+		const e = nativeEntry(book);
+		expect(e.preventRecursion).toBe(true);
+		expect(cardExtensions(book).prevent_recursion).toBe(true);
+	});
+});

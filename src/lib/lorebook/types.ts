@@ -7,10 +7,10 @@
  *
  * Entries use SillyTavern's native World Info field names VERBATIM (`key`, `keysecondary`,
  * `selectiveLogic`, `constant`, `disable`, `order`, `probability`, `caseSensitive`,
- * `matchWholeWords`, `scanDepth`, `triggers`, the `match*` source flags, …) so import/export
- * is a passthrough, not a translation. The fields we deliberately don't surface (position,
- * depth, role, groups, sticky/cooldown, vectorization, …) ride along untouched in `rest`, so
- * a book round-trips losslessly through SillyTavern either way.
+ * `matchWholeWords`, `scanDepth`, `triggers`, the `match*` source flags, the recursion flags, …)
+ * so import/export is a passthrough, not a translation. The fields we deliberately don't surface
+ * (characterFilter, automationId, vectorization, …) ride along untouched in `rest`, so a book
+ * round-trips losslessly through SillyTavern either way.
  */
 
 import type { CharacterTraits } from '$lib/types/library';
@@ -177,6 +177,90 @@ export function lorebookScanFields(
 	};
 }
 
+// ===== what wakes an entry, and what it wakes =====
+
+/**
+ * Each recursion flag under both SillyTavern spellings: the flat native World Info name, and
+ * the snake_case name it wears inside a character card's `character_book`. This ONE table
+ * drives the reader below, both import mappings and both export mappings, so a flag can never
+ * be written under a name the other side does not read.
+ */
+export const RECURSION_FIELDS = {
+	excludeRecursion: 'exclude_recursion',
+	preventRecursion: 'prevent_recursion',
+	delayUntilRecursion: 'delay_until_recursion'
+} as const;
+
+export type LorebookRecursionField = keyof typeof RECURSION_FIELDS;
+
+/** An entry's recursion settings, resolved. */
+export interface ResolvedRecursion {
+	/** Another entry's content cannot wake it; only the chat and the card fields can. */
+	excludeRecursion: boolean;
+	/** Its own content is never re-scanned, so it wakes nobody. */
+	preventRecursion: boolean;
+	/** The recursion level it waits for. 0 = it may fire from the first pass. */
+	delayLevel: number;
+}
+
+/**
+ * One flag's stored value: the modelled field, else either spelling an earlier import left in
+ * `rest`. Rows written before these fields existed are never rewritten, so both are read; an
+ * explicit `false` on the modelled field stops the fallback, which is what makes clearing a
+ * flag in the editor stick.
+ */
+function storedRecursion(entry: LorebookEntry, field: LorebookRecursionField): unknown {
+	return entry[field] ?? entry.rest[field] ?? entry.rest[RECURSION_FIELDS[field]];
+}
+
+/**
+ * An entry's recursion settings. The ONE reader: the engine gates with it, the entry row labels
+ * its control from it, and both exporters write through it, so the row can never name a
+ * behaviour the scan will not apply (architecture/lorebook.md coupling #9).
+ */
+export function resolveEntryRecursion(entry: LorebookEntry): ResolvedRecursion {
+	// SillyTavern writes the delay as `true` or as the recursion level to wait for.
+	const delay = storedRecursion(entry, 'delayUntilRecursion');
+	return {
+		excludeRecursion: storedRecursion(entry, 'excludeRecursion') === true,
+		preventRecursion: storedRecursion(entry, 'preventRecursion') === true,
+		delayLevel:
+			delay === true ? 1 : typeof delay === 'number' && delay >= 1 ? Math.floor(delay) : 0
+	};
+}
+
+/** The stored form of a resolved delay: `true` for the first level, the level itself above it. */
+export function delayValue(delayLevel: number): boolean | number {
+	if (delayLevel < 1) return false;
+	return delayLevel > 1 ? delayLevel : true;
+}
+
+/**
+ * `rest` without the recursion flags in either spelling. Written whenever the editor settles
+ * the modelled fields: a copy left behind would keep answering for a flag the reader already
+ * has, and the two would drift apart on the next edit.
+ */
+export function withoutStoredRecursion(rest: Record<string, unknown>): Record<string, unknown> {
+	const out = { ...rest };
+	for (const [field, card] of Object.entries(RECURSION_FIELDS)) {
+		delete out[field];
+		delete out[card];
+	}
+	return out;
+}
+
+/**
+ * The three settings read as one choice: what may wake this entry. `never` is the pair that
+ * cancels out (it waits for recursion and refuses to be woken by it), which only a SillyTavern
+ * import can carry, and which the editor names rather than offers.
+ */
+export type LorebookWokenBy = 'both' | 'chatOnly' | 'entriesOnly' | 'never';
+
+export function lorebookWokenBy(recursion: ResolvedRecursion): LorebookWokenBy {
+	if (recursion.excludeRecursion) return recursion.delayLevel > 0 ? 'never' : 'chatOnly';
+	return recursion.delayLevel > 0 ? 'entriesOnly' : 'both';
+}
+
 // ===== where an entry lands =====
 
 /**
@@ -322,10 +406,16 @@ export interface LorebookEntry {
 	depth?: number;
 	/** At-depth only: the role the injected turn wears ({@link LOREBOOK_ROLES}). Absent = system. */
 	role?: number | null;
+	/** Another entry's content cannot wake it. Absent = the copy in `rest`, else off. */
+	excludeRecursion?: boolean;
+	/** Its own content is never re-scanned, so it wakes nobody. Absent reads the same way. */
+	preventRecursion?: boolean;
+	/** It waits for recursion. `true` is the first level, a number names the level. */
+	delayUntilRecursion?: boolean | number;
 	/**
-	 * Every other SillyTavern field (position, depth, role, recursion flags, inclusion
-	 * groups, sticky/cooldown/delay, characterFilter, …), carried verbatim so export →
-	 * import in SillyTavern is lossless. The app never reads these.
+	 * Every other SillyTavern field (characterFilter, automationId, vectorized, …), carried
+	 * verbatim so export → import in SillyTavern is lossless. Apart from the recursion flags
+	 * an older row may still hold here ({@link resolveEntryRecursion}), the app never reads these.
 	 */
 	rest: Record<string, unknown>;
 }
@@ -342,6 +432,16 @@ export interface LorebookGlobalSettings {
 	recursiveScanning: boolean;
 	/** Max recursion passes after the chat scan. 0 = keep going until nothing new fires. */
 	maxRecursionSteps: number;
+	/**
+	 * Whether recursion reaches across the books in play, so an entry can wake one in another
+	 * book. This is a property of the whole scan rather than of any one book, which is why it
+	 * has no book layer: two books cannot disagree about whether they read each other.
+	 *
+	 * Off by default. Turning it on widens what every existing setup injects and makes the
+	 * per-book pass cap inert, since one shared loop can only be capped once, so it is a
+	 * decision to take rather than one to inherit.
+	 */
+	crossBookRecursion: boolean;
 	/** Default for entries that leave `caseSensitive` unset. */
 	caseSensitive: boolean;
 	/** Default for entries that leave `matchWholeWords` unset. */
@@ -421,13 +521,15 @@ export function resolveBookActivation(
 export type LorebookScanSource =
 	| { kind: 'message'; depth: number; text: string }
 	| { kind: 'field'; field: LorebookScanField; text: string }
-	| { kind: 'entry'; entryId: string; title: string; text: string };
+	| { kind: 'entry'; entryId: string; title: string; bookName: string; text: string };
 
 /** Where a key was found. The scan source it hit, minus the text itself. */
 export type LorebookMatchSource =
 	| { kind: 'message'; depth: number }
 	| { kind: 'field'; field: LorebookScanField }
-	| { kind: 'entry'; entryId: string; title: string };
+	/** `bookName` names the waking entry's book, so a wake across books can say which one.
+	 *  Absent on traces stored before recursion could cross them. */
+	| { kind: 'entry'; entryId: string; title: string; bookName?: string };
 
 /** A key that was found, and where. */
 export interface LorebookKeyMatch {
@@ -455,8 +557,10 @@ export type LorebookStatus =
 	| 'filtered'
 	/** Matched, then lost its Trigger % roll. */
 	| 'rolledOut'
-	/** Waits for recursion, which never reached it. */
+	/** Waits for another entry to wake it, and none that fired did. */
 	| 'delayed'
+	/** It waits for recursion and also refuses to be woken by it, so nothing can fire it. */
+	| 'neverFires'
 	/** Fired, then the token budget dropped it. */
 	| 'trimmed'
 	/** Switched off. */
@@ -523,7 +627,7 @@ export interface LorebookPastScan {
 /**
  * The scans earlier turns on this path recorded, newest first. The ONE derivation: every context
  * builder calls it over the same path it scans, so an entry's sticky window is the same length
- * at the meter as at the send (architecture/lorebook.md coupling #8).
+ * at the meter as at the send (architecture/lorebook.md coupling #7).
  */
 export function lorebookHistory(turns: { lorebook?: LorebookTrace | null }[]): LorebookPastScan[] {
 	const out: LorebookPastScan[] = [];
@@ -576,6 +680,7 @@ export const DEFAULT_LOREBOOK_GLOBAL_SETTINGS: LorebookGlobalSettings = {
 	scanDepth: DEFAULT_SCAN_DEPTH,
 	recursiveScanning: true,
 	maxRecursionSteps: 0,
+	crossBookRecursion: false,
 	caseSensitive: false,
 	matchWholeWords: true,
 	budgetPercent: 0

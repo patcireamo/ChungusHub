@@ -30,7 +30,8 @@
 		noMatch: 'Nothing matched its keywords',
 		filtered: 'A keyword matched, then its filter refused',
 		rolledOut: 'Matched, then lost its trigger roll',
-		delayed: 'Waiting on recursion, which never reached it',
+		delayed: 'Waits for another entry to wake it, and none did',
+		neverFires: 'Its recursion settings leave nothing that can wake it',
 		trimmed: 'Fired, then the token budget dropped it',
 		disabled: 'Switched off',
 		empty: 'Nothing to inject',
@@ -60,9 +61,14 @@
 	}
 
 	/** Where a key was found, in the reader's terms. */
-	function sourceLabel(match: LorebookKeyMatch): string {
+	function sourceLabel(match: LorebookKeyMatch, bookName: string): string {
 		const source = match.source;
-		if (source.kind === 'entry') return `from ${source.title || 'another entry'}`;
+		if (source.kind === 'entry') {
+			const woke = source.title || 'another entry';
+			// The book is named only when it is not the one this entry lives in: that is the
+			// case the reader cannot work out from the row they are looking at.
+			return source.bookName && source.bookName !== bookName ? `from ${woke} (${source.bookName})` : `from ${woke}`;
+		}
 		if (source.kind === 'field') {
 			return `in the ${LOREBOOK_SCAN_FIELDS.find((f) => f.id === source.field)?.label.toLowerCase()}`;
 		}
@@ -119,7 +125,7 @@
 										{#each record.matches as match (match.role + match.key)}
 											<span class="lt-key" class:lt-key-secondary={match.role === 'secondary'}>
 												{match.key}
-												<span class="lt-where">{sourceLabel(match)}</span>
+												<span class="lt-where">{sourceLabel(match, record.bookName)}</span>
 											</span>
 										{/each}
 									</p>

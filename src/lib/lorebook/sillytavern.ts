@@ -13,15 +13,30 @@
  * character_book needs real mapping (its spec renames fields). Export is native World Info
  * (what SillyTavern's "Import World Info" reads), reconstructed as: SillyTavern defaults ←
  * preserved originals ← modelled fields.
+ *
+ * The recursion flags are the one group carried under two spellings at once, so they are read
+ * under both names in both shapes and written under the name the target shape reads
+ * ({@link asRecursionFlags}, {@link recursionFlags}). A flag written under the other side's
+ * spelling is a setting that silently stops applying.
  */
 
-import type { Lorebook, LorebookEntry, LorebookKeyRules, LorebookScanField } from './types';
+import type {
+	Lorebook,
+	LorebookEntry,
+	LorebookKeyRules,
+	LorebookRecursionField,
+	LorebookScanField
+} from './types';
 import {
 	createEmptyLorebook,
 	DEFAULT_GROUP_WEIGHT,
 	DEFAULT_LOREBOOK_DEPTH,
+	delayValue,
 	LOREBOOK_POSITION_BLOCK,
-	LOREBOOK_SCAN_FIELDS
+	LOREBOOK_SCAN_FIELDS,
+	RECURSION_FIELDS,
+	resolveEntryRecursion,
+	withoutStoredRecursion
 } from './types';
 
 // ===== coercion helpers =====
@@ -119,6 +134,36 @@ function asScanFields(raw: Record<string, unknown>, shape: 'native' | 'card'): L
 	return out;
 }
 
+/**
+ * The recursion flags off whichever spelling the file uses: native World Info writes them flat
+ * and camelCase, a card's `character_book` writes them snake_case inside the entry's extensions.
+ * Both names are read from both shapes, so a book that has been through either export comes back
+ * with its settings intact. A flag the file never named stays absent rather than becoming a
+ * decision the author did not make.
+ */
+function asRecursionFlags(raw: Record<string, unknown>): Partial<LorebookEntry> {
+	const read = (field: LorebookRecursionField) => raw[field] ?? raw[RECURSION_FIELDS[field]];
+	const delay = read('delayUntilRecursion');
+	const flags: Partial<LorebookEntry> = {};
+	if (typeof read('excludeRecursion') === 'boolean') flags.excludeRecursion = read('excludeRecursion') as boolean;
+	if (typeof read('preventRecursion') === 'boolean') flags.preventRecursion = read('preventRecursion') as boolean;
+	if (typeof delay === 'boolean' || (typeof delay === 'number' && Number.isFinite(delay))) {
+		flags.delayUntilRecursion = delay as boolean | number;
+	}
+	return flags;
+}
+
+/** The three flags on the way out, under the spelling the target shape reads. */
+function recursionFlags(entry: LorebookEntry, shape: 'native' | 'card'): Record<string, unknown> {
+	const recursion = resolveEntryRecursion(entry);
+	const name = (field: LorebookRecursionField) => (shape === 'native' ? field : RECURSION_FIELDS[field]);
+	return {
+		[name('excludeRecursion')]: recursion.excludeRecursion,
+		[name('preventRecursion')]: recursion.preventRecursion,
+		[name('delayUntilRecursion')]: delayValue(recursion.delayLevel)
+	};
+}
+
 /** The same flags on the way out; always written, so a cleared one reads as cleared there. */
 function scanFieldFlags(entry: LorebookEntry, shape: 'native' | 'card'): Record<string, boolean> {
 	const out: Record<string, boolean> = {};
@@ -142,6 +187,8 @@ const MODELLED_KEYS = new Set([
 	'sticky', 'cooldown', 'delay',
 	'group', 'groupOverride', 'groupWeight', 'useGroupScoring',
 	'position', 'depth', 'role',
+	// Both spellings, so a file written under either one leaves no stale copy behind in `rest`.
+	...Object.keys(RECURSION_FIELDS), ...Object.values(RECURSION_FIELDS),
 	...LOREBOOK_SCAN_FIELDS.map((f) => f.native)
 ]);
 
@@ -179,6 +226,7 @@ function fromNativeEntry(raw: Record<string, unknown>): LorebookEntry {
 		position: asNumber(raw.position, LOREBOOK_POSITION_BLOCK),
 		depth: asNumber(raw.depth, DEFAULT_LOREBOOK_DEPTH),
 		role: asNumberOrNull(raw.role),
+		...asRecursionFlags(raw),
 		rest
 	};
 }
@@ -197,6 +245,7 @@ function fromCharacterBookEntry(raw: Record<string, unknown>): LorebookEntry {
 	const scanFields = asScanFields(ext, 'card');
 	const triggers = asStringList(ext.triggers);
 	const keyRules = asKeyRules(ext[KEY_RULES_FIELD]);
+	const recursion = asRecursionFlags(ext);
 	const timing = {
 		sticky: asNumberOrNull(ext.sticky),
 		cooldown: asNumberOrNull(ext.cooldown),
@@ -228,6 +277,10 @@ function fromCharacterBookEntry(raw: Record<string, unknown>): LorebookEntry {
 	delete ext.position;
 	delete ext.depth;
 	delete ext.role;
+	for (const field of Object.keys(RECURSION_FIELDS) as LorebookRecursionField[]) {
+		delete ext[field];
+		delete ext[RECURSION_FIELDS[field]];
+	}
 	for (const field of LOREBOOK_SCAN_FIELDS) delete ext[field.card];
 	return {
 		id: crypto.randomUUID(),
@@ -248,6 +301,7 @@ function fromCharacterBookEntry(raw: Record<string, unknown>): LorebookEntry {
 		scanFields,
 		triggers,
 		...timing,
+		...recursion,
 		rest: ext
 	};
 }
@@ -327,9 +381,6 @@ export function parseLorebook(raw: unknown, fallbackName: string): Lorebook {
 const ST_ENTRY_DEFAULTS: Record<string, unknown> = {
 	addMemo: true,
 	vectorized: false,
-	excludeRecursion: false,
-	preventRecursion: false,
-	delayUntilRecursion: false,
 	automationId: ''
 };
 
@@ -337,7 +388,9 @@ const ST_ENTRY_DEFAULTS: Record<string, unknown> = {
 function toNativeEntry(entry: LorebookEntry, uid: number): Record<string, unknown> {
 	return {
 		...ST_ENTRY_DEFAULTS,
-		...entry.rest,
+		// The recursion flags are written below from the resolved value, so any copy an older
+		// import left behind is dropped rather than shipped beside a value that contradicts it.
+		...withoutStoredRecursion(entry.rest),
 		uid,
 		key: [...entry.key],
 		keysecondary: [...entry.keysecondary],
@@ -364,6 +417,7 @@ function toNativeEntry(entry: LorebookEntry, uid: number): Record<string, unknow
 		position: entry.position ?? LOREBOOK_POSITION_BLOCK,
 		depth: entry.depth ?? DEFAULT_LOREBOOK_DEPTH,
 		role: entry.role ?? null,
+		...recursionFlags(entry, 'native'),
 		...scanFieldFlags(entry, 'native'),
 		// Ours alone: emitted only when a key actually overrides something, so an untouched
 		// entry exports as a plain SillyTavern record.
@@ -408,7 +462,7 @@ function toCharacterBookEntry(entry: LorebookEntry, i: number): Record<string, u
 		position: position === 1 ? 'after_char' : 'before_char',
 		case_sensitive: entry.caseSensitive,
 		extensions: {
-			...entry.rest,
+			...withoutStoredRecursion(entry.rest),
 			position,
 			selectiveLogic: entry.selectiveLogic,
 			match_whole_words: entry.matchWholeWords,
@@ -425,6 +479,7 @@ function toCharacterBookEntry(entry: LorebookEntry, i: number): Record<string, u
 			use_group_scoring: entry.useGroupScoring ?? null,
 			depth: entry.depth ?? DEFAULT_LOREBOOK_DEPTH,
 			role: entry.role ?? null,
+			...recursionFlags(entry, 'card'),
 			...scanFieldFlags(entry, 'card'),
 			...(entry.keyRules && Object.keys(entry.keyRules).length > 0
 				? { [KEY_RULES_FIELD]: entry.keyRules }

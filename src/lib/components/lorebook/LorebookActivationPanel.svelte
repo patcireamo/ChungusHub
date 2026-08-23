@@ -39,6 +39,8 @@
 	let scanValue = $derived(scope === 'book' ? resolved.scanDepth : globals.scanDepth);
 	let stepsValue = $derived(scope === 'book' ? resolved.maxRecursionSteps : globals.maxRecursionSteps);
 	let recursion = $derived(scope === 'book' ? resolved.recursiveScanning : globals.recursiveScanning);
+	/** A book's own pass cap has nothing to cap while one shared loop crosses every book. */
+	let stepsInert = $derived(scope === 'book' && globals.crossBookRecursion);
 	let caseValue = $derived(scope === 'book' ? resolved.caseSensitive : globals.caseSensitive);
 	let wholeValue = $derived(scope === 'book' ? resolved.matchWholeWords : globals.matchWholeWords);
 
@@ -162,11 +164,13 @@
 				/>
 			</div>
 			{#if recursion}
-				<div class="act-row">
+				<div class="act-row" class:is-inert={stepsInert}>
 					<label for="lb-steps-{scope}" class="act-row-text">
 						<span class="act-row-name">Max recursion passes</span>
 						<span class="act-row-help">
-							How many times activated content is re-scanned · 0 = until nothing new fires
+							{stepsInert
+								? 'Books recurse together, so the one shared loop is capped under Global'
+								: 'How many times activated content is re-scanned · 0 = until nothing new fires'}
 						</span>
 					</label>
 					{@render mark(
@@ -178,6 +182,7 @@
 						type="text"
 						inputmode="numeric"
 						value={stepsDraft}
+						disabled={stepsInert}
 						oninput={(e) => {
 							stepsDraft = (e.target as HTMLInputElement).value;
 							commitNumber(stepsDraft, (n) =>
@@ -191,7 +196,29 @@
 					/>
 				</div>
 			{/if}
+			<!-- No book layer: two books cannot disagree about whether they read each other. -->
+			{#if recursion && scope === 'global'}
+				<div class="act-row" use:toggleRow>
+					<span class="act-row-text">
+						<span class="act-row-name">Books recurse together</span>
+						<span class="act-row-help">
+							An entry can wake entries in any other book in play, not only in its own
+						</span>
+					</span>
+					<Toggle
+						checked={globals.crossBookRecursion}
+						label="Books recurse together"
+						onchange={(next) => setGlobal({ crossBookRecursion: next })}
+					/>
+				</div>
+			{/if}
 		</div>
+		{#if scope === 'book'}
+			<p class="act-foot">
+				Whether books recurse together is one property of the whole scan, so it is set under
+				Global.
+			</p>
+		{/if}
 	</div>
 
 	<!-- Keyword matching -->
@@ -345,6 +372,12 @@
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
+	}
+
+	/* A row whose value is real but has nothing to act on right now. Dimmed rather than hidden,
+	   so the reader can still see what it will do again once it applies. */
+	.act-row.is-inert {
+		opacity: 0.5;
 	}
 
 	.act-row-text {

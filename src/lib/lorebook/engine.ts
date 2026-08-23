@@ -10,8 +10,9 @@
  *      Trigger % roll (`probability`). An entry reads its own slice of the sources: the chat
  *      clamped to its scan depth, plus the card fields it opted into. When a book has
  *      `recursiveScanning` on, activated content joins the sources so entries can activate
- *      other entries (honouring the per-entry recursion flags carried in `rest`:
- *      preventRecursion / excludeRecursion / delayUntilRecursion). Before any of that, an
+ *      other entries, honouring each entry's own recursion settings ({@link resolveEntryRecursion}):
+ *      whether other entries may wake it, whether its content wakes them, and whether it waits
+ *      for recursion before it fires at all. Before any of that, an
  *      entry's own past can speak: `delay` holds it back until the chat is long enough, a
  *      `sticky` window keeps it in for a few generations after it fires, and the `cooldown`
  *      after that window shuts it out again. Those are read off the traces earlier turns
@@ -52,6 +53,7 @@ import type {
 	LorebookStatus,
 	LorebookTrace,
 	LorebookTrigger,
+	ResolvedActivation,
 	ResolvedKeyMatch
 } from './types';
 import {
@@ -68,6 +70,7 @@ import {
 	lorebookRoleOf,
 	lorebookWasInjected,
 	resolveBookActivation,
+	resolveEntryRecursion,
 	resolveKeyMatch
 } from './types';
 
@@ -175,7 +178,7 @@ function sourceOf(source: LorebookScanSource): LorebookKeyMatch['source'] {
 		case 'field':
 			return { kind: 'field', field: source.field };
 		case 'entry':
-			return { kind: 'entry', entryId: source.entryId, title: source.title };
+			return { kind: 'entry', entryId: source.entryId, title: source.title, bookName: source.bookName };
 	}
 }
 
@@ -276,21 +279,6 @@ function passesProbability(entry: LorebookEntry, rng: () => number): boolean {
 	return rng() * 100 < entry.probability;
 }
 
-/** SillyTavern per-entry recursion flags ride in `rest`; read them leniently. */
-function restFlag(entry: LorebookEntry, key: string): boolean {
-	return entry.rest[key] === true;
-}
-
-/**
- * SillyTavern writes `delayUntilRecursion` as `true` OR as a numeric recursion level; either
- * form means "wait for recursion". Levels are not modelled here, so every delayed entry joins
- * the first recursion pass.
- */
-function waitsForRecursion(entry: LorebookEntry): boolean {
-	const v = entry.rest.delayUntilRecursion;
-	return v === true || (typeof v === 'number' && v > 0);
-}
-
 // ===== timed effects =====
 
 /**
@@ -332,46 +320,70 @@ function timedVerdict(entry: LorebookEntry, history: LorebookPastScan[]): TimedV
  * 0 = the whole chat), the card fields it opted into, and everything recursion has pulled in,
  * which is never windowed. Per entry rather than per book, because an entry's depth override
  * may reach further back than the book's.
+ *
+ * An entry that waits for recursion reads that last group alone: it asked to be woken by other
+ * entries, so the story text it would otherwise have matched is not an answer to that.
  */
 function sourcesFor(
 	entry: LorebookEntry,
 	sources: LorebookScanSource[],
-	bookScanDepth: number
+	bookScanDepth: number,
+	entriesOnly: boolean
 ): LorebookScanSource[] {
 	const depth = entry.scanDepth ?? bookScanDepth;
 	const fields = entry.scanFields;
 	return sources.filter((s) => {
+		if (s.kind === 'entry') return true;
+		if (entriesOnly) return false;
 		if (s.kind === 'message') return depth <= 0 || s.depth < depth;
-		if (s.kind === 'field') return !!fields?.includes(s.field);
-		return true;
+		return !!fields?.includes(s.field);
 	});
 }
 
 /** The verdicts a later recursion pass may overturn: the ones the keys themselves reached. */
 const REVISITABLE: readonly LorebookStatus[] = ['noMatch', 'filtered', 'delayed'];
 
-/** The firing entries of one book, in book order, with a record for every entry it holds. */
-function selectFromBook(
-	book: Lorebook,
+/** One entry with the book it came from, so a shared pass keeps every book's own settings. */
+interface PooledEntry {
+	book: Lorebook;
+	entry: LorebookEntry;
+	knobs: ResolvedActivation;
+}
+
+/**
+ * The firing entries of one pool of books, in pool order, with a record for every entry.
+ *
+ * A pool is a single book, or every book at once when recursion crosses them. What the pool
+ * shares is the sources and the loop; what it never shares is the settings, so an entry always
+ * matches under the book it was authored in. A book that does not recurse stays out of the
+ * recursion economy entirely: it is neither woken by another entry nor able to wake one.
+ */
+function selectFromBooks(
+	books: Lorebook[],
 	allSources: LorebookScanSource[],
 	rng: () => number,
 	settings: LorebookGlobalSettings,
 	trigger: LorebookTrigger,
 	history: LorebookPastScan[],
-	chatLength: number
+	chatLength: number,
+	expand: (text: string) => string,
+	maxSteps: number
 ): { entries: LorebookEntry[]; records: LorebookEntryRecord[] } {
-	const knobs = resolveBookActivation(book, settings);
-	const defaults: MatchDefaults = {
+	const pool: PooledEntry[] = books.flatMap((book) => {
+		const knobs = resolveBookActivation(book, settings);
+		return book.entries.map((entry) => ({ book, entry, knobs }));
+	});
+	const matchDefaults = ({ knobs }: PooledEntry): MatchDefaults => ({
 		caseSensitive: knobs.caseSensitive,
 		matchWholeWords: knobs.matchWholeWords
-	};
+	});
 	// Grows as recursion admits entries, so every later pass scans the chat AND everything
 	// already pulled in. Each entry then reads its own slice of it (`sourcesFor`).
 	const sources = [...allSources];
 
 	const records = new Map<string, LorebookEntryRecord>();
 	const write = (
-		entry: LorebookEntry,
+		{ book, entry }: PooledEntry,
 		status: LorebookStatus,
 		matches: LorebookKeyMatch[] = [],
 		probability?: number
@@ -399,67 +411,98 @@ function selectFromBook(
 		if (timed === 'cooldown') return 'cooldown';
 		// A sticky entry skips its keys AND its Trigger % roll: it already earned both on the
 		// turn that opened the window, and re-rolling would make the window fray at random.
+		// It comes before the recursion settings for the same reason: an open window is a
+		// decision an earlier turn already made, and none of them can overturn it.
 		if (timed === 'sticky') return 'sticky';
+		const recursion = resolveEntryRecursion(entry);
+		if (recursion.excludeRecursion && recursion.delayLevel > 0) return 'neverFires';
 		return null;
 	};
 
 	const active: LorebookEntry[] = [];
 
-	// Pass 1 reads the chat window. Constant entries always fire; delayUntilRecursion keyword
-	// entries sit out until the recursion pass.
-	let newly: LorebookEntry[] = [];
-	for (const entry of book.entries) {
+	// Pass 1 reads the chat window. Constant entries fire on sight; an entry waiting for
+	// recursion sits this pass out whatever its nature, which is what lets an always-active
+	// preamble arrive only once some lore has.
+	const newly: PooledEntry[] = [];
+	for (const pooled of pool) {
+		const { entry, knobs } = pooled;
 		const gated = gate(entry);
 		if (gated === 'sticky') {
-			write(entry, 'sticky');
+			write(pooled, 'sticky');
 			active.push(entry);
-			newly.push(entry);
+			newly.push(pooled);
 			continue;
 		}
 		if (gated) {
-			write(entry, gated);
+			write(pooled, gated);
 			continue;
 		}
-		if (!entry.constant && waitsForRecursion(entry)) {
-			write(entry, 'delayed');
+		if (resolveEntryRecursion(entry).delayLevel > 0) {
+			write(pooled, 'delayed');
 			continue;
 		}
 		const verdict = entry.constant
 			? ALWAYS
-			: evaluateKeys(entry, sourcesFor(entry, sources, knobs.scanDepth), defaults);
+			: evaluateKeys(entry, sourcesFor(entry, sources, knobs.scanDepth, false), matchDefaults(pooled));
 		if (!verdict.primaryHit) {
-			write(entry, 'noMatch');
+			write(pooled, 'noMatch');
 			continue;
 		}
 		if (!verdict.fired) {
-			write(entry, 'filtered', verdict.matches);
+			write(pooled, 'filtered', verdict.matches);
 			continue;
 		}
 		if (!passesProbability(entry, rng)) {
-			write(entry, 'rolledOut', verdict.matches, entry.probability);
+			write(pooled, 'rolledOut', verdict.matches, entry.probability);
 			continue;
 		}
-		write(entry, entry.constant ? 'constant' : 'keyword', verdict.matches);
+		write(pooled, entry.constant ? 'constant' : 'keyword', verdict.matches);
 		active.push(entry);
-		newly.push(entry);
+		newly.push(pooled);
 	}
 
-	if (knobs.recursiveScanning) {
-		// 0 = no cap: keep recursing until nothing new fires.
-		const maxSteps = knobs.maxRecursionSteps;
+	// Only the books that recurse take part; every other entry was settled by the pass above.
+	const recursing = pool.filter((p) => p.knobs.recursiveScanning);
+	if (recursing.length > 0) {
+		// The levels waiting above the first, lowest first. A level opens only once the ones
+		// below it have run dry, so a book staged into waves arrives a wave at a time instead
+		// of all at once on the first pass.
+		const waves = [...new Set(recursing.map((p) => resolveEntryRecursion(p.entry).delayLevel))]
+			.filter((level) => level > 1)
+			.sort((a, b) => a - b);
+		let level = 1;
 		let steps = 0;
-		while (newly.length > 0) {
+		// What this pass adds to the sources. An entry that wakes nobody still fires; only its
+		// content stays out. When nothing is left to add, the next wave opens against everything
+		// already gathered and gets one pass of its own.
+		let feed = newly.filter(
+			(p) => p.knobs.recursiveScanning && !resolveEntryRecursion(p.entry).preventRecursion
+		);
+		while (feed.length > 0 || waves.length > 0) {
+			// 0 = no cap: keep going until nothing new fires and no wave is left.
 			if (maxSteps > 0 && steps >= maxSteps) break;
+			if (feed.length === 0) {
+				const opened = waves.shift();
+				if (opened === undefined) break;
+				level = opened;
+			}
 			steps++;
-			// preventRecursion entries fire, but their content can't trigger others.
-			const additions = newly.filter((e) => !restFlag(e, 'preventRecursion'));
-			if (additions.length === 0) break;
-			for (const e of additions) {
-				sources.push({ kind: 'entry', entryId: e.id, title: e.comment, text: e.content });
+			for (const { book, entry } of feed) {
+				// Expanded like the card fields are, so an entry writing {{char}} is read as it
+				// reaches the model rather than as its own braces.
+				sources.push({
+					kind: 'entry',
+					entryId: entry.id,
+					title: entry.comment,
+					bookName: book.name,
+					text: expand(entry.content)
+				});
 			}
 
-			const next: LorebookEntry[] = [];
-			for (const entry of book.entries) {
+			const next: PooledEntry[] = [];
+			for (const pooled of recursing) {
+				const { entry, knobs } = pooled;
 				const decided = records.get(entry.id);
 				if (!decided) continue;
 				// Only a verdict the keys themselves reached can change when new text arrives.
@@ -467,28 +510,45 @@ function selectFromBook(
 				// (re-rolling every round would inflate the effective chance to 1-(1-p)^rounds),
 				// and the gate's answers do not depend on the sources at all.
 				if (!REVISITABLE.includes(decided.status)) continue;
-				if (entry.constant) continue;
-				if (restFlag(entry, 'excludeRecursion')) continue;
+				const recursion = resolveEntryRecursion(entry);
+				if (recursion.excludeRecursion) continue;
+				if (recursion.delayLevel > level) continue;
 
-				const verdict = evaluateKeys(entry, sourcesFor(entry, sources, knobs.scanDepth), defaults);
+				if (entry.constant) {
+					// The one constant that can still be undecided here is one held back by its
+					// delay. Recursion has now run, so it fires, and it fires without keys.
+					if (!passesProbability(entry, rng)) {
+						write(pooled, 'rolledOut', [], entry.probability);
+						continue;
+					}
+					write(pooled, 'constant');
+					active.push(entry);
+					next.push(pooled);
+					continue;
+				}
+
+				const verdict = evaluateKeys(
+					entry,
+					sourcesFor(entry, sources, knobs.scanDepth, recursion.delayLevel > 0),
+					matchDefaults(pooled)
+				);
 				if (!verdict.primaryHit) {
-					write(entry, 'noMatch');
+					write(pooled, 'noMatch');
 					continue;
 				}
 				if (!verdict.fired) {
-					write(entry, 'filtered', verdict.matches);
+					write(pooled, 'filtered', verdict.matches);
 					continue;
 				}
 				if (!passesProbability(entry, rng)) {
-					write(entry, 'rolledOut', verdict.matches, entry.probability);
+					write(pooled, 'rolledOut', verdict.matches, entry.probability);
 					continue;
 				}
-				write(entry, 'keyword', verdict.matches);
+				write(pooled, 'keyword', verdict.matches);
 				active.push(entry);
-				next.push(entry);
+				next.push(pooled);
 			}
-			if (next.length === 0) break;
-			newly = next;
+			feed = next.filter((p) => !resolveEntryRecursion(p.entry).preventRecursion);
 		}
 	}
 
@@ -604,6 +664,9 @@ export interface LorebookScanInput {
 	trigger?: LorebookTrigger;
 	/** What earlier generations on this path decided, newest first ({@link lorebookHistory}). */
 	history?: LorebookPastScan[];
+	/** Macro expansion for the content recursion feeds back in; identity when the caller has
+	 *  no context to expand against. */
+	expand?: (text: string) => string;
 }
 
 /**
@@ -615,21 +678,33 @@ export interface LorebookScanInput {
 export function scanLorebooks(input: LorebookScanInput): LorebookSelection {
 	const rng = input.rng ?? Math.random;
 	const history = input.history ?? [];
+	const settings = input.settings ?? DEFAULT_LOREBOOK_GLOBAL_SETTINGS;
 	const chatLength = input.sources.filter((s) => s.kind === 'message').length;
 	const entries: LorebookEntry[] = [];
 	const records = new Map<string, LorebookEntryRecord>();
-	for (const book of input.books) {
-		const picked = selectFromBook(
-			book,
+	const run = (pool: Lorebook[], maxSteps: number) => {
+		const picked = selectFromBooks(
+			pool,
 			input.sources,
 			rng,
-			input.settings ?? DEFAULT_LOREBOOK_GLOBAL_SETTINGS,
+			settings,
 			input.trigger ?? 'normal',
 			history,
-			chatLength
+			chatLength,
+			input.expand ?? ((t: string) => t),
+			maxSteps
 		);
 		entries.push(...picked.entries);
 		for (const record of picked.records) records.set(record.entryId, record);
+	};
+	if (settings.crossBookRecursion) {
+		// One loop over everything in play. A shared loop cannot honour a cap each book set for
+		// itself, so the global one governs while books recurse together.
+		run(input.books, settings.maxRecursionSteps);
+	} else {
+		for (const book of input.books) {
+			run([book], resolveBookActivation(book, settings).maxRecursionSteps);
+		}
 	}
 	// Groups are resolved across every book at once: a label names one idea, and two books
 	// carrying alternatives for it are exactly the case the feature is for.
@@ -763,7 +838,8 @@ export function resolveLorebooks(opts: {
 		rng: opts.rng,
 		settings: opts.settings,
 		trigger: opts.trigger,
-		history: opts.history
+		history: opts.history,
+		expand
 	});
 	const rendered = renderLorebookBlock(selection, expand, opts.budget, opts.placeAtDepth);
 	return {

@@ -226,7 +226,12 @@ describe('the trace', () => {
 		]);
 		const record = recordFor([b], [], 'Pack');
 		expect(record.status).toBe('keyword');
-		expect(record.matches[0].source).toEqual({ kind: 'entry', entryId: b.entries[0].id, title: 'Seed' });
+		expect(record.matches[0].source).toEqual({
+			kind: 'entry',
+			entryId: b.entries[0].id,
+			title: 'Seed',
+			bookName: 'Test'
+		});
 	});
 
 	test('records name the book they came from', () => {
@@ -623,45 +628,163 @@ describe('recursive scanning', () => {
 		expect(fired([b], [])).toEqual(['mentions beta', 'beta leads to gamma', 'gamma fact']);
 	});
 
-	test('preventRecursion: the entry fires but its content triggers nobody', () => {
+	test('wakes nobody: the entry fires but its content triggers no one', () => {
 		const b = book([
-			{ content: 'mentions beta', constant: true, order: 100, rest: { preventRecursion: true } },
+			{ content: 'mentions beta', constant: true, order: 100, preventRecursion: true },
 			{ content: 'beta fact', key: ['beta'], order: 200 }
 		]);
 		b.recursiveScanning = true;
 		expect(fired([b], [])).toEqual(['mentions beta']);
 	});
 
-	test('excludeRecursion: the entry can fire from chat but never from recursion', () => {
+	test('woken by the chat only: it can fire from chat but never from another entry', () => {
 		const b = book([
 			{ content: 'mentions beta', constant: true, order: 100 },
-			{ content: 'beta fact', key: ['beta'], order: 200, rest: { excludeRecursion: true } }
+			{ content: 'beta fact', key: ['beta'], order: 200, excludeRecursion: true }
 		]);
 		b.recursiveScanning = true;
 		expect(fired([b], [])).toEqual(['mentions beta']);
+		expect(fired([b], ['a beta appears'])).toEqual(['mentions beta', 'beta fact']);
 	});
 
-	test('delayUntilRecursion: sits out the chat pass, fires once recursion runs', () => {
-		const delayed = { content: 'delta fact', key: ['delta'], order: 200, rest: { delayUntilRecursion: true } };
-		// No seed activated in pass 1 → no recursion → the delayed entry stays silent.
+	test('woken by other entries only: the chat cannot wake it, another entry can', () => {
+		const delayed = { content: 'delta fact', key: ['delta'], order: 200, delayUntilRecursion: true };
+		// Nothing fired in pass 1, so recursion never runs and the delayed entry stays silent.
 		const solo = book([{ ...delayed }]);
 		solo.recursiveScanning = true;
 		expect(fired([solo], ['a delta appears'])).toHaveLength(0);
-		// A constant seed starts recursion; the buffer (which includes the chat) now reaches it.
-		const seeded = book([{ content: 'seed', constant: true, order: 100 }, { ...delayed }]);
+		// Recursion runs, but the key is only in the chat, which this entry no longer reads.
+		const unrelated = book([{ content: 'seed', constant: true, order: 100 }, { ...delayed }]);
+		unrelated.recursiveScanning = true;
+		expect(fired([unrelated], ['a delta appears'])).toEqual(['seed']);
+		// The key is in another entry's content, which is what it asked to be woken by.
+		const seeded = book([{ content: 'seed names delta', constant: true, order: 100 }, { ...delayed }]);
 		seeded.recursiveScanning = true;
-		expect(fired([seeded], ['a delta appears'])).toEqual(['seed', 'delta fact']);
+		expect(fired([seeded], [])).toEqual(['seed names delta', 'delta fact']);
 	});
 
-	test('delayUntilRecursion as a SillyTavern recursion level (a number) still delays', () => {
-		const delayed = { content: 'delta fact', key: ['delta'], order: 200, rest: { delayUntilRecursion: 2 } };
-		// Without recursion the numeric form must hold the entry back exactly like `true`.
+	test('a recursion level (a number) delays exactly like `true`', () => {
+		const delayed = { content: 'delta fact', key: ['delta'], order: 200, delayUntilRecursion: 2 };
 		const solo = book([{ ...delayed }]);
 		solo.recursiveScanning = false;
 		expect(fired([solo], ['a delta appears'])).toHaveLength(0);
-		const seeded = book([{ content: 'seed', constant: true, order: 100 }, { ...delayed }]);
+		const seeded = book([{ content: 'seed names delta', constant: true, order: 100 }, { ...delayed }]);
 		seeded.recursiveScanning = true;
-		expect(fired([seeded], ['a delta appears'])).toEqual(['seed', 'delta fact']);
+		expect(fired([seeded], [])).toEqual(['seed names delta', 'delta fact']);
+	});
+
+	test('the settings are read from either spelling an older row left in `rest`', () => {
+		// Native World Info spelling, the shape a pre-modelled import stored.
+		const native = book([
+			{ comment: 'Seed', content: 'mentions beta', constant: true, order: 100, rest: { preventRecursion: true } },
+			{ content: 'beta fact', key: ['beta'], order: 200 }
+		]);
+		expect(fired([native], [])).toEqual(['mentions beta']);
+		// The snake_case spelling a character card carries.
+		const card = book([
+			{ comment: 'Seed', content: 'mentions beta', constant: true, order: 100, rest: { prevent_recursion: true } },
+			{ content: 'beta fact', key: ['beta'], order: 200 }
+		]);
+		expect(fired([card], [])).toEqual(['mentions beta']);
+	});
+
+	test('a modelled `false` wins over a copy left in `rest`', () => {
+		const b = book([
+			{
+				content: 'mentions beta',
+				constant: true,
+				order: 100,
+				preventRecursion: false,
+				rest: { preventRecursion: true }
+			},
+			{ content: 'beta fact', key: ['beta'], order: 200 }
+		]);
+		expect(fired([b], [])).toEqual(['mentions beta', 'beta fact']);
+	});
+
+	test('waiting for recursion while refusing it leaves nothing that can fire it', () => {
+		const b = book([
+			{ content: 'seed names delta', constant: true, order: 100 },
+			{
+				comment: 'Dead',
+				content: 'delta fact',
+				key: ['delta'],
+				order: 200,
+				delayUntilRecursion: true,
+				excludeRecursion: true
+			}
+		]);
+		expect(fired([b], ['a delta appears'])).toEqual(['seed names delta']);
+		expect(recordFor([b], ['a delta appears'], 'Dead').status).toBe('neverFires');
+	});
+
+	test('an open sticky window overrules every recursion setting', () => {
+		const history: LorebookPastScan[] = [{ fired: new Set<string>() }];
+		const b = book([
+			{
+				comment: 'Held',
+				content: 'held fact',
+				key: ['nothing here'],
+				order: 100,
+				sticky: 2,
+				delayUntilRecursion: true,
+				excludeRecursion: true
+			}
+		]);
+		history[0].fired.add(b.entries[0].id);
+		const { records, entries } = scanLorebooks({ books: [b], sources: messageScanSources(['x']), history });
+		expect(entries.map((e) => e.content)).toEqual(['held fact']);
+		expect(records[0].status).toBe('sticky');
+	});
+
+	test('an always-active entry can wait for recursion, then fires without keys', () => {
+		const b = book([
+			{ content: 'preamble', constant: true, order: 50, delayUntilRecursion: true },
+			{ content: 'beta fact', key: ['beta'], order: 200 }
+		]);
+		// Nothing fires in pass 1, so recursion never starts and the preamble waits.
+		expect(fired([b], ['quiet turn'])).toHaveLength(0);
+		// Some lore fires, so the preamble joins it.
+		expect(fired([b], ['a beta appears'])).toEqual(['preamble', 'beta fact']);
+	});
+
+	test('a higher level waits for the ones below it to run dry, then still arrives', () => {
+		const b = book([
+			{ content: 'seed names alpha', constant: true, order: 100 },
+			{ content: 'alpha names beta', key: ['alpha'], order: 200, delayUntilRecursion: 1 },
+			{ content: 'beta fact', key: ['beta'], order: 300, delayUntilRecursion: 2 }
+		]);
+		expect(fired([b], [])).toEqual(['seed names alpha', 'alpha names beta', 'beta fact']);
+	});
+
+	test('a level the pass cap never reaches stays waiting', () => {
+		const entries = [
+			{ content: 'seed names alpha', constant: true, order: 100 },
+			{ content: 'alpha names beta', key: ['alpha'], order: 200, delayUntilRecursion: 1 },
+			{ comment: 'Wave two', content: 'beta fact', key: ['beta'], order: 300, delayUntilRecursion: 2 }
+		];
+		// Two passes: one lets the first wave in, the second finds nothing new. The second wave
+		// would have opened on a third pass, which the cap never allows.
+		const capped = book(entries);
+		capped.maxRecursionSteps = 2;
+		expect(fired([capped], [])).toEqual(['seed names alpha', 'alpha names beta']);
+		expect(recordFor([capped], [], 'Wave two').status).toBe('delayed');
+		// The same book without waves spends those two passes on both entries.
+		const flat = book(entries.map((e) => ({ ...e, delayUntilRecursion: e.delayUntilRecursion ? true : undefined })));
+		flat.maxRecursionSteps = 2;
+		expect(fired([flat], [])).toEqual(['seed names alpha', 'alpha names beta', 'beta fact']);
+	});
+
+	test('recursion reads entry content with its macros expanded', () => {
+		const b = book([
+			{ content: 'the {{char}} rules here', constant: true, order: 100 },
+			{ content: 'dragon fact', key: ['dragon'], order: 200 }
+		]);
+		const expand = (t: string) => t.replaceAll('{{char}}', 'dragon');
+		const raw = scanLorebooks({ books: [b], sources: messageScanSources([]) });
+		expect(raw.entries.map((e) => e.content)).toEqual(['the {{char}} rules here']);
+		const expanded = scanLorebooks({ books: [b], sources: messageScanSources([]), expand });
+		expect(expanded.entries.map((e) => e.content)).toEqual(['the {{char}} rules here', 'dragon fact']);
 	});
 
 	test('a lost roll is never re-rolled by a later recursion pass', () => {
@@ -826,5 +949,66 @@ describe('resolveLorebooks', () => {
 		const out = resolveLorebooks({ books: [], messages: ['anything'] });
 		expect(out.text).toBe('');
 		expect(out.trace).toEqual({ records: [], silent: 0 });
+	});
+});
+
+describe('recursion across books', () => {
+	const crossing: LorebookGlobalSettings = { ...DEFAULT_LOREBOOK_GLOBAL_SETTINGS, crossBookRecursion: true };
+	const seed = () => book([{ comment: 'Seed', content: 'the seed names beta', constant: true, order: 100 }], 'Seeds');
+	const target = () => book([{ comment: 'Beta', content: 'beta fact', key: ['beta'], order: 200 }], 'Lore');
+
+	test('off by default: an entry cannot wake one in another book', () => {
+		expect(fired([seed(), target()], [])).toEqual(['the seed names beta']);
+	});
+
+	test('on: it can, and the match names the book it was woken from', () => {
+		const books = [seed(), target()];
+		expect(fired(books, [], () => 0, crossing)).toEqual(['the seed names beta', 'beta fact']);
+		const { records } = scanLorebooks({ books, sources: messageScanSources([]), settings: crossing });
+		expect(records.find((r) => r.title === 'Beta')?.matches[0].source).toEqual({
+			kind: 'entry',
+			entryId: books[0].entries[0].id,
+			title: 'Seed',
+			bookName: 'Seeds'
+		});
+	});
+
+	test('a book that does not recurse neither wakes others nor is woken', () => {
+		const deaf = target();
+		deaf.recursiveScanning = false;
+		expect(fired([seed(), deaf], [], () => 0, crossing)).toEqual(['the seed names beta']);
+		const mute = seed();
+		mute.recursiveScanning = false;
+		expect(fired([mute, target()], [], () => 0, crossing)).toEqual(['the seed names beta']);
+	});
+
+	test('every entry still matches under the settings of its own book', () => {
+		const strict = book([{ content: 'strict fact', key: ['Beta'], order: 200 }], 'Strict');
+		strict.caseSensitive = true;
+		const loose = book([{ content: 'loose fact', key: ['Beta'], order: 300 }], 'Loose');
+		loose.caseSensitive = false;
+		// The waking text spells it lowercase, so only the book that ignores case is woken.
+		expect(fired([seed(), strict, loose], [], () => 0, crossing)).toEqual(['the seed names beta', 'loose fact']);
+	});
+
+	test('the global pass cap governs the shared loop', () => {
+		const chain = book(
+			[
+				{ content: 'seed names alpha', constant: true, order: 100 },
+				{ content: 'alpha names beta', key: ['alpha'], order: 200 }
+			],
+			'Chain'
+		);
+		// The book's own cap is inert while books recurse together: there is one loop to cap.
+		chain.maxRecursionSteps = 1;
+		expect(fired([chain, target()], [], () => 0, crossing)).toEqual([
+			'seed names alpha',
+			'alpha names beta',
+			'beta fact'
+		]);
+		expect(fired([chain, target()], [], () => 0, { ...crossing, maxRecursionSteps: 1 })).toEqual([
+			'seed names alpha',
+			'alpha names beta'
+		]);
 	});
 });

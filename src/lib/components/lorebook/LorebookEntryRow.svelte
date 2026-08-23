@@ -11,13 +11,19 @@
 		LOREBOOK_ROLES,
 		LOREBOOK_SCAN_FIELDS,
 		LOREBOOK_TRIGGERS,
+		delayValue,
+		lorebookWokenBy,
 		pruneKeyRules,
 		resolveBookActivation,
+		resolveEntryRecursion,
 		ST_POSITION_NAMES,
 		TRIGGER_ALIASES,
+		withoutStoredRecursion,
 		type LorebookKeyRules,
 		type LorebookScanField,
-		type LorebookTrigger
+		type LorebookTrigger,
+		type LorebookWokenBy,
+		type ResolvedRecursion
 	} from '$lib/lorebook/types';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { countTokens } from '$lib/tokenizer';
@@ -124,6 +130,70 @@
 		update({ triggers: next });
 	}
 
+	// ===== recursion: what may wake this entry, and what it wakes =====
+
+	let recursion = $derived(entry ? resolveEntryRecursion(entry) : null);
+	let wokenBy = $derived<LorebookWokenBy>(recursion ? lorebookWokenBy(recursion) : 'both');
+
+	/** What each reading is called. An always-active entry has no keys to place, so its own
+	 *  wording for the default says what being always active already means. */
+	const WOKEN_BY_LABELS: Record<LorebookWokenBy, string> = {
+		both: 'The chat and other entries',
+		chatOnly: 'The chat only',
+		entriesOnly: 'Other entries only',
+		never: 'Never (SillyTavern)'
+	};
+
+	let wokenByOptions = $derived.by(() => {
+		const offered: LorebookWokenBy[] = entry?.constant
+			? ['both', 'entriesOnly']
+			: ['both', 'chatOnly', 'entriesOnly'];
+		// A reading this entry's nature has no option for arrived with an import. Naming it beats
+		// showing an empty control, the same way a foreign placement is named rather than hidden.
+		if (!offered.includes(wokenBy)) offered.push(wokenBy);
+		return offered.map((id) => ({
+			id,
+			label: id === 'both' && entry?.constant ? 'Nothing, it is always in' : WOKEN_BY_LABELS[id]
+		}));
+	});
+
+	/**
+	 * Writing one of the three settles all three onto the entry and clears the copies an import
+	 * left in `rest`. Clearing them without writing all three would drop a setting the reader
+	 * never touched, since `rest` is where an older row still keeps it.
+	 */
+	function setRecursion(patch: Partial<ResolvedRecursion>) {
+		if (!entry || !recursion) return;
+		const next = { ...recursion, ...patch };
+		update({
+			excludeRecursion: next.excludeRecursion,
+			preventRecursion: next.preventRecursion,
+			delayUntilRecursion: delayValue(next.delayLevel),
+			rest: withoutStoredRecursion(entry.rest)
+		});
+	}
+
+	// The wave an entry waits for. Only ever shown while it waits for one, so the field's own
+	// floor is the first level rather than "off"; not waiting is a choice made on the Select.
+	let levelDraft = $state('');
+	$effect(() => {
+		levelDraft = String(Math.max(1, recursion?.delayLevel ?? 1));
+	});
+	function commitLevel(raw: string) {
+		levelDraft = raw;
+		if (/^\d+$/.test(raw.trim())) setRecursion({ delayLevel: Math.max(1, parseInt(raw, 10)) });
+	}
+
+	function setWokenBy(choice: LorebookWokenBy) {
+		// `never` is only ever read off an import; picking it back is not a state to write.
+		if (choice === 'never') return;
+		setRecursion({
+			excludeRecursion: choice === 'chatOnly',
+			// An imported level is kept, so choosing this again does not flatten it to the first.
+			delayLevel: choice === 'entriesOnly' ? Math.max(1, recursion?.delayLevel ?? 1) : 0
+		});
+	}
+
 	function setNature(next: Nature) {
 		if (next === 'off') update({ disable: true });
 		else update({ disable: false, constant: next === 'always' });
@@ -222,6 +292,13 @@
 			parts.push(entry.scanDepth === 0 ? 'scans the whole chat' : `scans ${entry.scanDepth} back`);
 		}
 		if (entry.scanFields?.length) parts.push(`${entry.scanFields.length} extra source${entry.scanFields.length === 1 ? '' : 's'}`);
+		if (wokenBy === 'chatOnly') parts.push('woken by the chat only');
+		else if (wokenBy === 'entriesOnly') {
+			const level = recursion?.delayLevel ?? 1;
+			parts.push(level > 1 ? `woken by other entries, level ${level}` : 'woken by other entries');
+		}
+		else if (wokenBy === 'never') parts.push('never fires');
+		if (recursion?.preventRecursion) parts.push('wakes nobody');
 		if (entry.triggers?.length) {
 			// Counted through the engine's own reader, so an imported alias token counts once and
 			// an unknown one (a kind this app never generates) honestly counts as nothing.
@@ -606,6 +683,69 @@
 											{field.label}
 										</button>
 									{/each}
+								</div>
+							</div>
+
+							<div>
+								<div class="ed-adv-label">
+									<label for="entry-woken-{entryId}" class="ed-label section-label !mb-0">Woken by</label>
+									<InfoTip
+										text="What may wake this entry: the story text, or the content of entries that already fired. A level stages that: the next one opens only once the level below it wakes nothing new."
+									/>
+								</div>
+								<div class="flex items-end gap-3 flex-wrap">
+									<Select
+										id="entry-woken-{entryId}"
+										value={wokenBy}
+										onchange={(e) => setWokenBy((e.target as HTMLSelectElement).value as LorebookWokenBy)}
+										variant="compact"
+										class="!w-auto"
+									>
+										{#each wokenByOptions as option (option.id)}
+											<option value={option.id}>{option.label}</option>
+										{/each}
+									</Select>
+									{#if wokenBy === 'entriesOnly'}
+										<label class="ed-timed">
+											<span class="ed-timed-name">Level</span>
+											<input
+												type="text"
+												inputmode="numeric"
+												value={levelDraft}
+												oninput={(e) => commitLevel((e.target as HTMLInputElement).value)}
+												onblur={() => (levelDraft = String(Math.max(1, recursion?.delayLevel ?? 1)))}
+												class="input-base w-14 px-2 py-1.5 font-mono text-sm text-text-primary text-center"
+											/>
+										</label>
+									{/if}
+								</div>
+								<!-- Not the knob's own help. Both lines are facts about THIS entry, and both name
+								     an entry that cannot fire, which is the absence hardest to explain. -->
+								{#if wokenBy === 'never'}
+									<p class="mt-1.5 text-xs font-ui text-text-muted">
+										SillyTavern has this entry waiting for another one to wake it while also refusing
+										to be woken, so nothing can fire it. Picking a source is a real change.
+									</p>
+								{:else if wokenBy === 'entriesOnly' && bookDefaults && !bookDefaults.recursiveScanning}
+									<p class="mt-1.5 text-xs font-ui text-text-muted">
+										This book never re-reads what fires, so nothing can wake this entry.
+									</p>
+								{/if}
+							</div>
+
+							<div>
+								<div class="ed-adv-label">
+									<span class="ed-label section-label !mb-0">Wakes others</span>
+									<InfoTip
+										text="When off, this entry's own content is never re-read, so it cannot pull other entries in."
+									/>
+								</div>
+								<div class="ed-cascade">
+									<Toggle
+										checked={!recursion?.preventRecursion}
+										label="Wakes others"
+										onchange={(next) => setRecursion({ preventRecursion: !next })}
+									/>
 								</div>
 							</div>
 
