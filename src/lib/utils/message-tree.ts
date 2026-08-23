@@ -85,22 +85,6 @@ export function findActivePath(messages: Message[], leafId: string): Message[] {
 }
 
 /**
- * The sibling index a new ROOT message takes in this chat: one past the highest already
- * there, so a generated opening lands after the seeded greetings instead of colliding with
- * the first one.
- *
- * Deliberately not `db.getNextSiblingIndex(null)`: that query has no chat filter, so for
- * parentless rows it answers with the highest root index in the whole database.
- */
-export function nextRootSiblingIndex(messages: Message[]): number {
-	let next = 0;
-	for (const message of messages) {
-		if (message.parentId === null && message.siblingIndex >= next) next = message.siblingIndex + 1;
-	}
-	return next;
-}
-
-/**
  * Find all sibling messages at a given node: every child of the same parent,
  * regardless of role. Siblings are the alternative continuations of the story from
  * that point: same-role ones are variants (swipes/regenerations), different-role ones

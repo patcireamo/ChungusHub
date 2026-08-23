@@ -109,7 +109,7 @@ class DatabaseService {
 	deleteMessageOnly(messageId: string): Promise<void> { return this.call('deleteMessageOnly', messageId); }
 	deleteMessageAndDescendants(messageId: string): Promise<void> { return this.call('deleteMessageAndDescendants', messageId); }
 	deleteDescendants(messageId: string): Promise<void> { return this.call('deleteDescendants', messageId); }
-	getNextSiblingIndex(parentId: string | null): Promise<number> { return this.call('getNextSiblingIndex', parentId); }
+	getNextSiblingIndex(chatId: string, parentId: string | null): Promise<number> { return this.call('getNextSiblingIndex', chatId, parentId); }
 
 	// ===== SETTINGS =====
 	getSetting(key: string): Promise<string | null> { return this.call('getSetting', key); }

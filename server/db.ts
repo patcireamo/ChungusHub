@@ -1750,7 +1750,7 @@ class ServerDatabase {
 		const tx = this.db.transaction(() => {
 			// Re-parented children join the new parent's existing children with fresh sibling
 			// indexes appended after them: two merging sibling sets must never share an index.
-			const base = this.getNextSiblingIndex(message.parentId);
+			const base = this.getNextSiblingIndex(message.chatId, message.parentId);
 			const children = this.select<{ id: string }[]>(
 				'SELECT id FROM messages WHERE parent_id = ? ORDER BY sibling_index ASC, created_at ASC',
 				[messageId]
@@ -1816,10 +1816,16 @@ class ServerDatabase {
 		this.dropOrphanedChatImages(paths);
 	}
 
-	getNextSiblingIndex(parentId: string | null): number {
+	/** The index a new child of `parentId` takes in `chatId`: one past the highest already in
+	 *  that sibling set, so it can never land on one that is still there.
+	 *
+	 *  `IS` rather than `=` so a root's NULL parent actually compares, and `chat_id` because
+	 *  every chat's roots carry the same NULL: without it a new chat's first root would be
+	 *  numbered off the highest root anywhere in the database. */
+	getNextSiblingIndex(chatId: string, parentId: string | null): number {
 		const result = this.select<{ max_index: number | null }[]>(
-			'SELECT MAX(sibling_index) as max_index FROM messages WHERE parent_id IS ?',
-			[parentId]
+			'SELECT MAX(sibling_index) as max_index FROM messages WHERE chat_id = ? AND parent_id IS ?',
+			[chatId, parentId]
 		);
 		const maxIndex = result[0]?.max_index;
 		return maxIndex !== null && maxIndex !== undefined ? maxIndex + 1 : 0;

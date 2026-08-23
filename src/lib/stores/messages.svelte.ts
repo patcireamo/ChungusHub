@@ -4,7 +4,7 @@ import { db } from '$lib/services/database';
 import { chatStore } from './chat.svelte';
 import { toastStore } from './toast.svelte';
 import { llmService } from '$lib/services/llm/provider';
-import { findActivePath, findDeepestLeafFromNode, nextRootSiblingIndex } from '$lib/utils/message-tree';
+import { findActivePath, findDeepestLeafFromNode } from '$lib/utils/message-tree';
 import { buildPromptMessages, type BuiltPrompt } from '$lib/utils/prompt-builder';
 import { joinContinuation } from '$lib/utils/continuation';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
@@ -58,7 +58,7 @@ class MessageStore {
 				attachments: attachments?.length ? attachments : null,
 				// The active leaf usually has no children, but after a cancelled "alternate"
 				// regenerate it can, so never collide with an existing sibling index.
-				siblingIndex: await db.getNextSiblingIndex(state.chat.activeLeafId)
+				siblingIndex: await db.getNextSiblingIndex(state.chat.id, state.chat.activeLeafId)
 			});
 
 			// Update active leaf and root if needed
@@ -132,7 +132,7 @@ class MessageStore {
 			tokenCalibration.record(result.model, countMessages(messages, result.model), result.usage.promptTokens);
 
 			// Get correct sibling index for branching support
-			const siblingIndex = await db.getNextSiblingIndex(parentId);
+			const siblingIndex = await db.getNextSiblingIndex(chatId, parentId);
 
 			const assistantMessage = await this.createMessage({
 				chatId,
@@ -220,7 +220,7 @@ class MessageStore {
 					break;
 
 				case 'create_branch': {
-					const nextSiblingIndex = await db.getNextSiblingIndex(message.parentId);
+					const nextSiblingIndex = await db.getNextSiblingIndex(state.chat.id, message.parentId);
 					const newMessage = await this.createMessage({
 						chatId: state.chat.id,
 						parentId: message.parentId,
@@ -875,11 +875,11 @@ class MessageStore {
 			// Teach the per-model token calibration from the provider's real prompt_tokens.
 			tokenCalibration.record(result.model, countMessages(messages, result.model), result.usage.promptTokens);
 
-			// Fresh rows AND a fresh chat, never the snapshots read before the call: the standing
-			// rule for long operations, and here they decide where the new root lands and whether
-			// it is the first one. A stale root pointer read before a remote delete would leave
-			// the chat naming a row that is gone, which renders as an empty transcript.
-			const existing = await db.getMessagesByChat(state.chat.id);
+			// Both read fresh, never the snapshots taken before the call: the standing rule for
+			// long operations, and here they decide where the new root lands and whether it is
+			// the first one. A stale root pointer read before a remote delete would leave the
+			// chat naming a row that is gone, which renders as an empty transcript.
+			const rootIndex = await db.getNextSiblingIndex(state.chat.id, null);
 			const current = await db.getChat(state.chat.id);
 
 			// A root sibling, appended after whatever roots are already there. No user turn is
@@ -899,7 +899,7 @@ class MessageStore {
 				firstTokenMs: result.firstTokenMs,
 				reasoningMs: result.reasoningMs,
 				lorebook,
-				siblingIndex: nextRootSiblingIndex(existing)
+				siblingIndex: rootIndex
 			});
 
 			// The reader asked for this beginning, so it is the one they land on. `rootMessageId`
@@ -952,7 +952,7 @@ class MessageStore {
 			parentId: state.chat.activeLeafId,
 			role,
 			content,
-			siblingIndex: await db.getNextSiblingIndex(state.chat.activeLeafId)
+			siblingIndex: await db.getNextSiblingIndex(state.chat.id, state.chat.activeLeafId)
 		});
 
 		if (!state.chat.rootMessageId) {
