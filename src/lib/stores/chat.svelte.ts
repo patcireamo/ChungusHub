@@ -1,4 +1,4 @@
-import type { Chat, Message, MessageNode, ChatState, ChatStream } from '$lib/types/chat';
+import type { Chat, Message, ChatState, ChatStream } from '$lib/types/chat';
 import {
 	normalizeChatFeatureState,
 	pushSteeringHistoryEntry,
@@ -6,7 +6,7 @@ import {
 	type ImpersonatePerspective
 } from '$lib/types/chat';
 import { db } from '$lib/services/database';
-import { buildMessageTree, findActivePath } from '$lib/utils/message-tree';
+import { findActivePath } from '$lib/utils/message-tree';
 import { formatDate } from '$lib/utils/date';
 import { convertSillyTavernChat } from '$lib/services/sillyTavernChatImport';
 import { toastStore } from '$lib/stores/toast.svelte';
@@ -188,16 +188,13 @@ class ChatStore {
 		// last touched at its last, so imported stories sort by when they were actually played.
 		const createdAt = converted.messages[0].createdAt;
 		const updatedAt = converted.messages[converted.messages.length - 1].createdAt;
-		// Insert the chat with null root/leaf first: chats.root_message_id references a
-		// message row, so the messages must land before we can point at them (same
-		// ordering as createChat → seedCharacterGreetings).
 		const chat: Chat = {
 			id: chatId,
 			title: this.generateChatTitle(characterId, createdAt),
 			createdAt,
 			updatedAt,
-			rootMessageId: null,
-			activeLeafId: null,
+			rootMessageId: converted.rootMessageId,
+			activeLeafId: converted.activeLeafId,
 			canonLeafId: null,
 			settings: null,
 			characterId,
@@ -206,18 +203,10 @@ class ChatStore {
 			featureState: null
 		};
 
-		await db.insertChat(chat);
-		// Rows are already parent-first (roots emitted before their children), so the
-		// foreign-key parent_id references resolve as we go.
-		for (const message of converted.messages) {
-			await db.insertMessage(message);
-		}
-		await db.updateChat(
-			{ id: chatId, rootMessageId: converted.rootMessageId, activeLeafId: converted.activeLeafId },
-			{ touchUpdatedAt: false }
-		);
-		chat.rootMessageId = converted.rootMessageId;
-		chat.activeLeafId = converted.activeLeafId;
+		// One atomic call, not a row-per-request loop: a long story is thousands of turns, and
+		// half of one landing is worse than none of it. The rows are already parent-first
+		// (roots before their children), which is what lets the parent_id keys resolve in order.
+		await db.importChat(chat, converted.messages);
 
 		this.chats = [chat, ...this.chats];
 		chatCastStore.setForChat(chatId, characterId);
@@ -254,8 +243,20 @@ class ChatStore {
 		if (this.activeChatId === chatId && this.currentChatState) return;
 		// Persist any pending lorebook edits before leaving.
 		await lorebookStore.flush();
+		const previousChatId = this.activeChatId;
 		this.activeChatId = chatId;
-		await this.loadChatState(chatId);
+		try {
+			await this.loadChatState(chatId);
+		} catch (e) {
+			// The id is claimed before the load, so a failure leaves the store naming a chat
+			// whose state never arrived. Left there, the guard above reads that pair as
+			// "already open" and swallows every retry: the row goes dead until a reload, with
+			// nothing on screen saying why. Put the reader back where they were and say it.
+			this.activeChatId = previousChatId;
+			if (previousChatId === null) uiStore.openWelcome();
+			toastStore.failed('open that chat', e);
+			throw e;
+		}
 	}
 
 	async loadChatState(chatId: string): Promise<void> {
@@ -265,12 +266,10 @@ class ChatStore {
 		}
 
 		const messages = await db.getMessagesByChat(chatId);
-		const messageTree = chat.rootMessageId ? buildMessageTree(messages, chat.activeLeafId) : null;
 		const activePath = chat.activeLeafId ? findActivePath(messages, chat.activeLeafId) : [];
 
 		this.currentChatState = {
 			chat,
-			messageTree,
 			activePath,
 			allMessages: messages
 		};

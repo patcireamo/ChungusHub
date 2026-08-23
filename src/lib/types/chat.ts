@@ -213,18 +213,14 @@ export interface Message {
 	siblingIndex: number;
 }
 
-/** Message with computed tree properties for UI rendering */
-export interface MessageNode extends Message {
-	children: MessageNode[];
-	siblingCount: number;
-	isOnActivePath: boolean;
-	depth: number;
-}
-
-/** Current state of an active chat */
+/** Current state of an active chat.
+ *
+ *  Both message fields are FLAT, and deliberately so: every surface reads either the
+ *  branch on screen (`activePath`) or the whole forest (`allMessages`), and each resolves
+ *  the parent links it needs for itself. A materialized tree here would be rebuilt on
+ *  every open, every landed reply and every sync, for readers that do not exist. */
 export interface ChatState {
 	chat: Chat;
-	messageTree: MessageNode | null;
 	activePath: Message[];
 	allMessages: Message[];
 }

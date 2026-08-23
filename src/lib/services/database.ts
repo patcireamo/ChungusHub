@@ -29,6 +29,12 @@ class DatabaseService {
 	getAllChats(): Promise<Chat[]> { return this.call('getAllChats'); }
 	getChat(id: string): Promise<Chat | null> { return this.call('getChat', id); }
 	insertChat(chat: Chat): Promise<void> { return this.call('insertChat', chat); }
+	/** An imported chat and its whole message forest in one atomic call. `messages` must be
+	 *  parent-first. Never a loop of `insertChat` + `insertMessage`: that is one round trip and
+	 *  one sync hint per turn, and it can leave a pointerless chat behind if it stops halfway. */
+	importChat(chat: Chat, messages: Message[]): Promise<void> {
+		return this.call('importChat', chat, messages);
+	}
 	updateChat(chat: Partial<Chat> & { id: string }, options: { touchUpdatedAt?: boolean } = {}): Promise<void> {
 		return this.call('updateChat', chat, options);
 	}

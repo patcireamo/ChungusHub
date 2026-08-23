@@ -138,6 +138,21 @@ interface Migration {
 	sql: string;
 }
 
+/** A chat row as a caller hands it in, shared by the two doors that create one. */
+interface NewChatRow {
+	id: string;
+	title: string;
+	createdAt: number;
+	updatedAt: number;
+	rootMessageId: string | null;
+	activeLeafId: string | null;
+	canonLeafId?: string | null;
+	settings: unknown;
+	characterId?: string | null;
+	characterVersionId?: string | null;
+	isFavorite?: boolean;
+}
+
 /**
  * One attached file as STORED: the shape both sides speak (shared/assistant-files.ts) plus
  * the one field only this side may know. The path never leaves the server: a file is
@@ -655,19 +670,7 @@ class ServerDatabase {
 		return rows[0] ? this.mapChat(rows[0]) : null;
 	}
 
-	insertChat(chat: {
-		id: string;
-		title: string;
-		createdAt: number;
-		updatedAt: number;
-		rootMessageId: string | null;
-		activeLeafId: string | null;
-		canonLeafId?: string | null;
-		settings: unknown;
-		characterId?: string | null;
-		characterVersionId?: string | null;
-		isFavorite?: boolean;
-	}): void {
+	insertChat(chat: NewChatRow): void {
 		this.execute(
 			`INSERT INTO chats (id, title, created_at, updated_at, root_message_id, active_leaf_id, canon_leaf_id, settings_json, character_id, character_version_id, is_favorite)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -685,6 +688,38 @@ class ServerDatabase {
 				chat.isFavorite ? 1 : 0
 			]
 		);
+	}
+
+	/**
+	 * Land an imported chat whole: the chat row, every message, and the pointers into them,
+	 * in one transaction. Returns nothing; the caller already knows the ids it sent.
+	 *
+	 * A story imported row by row over the RPC bridge is one round trip, one autocommit and
+	 * one sync broadcast PER TURN, so a long chat takes minutes and tells every other device
+	 * about it thousands of times. The real damage is that the pointers are written last: a
+	 * tab closed partway leaves the messages behind under a chat with no root and no leaf,
+	 * which lists with a message count and opens empty, and nothing ever cleans it up. Here
+	 * an interrupted import leaves nothing at all, which is the outcome a retry can act on.
+	 *
+	 * `messages` must be parent-first (a row before any row naming it as parent): parent_id
+	 * is a foreign key checked per row, and the converter already emits them that way.
+	 */
+	importChat(chat: NewChatRow, messages: Record<string, unknown>[]): void {
+		this.inTransaction(() => {
+			// root_message_id and active_leaf_id are foreign keys into messages, so the chat
+			// lands pointing nowhere and claims its pointers once the rows exist.
+			this.insertChat({ ...chat, rootMessageId: null, activeLeafId: null, canonLeafId: null });
+			for (const message of messages) this.insertMessage(message);
+			this.updateChat(
+				{
+					id: chat.id,
+					rootMessageId: chat.rootMessageId,
+					activeLeafId: chat.activeLeafId,
+					canonLeafId: chat.canonLeafId ?? null
+				},
+				{ touchUpdatedAt: false }
+			);
+		});
 	}
 
 	/** Star/unstar a chat. Never touches updated_at: favoriting is bookkeeping, not
@@ -3071,6 +3106,10 @@ export const serverDb = new ServerDatabase();
 // is a compile error here rather than a device that quietly stops refreshing.
 export const MUTATION_SCOPES: Record<string, SyncScope> = {
 	insertChat: 'chats',
+	// Writes messages too, but carries 'chats' for the same reason duplicateChat does: the
+	// whole story arrives at once, and a chat-list reload is what another device needs. It is
+	// also the point of the method that this is ONE hint rather than one per turn.
+	importChat: 'chats',
 	updateChat: 'chats',
 	updateChatActiveLeaf: 'chats',
 	updateChatFavorite: 'chats',

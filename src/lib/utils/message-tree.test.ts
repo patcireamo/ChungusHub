@@ -8,7 +8,14 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { Message } from '$lib/types/chat';
-import { canSpliceMessage, collectSubtree, findSiblings, subtreeBlastRadius } from './message-tree';
+import {
+	canSpliceMessage,
+	collectSubtree,
+	findActivePath,
+	findDeepestLeafFromNode,
+	findSiblings,
+	subtreeBlastRadius
+} from './message-tree';
 
 /** Minimal message rows for a tree given as [id, parentId] pairs. */
 function tree(pairs: [string, string | null][]): Message[] {
@@ -127,5 +134,54 @@ describe('findSiblings', () => {
 
 	test('an unknown id yields an empty list', () => {
 		expect(findSiblings(FORKED, 'ghost')).toEqual([]);
+	});
+});
+
+describe('findActivePath', () => {
+	test('reads root first, whichever branch the leaf sits on', () => {
+		expect(findActivePath(FORKED, 'c').map((m) => m.id)).toEqual(['r', 'a', 'b', 'c']);
+		expect(findActivePath(FORKED, 'e').map((m) => m.id)).toEqual(['r', 'a', 'd', 'e']);
+	});
+
+	test('a leaf nobody has stops at what it can reach', () => {
+		expect(findActivePath(FORKED, 'ghost')).toEqual([]);
+		// A chain hanging off a deleted parent yields the surviving stretch, not nothing.
+		expect(findActivePath(tree([['orphan', 'gone']]), 'orphan').map((m) => m.id)).toEqual(['orphan']);
+	});
+});
+
+/**
+ * A chat is a parent-chain, so its depth is the length of the conversation and grows without
+ * bound. Two shapes of code turn that length into a failure and both are silent in the file
+ * that writes them: a walk that recurses makes stack depth user data (a long enough story
+ * throws RangeError, and the engine's ceiling moves with JIT state, so the same chat opens on
+ * one page load and not the next), and a per-turn `unshift`/`splice` makes opening a chat cost
+ * the square of its length.
+ *
+ * The size below is far past what any engine allows a recursive walk, so no recursive
+ * implementation of these helpers can pass it on any runtime. It runs in well under a second,
+ * which is itself the second half of the claim.
+ */
+describe('depth is user data, so no walk may recurse or re-seat', () => {
+	const DEPTH = 100_000;
+	const CHAIN: Message[] = tree(
+		Array.from({ length: DEPTH }, (_, i) => [`m${i}`, i === 0 ? null : `m${i - 1}`] as [string, string | null])
+	);
+	const LEAF = `m${DEPTH - 1}`;
+
+	test('the whole branch resolves, root first', () => {
+		const path = findActivePath(CHAIN, LEAF);
+		expect(path).toHaveLength(DEPTH);
+		expect(path[0].id).toBe('m0');
+		expect(path[DEPTH - 1].id).toBe(LEAF);
+	});
+
+	test('the subtree helpers behind every delete confirmation resolve', () => {
+		expect(collectSubtree(CHAIN, 'm0')).toHaveLength(DEPTH);
+		expect(subtreeBlastRadius(CHAIN, 'm0')).toEqual({ messages: DEPTH, branches: 1 });
+	});
+
+	test('navigation reaches the end of the branch', () => {
+		expect(findDeepestLeafFromNode(CHAIN, 'm0')).toBe(LEAF);
 	});
 });

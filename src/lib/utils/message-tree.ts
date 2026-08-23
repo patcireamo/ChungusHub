@@ -1,65 +1,13 @@
-import type { Message, MessageNode } from '$lib/types/chat';
-
 /**
- * Build a tree structure from flat message array.
- * Marks which nodes are on the active path from root to activeLeafId.
+ * Pure helpers over the flat message rows of a chat.
+ *
+ * **Nothing here may recurse over the tree.** A chat's depth is the length of the
+ * conversation, so recursion depth becomes user data: a story long enough overflows the
+ * call stack, and the browser's ceiling moves with JIT state, so the same chat can work
+ * on one page load and not the next. Every walk below is an explicit loop, and any new
+ * one is too. Same rule, same reason, in `story-map-layout.ts`.
  */
-export function buildMessageTree(
-	messages: Message[],
-	activeLeafId: string | null
-): MessageNode | null {
-	if (messages.length === 0) return null;
-
-	// Build lookup maps
-	const messageMap = new Map<string, Message>();
-	const childrenMap = new Map<string | null, Message[]>();
-
-	for (const msg of messages) {
-		messageMap.set(msg.id, msg);
-
-		const siblings = childrenMap.get(msg.parentId) ?? [];
-		siblings.push(msg);
-		childrenMap.set(msg.parentId, siblings);
-	}
-
-	// Sort siblings by sibling_index
-	for (const siblings of childrenMap.values()) {
-		siblings.sort((a, b) => a.siblingIndex - b.siblingIndex);
-	}
-
-	// Find active path (walk up from leaf to root)
-	const activePathIds = new Set<string>();
-	if (activeLeafId) {
-		let currentId: string | null = activeLeafId;
-		while (currentId) {
-			activePathIds.add(currentId);
-			const msg = messageMap.get(currentId);
-			currentId = msg?.parentId ?? null;
-		}
-	}
-
-	// Build tree recursively
-	function buildNode(message: Message, depth: number): MessageNode {
-		const children = childrenMap.get(message.id) ?? [];
-		const parentChildren = childrenMap.get(message.parentId) ?? [];
-
-		return {
-			...message,
-			children: children.map((child) => buildNode(child, depth + 1)),
-			siblingCount: parentChildren.length,
-			isOnActivePath: activePathIds.has(message.id),
-			depth
-		};
-	}
-
-	// Find root messages (no parent)
-	const roots = childrenMap.get(null) ?? [];
-	if (roots.length === 0) return null;
-
-	// Return the root that's on the active path, or first root
-	const activeRoot = roots.find((r) => activePathIds.has(r.id)) ?? roots[0];
-	return buildNode(activeRoot, 0);
-}
+import type { Message } from '$lib/types/chat';
 
 /**
  * Extract the linear path from root to a specific leaf.
@@ -71,17 +19,20 @@ export function findActivePath(messages: Message[], leafId: string): Message[] {
 		messageMap.set(msg.id, msg);
 	}
 
+	// The walk runs leaf→root and the caller wants root→leaf. Collected by appending and
+	// reversed once, rather than unshifted per turn: unshift re-seats the whole array on
+	// every step, which makes opening a chat cost the square of its length.
 	const path: Message[] = [];
 	let currentId: string | null = leafId;
 
 	while (currentId) {
 		const message = messageMap.get(currentId);
 		if (!message) break;
-		path.unshift(message);
+		path.push(message);
 		currentId = message.parentId;
 	}
 
-	return path;
+	return path.reverse();
 }
 
 /**

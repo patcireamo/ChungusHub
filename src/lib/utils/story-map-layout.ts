@@ -19,6 +19,12 @@
  * Coordinates come out in grid units (integer `depth` rows, `col` columns where leaves land on
  * integers and parents on the midpoint of their children). The view multiplies by its own
  * spacing to get pixels, keeping this module free of any rendering concern (and unit-testable).
+ *
+ * **All three walks are explicit-stack, and must stay that way.** The tree is as deep as the
+ * conversation is long, so a recursive walk makes recursion depth user data: a long story
+ * overflows the call stack and the map goes blank. The browser's ceiling also moves with JIT
+ * state, so the same chat can draw on one page load and not the next. Same rule, same reason,
+ * in `message-tree.ts`.
  */
 
 import type { Message, BranchLabel } from '$lib/types/chat';
@@ -185,31 +191,55 @@ function apportion(v: LNode, defaultAncestor: LNode): LNode {
 	return defaultAncestor;
 }
 
-function firstWalk(v: LNode): void {
-	if (v.children.length === 0) {
-		const w = leftSibling(v);
-		v.prelim = w ? w.prelim + DISTANCE : 0;
-		return;
-	}
-	let defaultAncestor = v.children[0];
-	for (const child of v.children) {
-		firstWalk(child);
-		defaultAncestor = apportion(child, defaultAncestor);
-	}
-	executeShifts(v);
-	const midpoint = (v.children[0].prelim + v.children[v.children.length - 1].prelim) / 2;
-	const w = leftSibling(v);
-	if (w) {
-		v.prelim = w.prelim + DISTANCE;
-		v.mod = v.prelim - midpoint;
-	} else {
-		v.prelim = midpoint;
+function firstWalk(root: LNode): void {
+	const stack: { v: LNode; next: number; defaultAncestor: LNode }[] = [
+		{ v: root, next: 0, defaultAncestor: root }
+	];
+
+	while (stack.length > 0) {
+		const frame = stack[stack.length - 1];
+		const kids = frame.v.children;
+
+		if (kids.length === 0) {
+			const w = leftSibling(frame.v);
+			frame.v.prelim = w ? w.prelim + DISTANCE : 0;
+			stack.pop();
+			continue;
+		}
+
+		// Re-entering a frame means the child before `next` has just finished its own walk,
+		// and apportioning it belongs HERE, before the next child starts: it can shift that
+		// child's subtree, which the next one then measures itself against. Hoisting the
+		// apportion pass out of the descent would silently change the packing.
+		frame.defaultAncestor =
+			frame.next === 0 ? kids[0] : apportion(kids[frame.next - 1], frame.defaultAncestor);
+
+		if (frame.next < kids.length) {
+			const child = kids[frame.next++];
+			stack.push({ v: child, next: 0, defaultAncestor: child });
+			continue;
+		}
+
+		executeShifts(frame.v);
+		const midpoint = (kids[0].prelim + kids[kids.length - 1].prelim) / 2;
+		const w = leftSibling(frame.v);
+		if (w) {
+			frame.v.prelim = w.prelim + DISTANCE;
+			frame.v.mod = frame.v.prelim - midpoint;
+		} else {
+			frame.v.prelim = midpoint;
+		}
+		stack.pop();
 	}
 }
 
-function secondWalk(v: LNode, m: number): void {
-	v.x = v.prelim + m;
-	for (const child of v.children) secondWalk(child, m + v.mod);
+function secondWalk(root: LNode): void {
+	const stack: { v: LNode; m: number }[] = [{ v: root, m: 0 }];
+	while (stack.length > 0) {
+		const { v, m } = stack.pop()!;
+		v.x = v.prelim + m;
+		for (const child of v.children) stack.push({ v: child, m: m + v.mod });
+	}
 }
 
 export function layoutStoryTree(
@@ -259,34 +289,37 @@ export function layoutStoryTree(
 		return l;
 	};
 
+	const virtual = makeL('__virtual__');
+	virtual.depth = -1;
+
 	const seen = new Set<string>();
-	function build(msg: Message, parent: LNode, depth: number): LNode | null {
-		if (seen.has(msg.id)) return null;
+	const pending: { msg: Message; parent: LNode; depth: number }[] = [];
+	for (let i = roots.length - 1; i >= 0; i--) {
+		pending.push({ msg: roots[i], parent: virtual, depth: 0 });
+	}
+	// Children are pushed in reverse so they pop in sibling order, which is the order they
+	// then take in their parent's child list.
+	while (pending.length > 0) {
+		const { msg, parent, depth } = pending.pop()!;
+		if (seen.has(msg.id)) continue;
 		seen.add(msg.id);
 		const l = makeL(msg.id);
 		l.parent = parent;
 		l.depth = depth;
 		lnodes.set(msg.id, l);
-		for (const k of childrenOf.get(msg.id) ?? []) {
-			const cl = build(k, l, depth + 1);
-			if (cl) l.children.push(cl);
+		parent.children.push(l);
+		const kids = childrenOf.get(msg.id) ?? [];
+		for (let i = kids.length - 1; i >= 0; i--) {
+			pending.push({ msg: kids[i], parent: l, depth: depth + 1 });
 		}
-		l.children.forEach((c, i) => (c.number = i + 1));
-		return l;
-	}
-
-	const virtual = makeL('__virtual__');
-	virtual.depth = -1;
-	for (const r of roots) {
-		const rl = build(r, virtual, 0);
-		if (rl) virtual.children.push(rl);
 	}
 	virtual.children.forEach((c, i) => (c.number = i + 1));
+	for (const l of lnodes.values()) l.children.forEach((c, i) => (c.number = i + 1));
 
 	if (virtual.children.length === 0) return { nodes: [], edges: [], columns: 0, rows: 0 };
 
 	firstWalk(virtual);
-	secondWalk(virtual, 0);
+	secondWalk(virtual);
 
 	// Normalize so the leftmost real node sits at column 0.
 	let minX = Infinity;

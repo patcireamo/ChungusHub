@@ -144,3 +144,42 @@ describe('layoutStoryTree', () => {
 		expect(g.edges.some((e) => e.to === 'orphan')).toBe(false);
 	});
 });
+
+/**
+ * A chat is a parent-chain, so its depth is the length of the conversation and grows without
+ * bound. A walk that recurses therefore turns story length into stack depth, and a long enough
+ * story takes the map down with a RangeError instead of drawing. Worse, the engine's ceiling
+ * moves with JIT state, so the same chat draws on one page load and not the next.
+ *
+ * The size below is far past what any engine allows a recursive walk: the deepest recursion
+ * measured here survived ~24,000 frames on JSC and ~4,000 on V8 cold. So this cannot be passed
+ * by a recursive implementation of `build`, `firstWalk` or `secondWalk` on any runtime, which
+ * is the point: it fails loudly the moment one comes back.
+ */
+describe('depth is user data, so no walk may recurse', () => {
+	const DEPTH = 100_000;
+	const chain = (i: number) => m(`m${i}`, i === 0 ? null : `m${i - 1}`);
+
+	test('a chat far deeper than any call stack still lays out', () => {
+		const msgs = Array.from({ length: DEPTH }, (_, i) => chain(i));
+		const g = layoutStoryTree(msgs, `m${DEPTH - 1}`, null);
+		expect(g.nodes).toHaveLength(DEPTH);
+		expect(g.rows).toBe(DEPTH);
+		expect(g.columns).toBe(1);
+		expect(g.nodes.every((n) => n.onActivePath)).toBe(true);
+	});
+
+	test('the same depth with swipes along it, which is what reaches the packing pass', () => {
+		// A pure chain never has a left sibling, so it never reaches `apportion`. Forking every
+		// hundredth turn puts the contour packing deep inside the walk as well.
+		const msgs = [];
+		for (let i = 0; i < DEPTH; i++) {
+			msgs.push(chain(i));
+			if (i > 0 && i % 100 === 0) msgs.push(m(`s${i}`, `m${i - 1}`, 1));
+		}
+		const g = layoutStoryTree(msgs, `m${DEPTH - 1}`, null);
+		expect(g.nodes).toHaveLength(msgs.length);
+		expect(g.rows).toBe(DEPTH);
+		expect(g.nodes.filter((n) => n.onActivePath)).toHaveLength(DEPTH);
+	});
+});
