@@ -308,6 +308,25 @@ describe('a chat that holds anything the user put there is left alone', () => {
 		expect(setGreetings(characterId, 'Rewritten.')).toEqual([]);
 		expect(contentsOf(chatId)).toEqual(['You again.', 'A branch I wrote myself.']);
 	});
+
+	test('a generated opening scene stops it, and deleting it hands the chat back', () => {
+		const characterId = makeCharacter('You again.', ['The tower is quiet.']);
+		const chatId = seedChat(characterId, ['You again.', 'The tower is quiet.']);
+		// Exactly what the Opening Scene engine writes: one more root sibling, appended after
+		// the greetings. The card must not reach a chat holding a beginning the reader asked
+		// for and paid for, and the row count alone is what says so.
+		const opening = addMessage(chatId, null, 'assistant', 'Rain on the stairs.', 2);
+		serverDb.updateChat({ id: chatId, activeLeafId: opening });
+
+		expect(setGreetings(characterId, 'Rewritten.', ['The tower is quiet.'])).toEqual([]);
+		expect(contentsOf(chatId)).toEqual(['You again.', 'The tower is quiet.', 'Rain on the stairs.']);
+
+		// Throw the generated opening away and the rows are the claim again, so the mirror
+		// resumes on its own: nothing has to be rewritten to hand the chat back.
+		serverDb.deleteMessageAndDescendants(opening);
+		expect(setGreetings(characterId, 'Rewritten again.', ['The tower is quiet.'])).toEqual([chatId]);
+		expect(contentsOf(chatId)).toEqual(['Rewritten again.', 'The tower is quiet.']);
+	});
 });
 
 describe('scope: only the variant that actually changed', () => {

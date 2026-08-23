@@ -8,7 +8,13 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { Message } from '$lib/types/chat';
-import { canSpliceMessage, collectSubtree, findSiblings, subtreeBlastRadius } from './message-tree';
+import {
+	canSpliceMessage,
+	collectSubtree,
+	findSiblings,
+	nextRootSiblingIndex,
+	subtreeBlastRadius
+} from './message-tree';
 
 /** Minimal message rows for a tree given as [id, parentId] pairs. */
 function tree(pairs: [string, string | null][]): Message[] {
@@ -127,5 +133,36 @@ describe('findSiblings', () => {
 
 	test('an unknown id yields an empty list', () => {
 		expect(findSiblings(FORKED, 'ghost')).toEqual([]);
+	});
+});
+
+describe('nextRootSiblingIndex', () => {
+	/** Root rows at the given sibling indexes, plus one child that must never count. */
+	function roots(indexes: number[]): Message[] {
+		const rows = tree([...indexes.map((_, i) => ['g' + i, null] as [string, null]), ['child', 'g0']]);
+		indexes.forEach((index, i) => {
+			rows[i].siblingIndex = index;
+		});
+		return rows;
+	}
+
+	test('an empty chat starts at 0', () => {
+		expect(nextRootSiblingIndex([])).toBe(0);
+	});
+
+	test('lands after the seeded greetings', () => {
+		expect(nextRootSiblingIndex(roots([0, 1, 2]))).toBe(3);
+	});
+
+	test('counts the highest index, not how many roots there are', () => {
+		// A deleted greeting leaves a gap, and reusing an index would put the new opening
+		// on top of one that is still there.
+		expect(nextRootSiblingIndex(roots([0, 4]))).toBe(5);
+	});
+
+	test('ignores everything below the roots', () => {
+		const rows = roots([0]);
+		rows[rows.length - 1].siblingIndex = 9;
+		expect(nextRootSiblingIndex(rows)).toBe(1);
 	});
 });

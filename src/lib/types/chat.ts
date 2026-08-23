@@ -243,6 +243,10 @@ export interface ChatStream {
 	/** Assistant turn a continue is streaming into: its bubble renders the live tail
 	 *  instead of the streaming indicator. Null while a fresh reply streams. */
 	continuingMessageId: string | null;
+	/** Set while an opening scene is being written. The transcript paints the streaming
+	 *  bubble ALONE: an opening is a new beginning beside the ones already there, not a
+	 *  turn after them, so leaving the path on screen would read as a reply to it. */
+	openingScene: boolean;
 }
 
 /** Action to take after editing a message */

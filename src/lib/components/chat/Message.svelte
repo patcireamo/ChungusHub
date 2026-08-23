@@ -3,6 +3,7 @@
 	import MessageActions from './MessageActions.svelte';
 	import MessageEditor from './MessageEditor.svelte';
 	import BranchNavigator from './BranchNavigator.svelte';
+	import OpeningScenePopover from './OpeningScenePopover.svelte';
 	import MessageReasoning from './MessageReasoning.svelte';
 	import MessageAvatar from './MessageAvatar.svelte';
 	import MessageMeta from './MessageMeta.svelte';
@@ -22,6 +23,7 @@
 	import { expandSelfRefs } from '$lib/macros';
 	import { personaStore } from '$lib/stores/persona.svelte';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
+	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { memoryStore } from '$lib/memory/store.svelte';
 	import { describeMemoryImpact } from '$lib/memory/impact-copy';
 	import { canSpliceMessage, collectSubtree, subtreeBlastRadius } from '$lib/utils/message-tree';
@@ -402,6 +404,23 @@
 	// and after a splice had left a user turn hanging there, the two became swipe variants of
 	// each other: 1 of 2 a user turn, 2 of 2 a reply. To re-roll from further back, branch the
 	// user turn there (the Branch action): the clone becomes the leaf and generates from it.
+	// Every root assistant turn is a BEGINNING: a seeded greeting, or an opening already
+	// written here. So "write another one" belongs in the same cluster as the arrows that walk
+	// between them, which is where the hand reaching for another opening already is. A root
+	// turn of the reader's own is their first line and gets no offer; /opening covers that.
+	const canWriteOpening = $derived(
+		message.parentId === null && message.role === 'assistant' && featurePromptsStore.openingSceneEnabled
+	);
+	let openingPopoverOpen = $state(false);
+
+	function handleGenerateOpening(direction: string) {
+		// The store toasts its own generation failures; only its throw-guards reach here, and
+		// the button is gated on the one this row can see.
+		void messageStore.generateOpeningScene(direction).catch((error) => {
+			toastStore.failed('generate the opening scene', error);
+		});
+	}
+
 	const showRegenerate = $derived(
 		isLast && (message.role === 'user' || (message.role === 'assistant' && message.parentId !== null))
 	);
@@ -828,12 +847,33 @@
 									</div>
 								{/if}
 							</div>
-							{#if siblingCount > 1}
+							{#if siblingCount > 1 || canWriteOpening}
 								<div
 									class="message-pager-slot"
-									class:message-actions-visible={showActions || cursored}
+									class:message-actions-visible={showActions || cursored || openingPopoverOpen}
 								>
-									<BranchNavigator current={siblingIndex} total={siblingCount} onNavigate={handleBranchNavigate} />
+									{#if siblingCount > 1}
+										<BranchNavigator current={siblingIndex} total={siblingCount} onNavigate={handleBranchNavigate} />
+									{/if}
+									{#if canWriteOpening}
+										<div class="opening-anchor">
+											<button
+												type="button"
+												class="opening-btn"
+												onclick={() => (openingPopoverOpen = true)}
+												disabled={messageStore.isStreaming}
+												aria-label="Write another opening scene"
+												title="Write another opening scene"
+											>
+												<Icon name="sparkles" class="w-3.5 h-3.5" strokeWidth={1.75} />
+											</button>
+											<OpeningScenePopover
+												open={openingPopoverOpen}
+												onClose={() => (openingPopoverOpen = false)}
+												onGenerate={handleGenerateOpening}
+											/>
+										</div>
+									{/if}
 								</div>
 							{/if}
 						</div>
@@ -1186,9 +1226,56 @@
 
 	.message-pager-slot {
 		display: flex;
+		gap: 0.25rem;
 		opacity: var(--msg-pager-idle-opacity, 1);
 		pointer-events: var(--msg-pager-idle-events, auto);
 		transition: opacity 120ms ease;
+	}
+
+	.opening-anchor {
+		position: relative;
+		display: inline-flex;
+	}
+
+	/* Drawn as one more pill in the pager cluster rather than as a stray icon beside it, so
+	   its size tracks BranchNavigator's outer shell: that pill is a 1.6rem button inside
+	   0.16rem of padding and a 1px border, which is what these numbers add up to. */
+	.opening-btn {
+		width: 2.05rem;
+		height: 2.05rem;
+		padding: 0;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border: 1px solid color-mix(in srgb, var(--color-border-subtle) 92%, transparent);
+		border-radius: var(--radius-full);
+		background: color-mix(in srgb, var(--color-bg-secondary) 76%, transparent);
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+	}
+
+	.opening-btn:hover:not(:disabled) {
+		color: var(--color-accent);
+		border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+	}
+
+	.opening-btn:disabled {
+		opacity: 0.32;
+		cursor: not-allowed;
+	}
+
+	.opening-btn:focus-visible {
+		outline: 0;
+		border-color: color-mix(in srgb, var(--color-accent) 85%, white 15%);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-muted) 70%, transparent);
+	}
+
+	@media (pointer: coarse) {
+		.opening-btn {
+			width: 2.85rem;
+			height: 2.85rem;
+		}
 	}
 
 	.message-actions-visible,

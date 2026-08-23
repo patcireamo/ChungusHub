@@ -4,7 +4,7 @@ import { db } from '$lib/services/database';
 import { chatStore } from './chat.svelte';
 import { toastStore } from './toast.svelte';
 import { llmService } from '$lib/services/llm/provider';
-import { findActivePath, findDeepestLeafFromNode } from '$lib/utils/message-tree';
+import { findActivePath, findDeepestLeafFromNode, nextRootSiblingIndex } from '$lib/utils/message-tree';
 import { buildPromptMessages, type BuiltPrompt } from '$lib/utils/prompt-builder';
 import { joinContinuation } from '$lib/utils/continuation';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
@@ -663,7 +663,7 @@ class MessageStore {
 
 		this.isProcessing = true;
 		this.abortController = new AbortController();
-		chatStore.startStream(state.chat.id, leaf.id);
+		chatStore.startStream(state.chat.id, { continuingMessageId: leaf.id });
 
 		try {
 			// Fresh rows, never the state snapshot: the standing rule for long operations.
@@ -774,10 +774,19 @@ class MessageStore {
 		}
 	}
 
-	async generateOpeningScene(userInput: string): Promise<void> {
+	/**
+	 * Write an opening scene as a new ROOT sibling: a beginning beside the ones the chat
+	 * already holds, never a replacement for them. A card's greetings are root siblings and
+	 * multiple roots are legal, so an opening is one more of the same kind and every surface
+	 * that walks the tree handles it without being told.
+	 *
+	 * `direction` is what the reader typed. Blank means "surprise me"; there is no magic
+	 * string for that, because a sentinel the caller has to spell is a second contract.
+	 */
+	async generateOpeningScene(direction: string): Promise<void> {
 		if (this.isProcessing) return;
-		// The Opening Scene engine can be switched off app-wide (Settings → Engines). The
-		// empty-chat trigger hides itself when it's off; fail loud if something calls in anyway.
+		// The Opening Scene engine can be switched off app-wide (Settings → Engines). Every
+		// trigger hides or refuses when it's off; fail loud if something calls in anyway.
 		if (!featurePromptsStore.openingSceneEnabled) throw new Error('Opening Scene is turned off in Settings → Engines');
 		this.isProcessing = true;
 
@@ -787,21 +796,15 @@ class MessageStore {
 			throw new Error('No active chat');
 		}
 
-		// Don't allow if chat already has messages
-		if (state.activePath.length > 0) {
-			this.isProcessing = false;
-			throw new Error('Chat already has messages');
-		}
-
 		this.abortController = new AbortController();
-		chatStore.startStream(state.chat.id);
+		chatStore.startStream(state.chat.id, { openingScene: true });
 
 		try {
 			const chat = await db.getChat(state.chat.id);
 			if (!chat) throw new Error('Chat not found');
 
 			// Create a virtual user message for {{chatHistory}} to inject (not saved to DB)
-			const sceneIdea = userInput === 'Random' ? 'Surprise me with a compelling opening scene.' : userInput;
+			const sceneIdea = direction.trim() || 'Surprise me with a compelling opening scene.';
 			const openingSceneTemplate = featurePromptsStore.promptFor('openingScene');
 			// Global engine macros first, then the flow's own {{idea}} key, a call-site
 			// substitution deliberately not a macros.ts entry. It is NOT {{scenario}}:
@@ -872,7 +875,15 @@ class MessageStore {
 			// Teach the per-model token calibration from the provider's real prompt_tokens.
 			tokenCalibration.record(result.model, countMessages(messages, result.model), result.usage.promptTokens);
 
-			// Create the assistant message as the first (root) message - no user message saved
+			// Fresh rows AND a fresh chat, never the snapshots read before the call: the standing
+			// rule for long operations, and here they decide where the new root lands and whether
+			// it is the first one. A stale root pointer read before a remote delete would leave
+			// the chat naming a row that is gone, which renders as an empty transcript.
+			const existing = await db.getMessagesByChat(state.chat.id);
+			const current = await db.getChat(state.chat.id);
+
+			// A root sibling, appended after whatever roots are already there. No user turn is
+			// saved: the direction was context, not something the reader said in the story.
 			const assistantMessage = await this.createMessage({
 				chatId: state.chat.id,
 				parentId: null,
@@ -888,14 +899,16 @@ class MessageStore {
 				firstTokenMs: result.firstTokenMs,
 				reasoningMs: result.reasoningMs,
 				lorebook,
-				siblingIndex: 0
+				siblingIndex: nextRootSiblingIndex(existing)
 			});
 
-			// Set this as both root and active leaf
+			// The reader asked for this beginning, so it is the one they land on. `rootMessageId`
+			// names the chat's FIRST root and is claimed only when nothing held it: an opening
+			// written beside existing greetings must not renumber which of them is first.
 			await db.updateChat(
 				{
 					id: state.chat.id,
-					rootMessageId: assistantMessage.id,
+					...(current?.rootMessageId ? {} : { rootMessageId: assistantMessage.id }),
 					activeLeafId: assistantMessage.id
 				},
 				{ touchUpdatedAt: true }

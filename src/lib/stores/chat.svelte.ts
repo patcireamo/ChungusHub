@@ -580,9 +580,20 @@ class ChatStore {
 	}
 
 	/** Open the stream for `chatId`. `continuingMessageId` routes it into an existing
-	 *  assistant bubble (the continue flow) instead of the streaming-indicator bubble. */
-	startStream(chatId: string, continuingMessageId: string | null = null): void {
-		this.stream = { chatId, content: '', thinking: '', continuingMessageId };
+	 *  assistant bubble (the continue flow) instead of the streaming-indicator bubble;
+	 *  `openingScene` says the tokens are a new beginning rather than the next turn. Named
+	 *  options rather than positional flags: `startStream(id, null, true)` says nothing. */
+	startStream(
+		chatId: string,
+		opts: { continuingMessageId?: string; openingScene?: boolean } = {}
+	): void {
+		this.stream = {
+			chatId,
+			content: '',
+			thinking: '',
+			continuingMessageId: opts.continuingMessageId ?? null,
+			openingScene: opts.openingScene ?? false
+		};
 	}
 
 	/** Close the stream. Every caller does this in a `finally`, after its own message is

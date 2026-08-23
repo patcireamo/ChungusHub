@@ -100,15 +100,15 @@ export const ENGINES: EngineDef[] = [
 		id: 'opening-scene',
 		name: 'Opening Scene',
 		icon: 'sparkles',
-		summary: "Writes a fresh chat's first message",
+		summary: 'Writes another way for a story to open',
 		description:
-			'Writes a new chat’s first message through the full story pipeline, with preset, character, persona, lorebooks and memory all in place. Fires only when you ask for it from an empty chat.',
+			'Writes an opening scene through the full story pipeline, with preset, character, persona, lorebooks and memory all in place. It lands beside the card’s own greetings as one more beginning to swipe between, and fires only when you ask for it.',
 		makesCalls: true,
 		prompts: [
 			{
 				key: 'openingScene',
 				label: 'Opening scene direction',
-				hint: "Directs the opening scene. {{idea}} is the direction you typed in the modal; {{scenario}} stays the character card's own field."
+				hint: "Directs the opening scene. {{idea}} is the direction you typed, or a request to surprise you when you left it empty; {{scenario}} stays the character card's own field."
 			}
 		],
 		enabled: {

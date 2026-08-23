@@ -2,7 +2,7 @@
 	import type { Message } from '$lib/types/chat';
 	import MessageComponent from './Message.svelte';
 	import StreamingIndicator from './StreamingIndicator.svelte';
-	import OpeningSceneModal from './OpeningSceneModal.svelte';
+	import OpeningScenePopover from './OpeningScenePopover.svelte';
 	import ChatSearchBar from './ChatSearchBar.svelte';
 	import { chatSearch } from '$lib/stores/chatSearch.svelte';
 	import { chatCursor } from '$lib/stores/chatCursor.svelte';
@@ -27,6 +27,9 @@
 		/** Set while a continue streams into an existing turn: that bubble renders the
 		 *  live tail and the streaming-indicator bubble stays out of the list. */
 		continuingMessageId?: string | null;
+		/** Set while an opening scene streams: the path stays off screen and the streaming
+		 *  bubble stands alone, since a new beginning is not a turn after the ones there. */
+		openingSceneStream?: boolean;
 		// Exposed so the parent can forward wheel from the empty margins beside the
 		// centered column into this scroller (compiler-checked, so a rename can't
 		// silently break the forwarding).
@@ -45,6 +48,7 @@
 		streamingContent = '',
 		streamingThinking = '',
 		continuingMessageId = null,
+		openingSceneStream = false,
 		scrollEl = $bindable(),
 		onContentShift
 	}: Props = $props();
@@ -68,20 +72,16 @@
 		return n;
 	});
 
-	// Opening scene modal state
-	let openingSceneModalOpen = $state(false);
-	let isGeneratingScene = $state(false);
+	let openingPopoverOpen = $state(false);
 
-	async function handleGenerateOpeningScene(input: string) {
-		isGeneratingScene = true;
+	// The store toasts its own generation failures; what reaches here is the guards it throws
+	// on before the try (engine off, no chat), which the trigger already prevents. Catching
+	// keeps one of those from surfacing as an unhandled rejection instead of a message.
+	async function handleGenerateOpeningScene(direction: string) {
 		try {
-			await messageStore.generateOpeningScene(input);
-			openingSceneModalOpen = false;
+			await messageStore.generateOpeningScene(direction);
 		} catch (error) {
-			console.error('Opening scene generation failed:', error);
 			toastStore.failed('generate the opening scene', error);
-		} finally {
-			isGeneratingScene = false;
 		}
 	}
 
@@ -520,7 +520,14 @@
 	aria-live="polite"
 	onscroll={updateNearBottom}
 >
-	{#if messages.length === 0}
+	{#if openingSceneStream}
+		<!-- The scene arriving is a new beginning, so it is the only thing on screen while it
+		     writes: leaving the path up would read as a reply to the turns above it. This is
+		     also what gives an opening a visible stream and a reachable Stop at last. -->
+		<div class="message-list-content">
+			<StreamingIndicator content={streamingContent} thinking={streamingThinking} />
+		</div>
+	{:else if messages.length === 0}
 		<div class="message-empty-wrap">
 			<div class="message-empty-card card-elevated">
 				<div class="message-empty-icon">
@@ -535,16 +542,24 @@
 					{/if}
 				</p>
 				{#if featurePromptsStore.openingSceneEnabled}
-					<!-- Asks the app, not this chat: starting a scene while a reply generates
-					     elsewhere would run two generations over one abort controller. -->
-					<Button
-						variant="secondary"
-						onclick={() => (openingSceneModalOpen = true)}
-						disabled={messageStore.isStreaming}
-					>
-						<Icon name="bookOpen" class="w-4 h-4" />
-						Generate Opening Scene
-					</Button>
+					<div class="message-empty-action">
+						<!-- Asks the app, not this chat: starting a scene while a reply generates
+						     elsewhere would run two generations over one abort controller. -->
+						<Button
+							variant="secondary"
+							onclick={() => (openingPopoverOpen = true)}
+							disabled={messageStore.isStreaming}
+						>
+							<Icon name="bookOpen" class="w-4 h-4" />
+							Generate an opening scene
+						</Button>
+						<OpeningScenePopover
+							open={openingPopoverOpen}
+							align="center"
+							onClose={() => (openingPopoverOpen = false)}
+							onGenerate={handleGenerateOpeningScene}
+						/>
+					</div>
 				{/if}
 			</div>
 		</div>
@@ -624,13 +639,6 @@
 	</button>
 {/if}
 </div>
-
-<OpeningSceneModal
-	open={openingSceneModalOpen}
-	onClose={() => (openingSceneModalOpen = false)}
-	onGenerate={handleGenerateOpeningScene}
-	isGenerating={isGeneratingScene}
-/>
 
 <style>
 	.message-list-wrap {
@@ -812,5 +820,12 @@
 		font-size: 0.84rem;
 		line-height: 1.45;
 		color: var(--color-text-secondary);
+	}
+
+	/* The popover positions against this, not against the centered card: anchored to the
+	   card it would hang from the card's full width instead of from the button. */
+	.message-empty-action {
+		position: relative;
+		display: inline-block;
 	}
 </style>

@@ -21,6 +21,7 @@
 	let streamingContent = $derived(stream?.content ?? '');
 	let streamingThinking = $derived(stream?.thinking ?? '');
 	let continuingMessageId = $derived(stream?.continuingMessageId ?? null);
+	let openingSceneStream = $derived(stream?.openingScene ?? false);
 	// The composer asks the app instead: a generation running anywhere holds the one abort
 	// controller, so this chat offers Stop rather than a Send that would race it.
 	let busy = $derived(messageStore.isStreaming);
@@ -141,7 +142,7 @@
 		<div class="chat-content" onwheel={handleMarginWheel}>
 			<div class="chat-center-shell">
 				<div class="chat-message-pane">
-					<MessageList bind:scrollEl messages={activePath} {allMessages} {isStreaming} {streamingContent} {streamingThinking} {continuingMessageId} onContentShift={handleContentShift} />
+					<MessageList bind:scrollEl messages={activePath} {allMessages} {isStreaming} {streamingContent} {streamingThinking} {continuingMessageId} {openingSceneStream} onContentShift={handleContentShift} />
 				</div>
 
 				<div class="chat-input-pane">

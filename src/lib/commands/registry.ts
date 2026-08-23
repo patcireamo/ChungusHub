@@ -150,6 +150,28 @@ export const COMMANDS: CommandDef[] = [
 		run: (_arg, ctx) => ctx.host.swipeLast()
 	},
 	{
+		name: 'opening',
+		aliases: ['scene'],
+		group: 'story',
+		icon: 'sparkles',
+		describe: 'Write another opening scene beside the ones already there',
+		// Optional: an empty direction is the surprise, which is the whole reason the popover
+		// this stands in for needs no Random button.
+		arg: { label: 'direction', required: false },
+		unavailable: (ctx) => {
+			if (!ctx.chatId) return NO_CHAT;
+			return featurePromptsStore.openingSceneEnabled
+				? null
+				: 'Opening Scene is switched off in Settings → Engines';
+		},
+		run: (direction) => {
+			// Same guard as the sparkle's disabled state: one generation holds the one abort
+			// controller.
+			if (messageStore.warnIfBusy()) return;
+			return messageStore.generateOpeningScene(direction);
+		}
+	},
+	{
 		name: 'branch',
 		group: 'story',
 		icon: 'branch',

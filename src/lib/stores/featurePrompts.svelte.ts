@@ -5,7 +5,7 @@
  * switch.
  *
  * Each feature is a prompt holder bolted onto bespoke UI (the memory panel, the
- * opening-scene modal, the composer menu) and surfaces its own settings button
+ * opening-scene popover, the composer menu) and surfaces its own settings button
  * on its own surface. Synced across devices via the shared `settings` spine.
  */
 import { readSetting, writeSetting, registerSettingsReload } from '$lib/services/syncedSetting';
