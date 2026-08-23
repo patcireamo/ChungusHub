@@ -74,4 +74,13 @@ describe('preset JSON interchange', () => {
 			parsePresetJson(JSON.stringify({ name: 'Bad', items: [{ role: 'developer', content: 'x' }] }))
 		).toThrow('unknown role');
 	});
+
+	test('names a SillyTavern preset in the refusal rather than reporting a broken file', () => {
+		// The one wrong file people bring here on purpose. A parse error about "items" sends
+		// them looking for a fault in a file that has none.
+		expect(() => parsePresetJson(JSON.stringify({ name: 'ST', prompts: [], prompt_order: [] }))).toThrow(
+			'SillyTavern preset'
+		);
+		expect(() => parsePresetJson(JSON.stringify({ name: 'Junk' }))).toThrow('not a ChungusHub preset');
+	});
 });

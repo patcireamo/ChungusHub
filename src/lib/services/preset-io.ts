@@ -46,6 +46,16 @@ function objectAt(value: unknown, label: string): Record<string, unknown> {
 	return value as Record<string, unknown>;
 }
 
+/** Continues the toast's own `Couldn't import "<file>": `. SillyTavern's preset is named rather
+ *  than lumped in with corrupt files: it is the one wrong file people bring here on purpose, and
+ *  they need to hear "we don't read those" instead of deciding their own file is broken. */
+function refusalFor(raw: Record<string, unknown>): string {
+	if (Array.isArray(raw.prompts) || Array.isArray(raw.prompt_order)) {
+		return 'it is a SillyTavern preset, which ChungusHub does not read. The prompt system here is a different shape, so a preset is rebuilt in the Prompt Builder rather than converted.';
+	}
+	return 'it is not a ChungusHub preset, since it carries no "items" list';
+}
+
 /** Parse the app's complete preset interchange format without mutating existing presets. */
 export function parsePresetJson(text: string): ImportedPreset {
 	let parsed: unknown;
@@ -56,7 +66,7 @@ export function parsePresetJson(text: string): ImportedPreset {
 	}
 
 	const raw = objectAt(parsed, 'Preset');
-	if (!Array.isArray(raw.items)) throw new Error('"items" must be an array.');
+	if (!Array.isArray(raw.items)) throw new Error(refusalFor(raw));
 
 	const items = raw.items.map((value, index): PromptItem => {
 		const item = objectAt(value, `Item ${index + 1}`);
