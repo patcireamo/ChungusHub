@@ -2,12 +2,14 @@
  * Composer Transform Service
  * Runs the user's composer draft through an LLM for on-demand rewrites: Spellcheck
  * (fix spelling/grammar/punctuation/flow while preserving voice) and Impersonate (expand
- * a short draft into a full in-character message from the user's persona's perspective).
+ * a short draft into a full message from the user's persona's perspective).
  * Both ride their own engine connection and that connection's generation settings,
  * so the two can sit on different models. Split in two on purpose (a pure build-prompt
  * function, then a run function), so the exact messages a real run would send can be
  * inspected without making the call, which is what `TransformPanel` prices its
- * before-you-press estimate off.
+ * before-you-press estimate off. The message SHAPE (Impersonate's role-swapped history,
+ * post-processing) lives in the pure utils/composer-transforms; this file resolves the
+ * live inputs it needs.
  *
  * No UI, no store writes, no persistence here: the result only ever reaches the draft
  * through `TransformPanel`'s approve/reject.
@@ -19,10 +21,7 @@ import { llmService } from '$lib/services/llm/provider';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 import { resolveMacroValues, substitute } from '$lib/macros';
 import { buildLiveMacroContext } from '$lib/utils/live-macro-context';
-
-/** Fixed closing turn for Impersonate: state the ask and nothing else, so the history
- *  above it stays the only context the model reads the scene from. */
-const IMPERSONATE_CLOSING_INSTRUCTION = 'Write the message now. Reply with only the message text.';
+import { shapeComposerTransform } from '$lib/utils/composer-transforms';
 
 export interface ComposerTransformParams {
 	kind: 'spellcheck' | 'impersonate';
@@ -54,24 +53,20 @@ export function buildComposerTransformPrompt(params: ComposerTransformParams): L
 		perspective
 	});
 
-	if (kind === 'spellcheck') {
-		// The template embeds the draft and needs no story context: a single user turn
-		// is the shape every provider accepts.
-		return [{ role: 'user', content: filled }];
-	}
-
-	// Impersonate: chat history rides as native-role turns, the same structural shape the
-	// story prompt uses. The draft, persona, and perspective all live inside the filled
-	// system template.
-	const history: LLMMessage[] = chatMessages
-		.filter((m) => m.role === 'user' || m.role === 'assistant')
-		.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-
-	return [
-		{ role: 'system', content: filled },
-		...history,
-		{ role: 'user', content: IMPERSONATE_CLOSING_INSTRUCTION }
-	];
+	// The shape (Impersonate's role-swapped history + final-user-turn template, and the
+	// engine connection's own post-processing) is the pure module's business; the live
+	// names carry the same fallbacks as prompt-assembly.toInjectedMessage.
+	return shapeComposerTransform({
+		kind,
+		filled,
+		chatMessages,
+		charName: ctx.resolvedCharacters?.[0]?.name || 'Narrator',
+		userName: ctx.resolvedPersona?.name || 'User',
+		postProcessing: {
+			mode: llmService.getPromptPostProcessing({ engine: kind }),
+			placeholder: llmService.getPromptPlaceholder({ engine: kind })
+		}
+	});
 }
 
 export async function runComposerTransform(opts: ComposerTransformParams): Promise<string> {

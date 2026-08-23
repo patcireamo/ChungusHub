@@ -19,7 +19,7 @@
 	import { renderMarkdown } from '$lib/utils/markdown';
 	import { renderedHtml } from '$lib/actions/renderedHtml';
 	import { copyText } from '$lib/utils/clipboard';
-	import { glueContinuation } from '$lib/utils/continuation';
+	import { previewContinuation } from '$lib/utils/continuation';
 	import { expandSelfRefs } from '$lib/macros';
 	import { personaStore } from '$lib/stores/persona.svelte';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
@@ -437,10 +437,16 @@
 			? `${actualTokens.toLocaleString()} tokens`
 			: `~${messageTokens} tokens`
 	);
-	// Continue flow: the live tail joins the stored content through the same seam rule
-	// the final write uses (glue only, since overlap trimming waits for the complete text),
-	// and any new reasoning streams into the reasoning block after the stored one.
-	const displayedContent = $derived(streamTail != null ? glueContinuation(message.content, streamTail) : message.content);
+	// Continue flow: the live tail joins the stored content through the preview rule (the
+	// final write's seam rule, plus a hold on tails that are still pure restatement, so a
+	// model re-typing the message never paints it duplicating itself). The anchor is the
+	// content with self-refs expanded: the model restates the expanded text it was sent,
+	// not the stored macros. Any new reasoning streams in after the stored block.
+	const displayedContent = $derived(
+		streamTail != null
+			? previewContinuation(message.content, streamTail, expandSelfRefs(message.content, selfRefChar, selfRefUser))
+			: message.content
+	);
 	const liveThinking = $derived(
 		streamTailThinking
 			? message.thinking

@@ -44,7 +44,7 @@ export const DEFAULT_SYSTEM_PROMPT =
 /** The instruction Continue appends after the reply it extends, when the preset carries no
  *  `continuePrompt` of its own. A preset that sets it to an empty string sends nothing. */
 export const DEFAULT_CONTINUE_PROMPT =
-	'((OOC: Your previous message stopped before it was finished. Continue it from the exact point it cut off, as though the interruption never happened. Do not repeat, rephrase, or summarize anything already written, and do not acknowledge this instruction. If it stopped mid-sentence, complete that sentence first. Keep the same tense, point of view, and voice throughout.))';
+	'((OOC: Continue your previous message. Your reply will be appended to the end of that message exactly as you send it, so write only the new text: no repetition, no rephrasing, no lead-in, and do not acknowledge this instruction. If the message broke off mid-sentence, finish that sentence first. If it already ends cleanly, continue the scene from that exact moment with what happens next. Keep the same tense, point of view, and voice.))';
 
 /** Resolved chat-memory recall: the {{memory}} text plus the ids it folded away. */
 export interface PromptRecall {
@@ -149,6 +149,12 @@ export interface PromptAssembly {
 	/** Which lorebook entries shaped this prompt, and why. The generation path stores it on the
 	 *  turn it produced; every other surface is free to ignore it. */
 	lorebook: LorebookTrace;
+	/** The extended turn's text as the model receives it (prompt regex applied, self-refs
+	 *  expanded), set only when the input carries a continuation. The join compares the
+	 *  model's reply against THIS, not the stored bytes: a turn holding literal {{user}} is
+	 *  restated by the model in its expanded form, and comparing against the stored text
+	 *  waves that copy through to be appended twice (continuation.ts). */
+	continuationSent?: string;
 }
 
 /**
@@ -597,7 +603,8 @@ export function assemblePrompt(input: AssembleInput): PromptAssembly {
 		trimmedMessages,
 		trimmedExampleBlocks,
 		overBudget,
-		lorebook: ctx.lorebookTrace ?? EMPTY_LOREBOOK_TRACE
+		lorebook: ctx.lorebookTrace ?? EMPTY_LOREBOOK_TRACE,
+		continuationSent: tail.messages[0]?.content
 	};
 }
 
@@ -653,7 +660,8 @@ function systemFallback(
 		overBudget: false,
 		// The fallback prompt is the default system message and nothing else: no item resolved,
 		// so no lore reached this prompt whatever the scan decided.
-		lorebook: EMPTY_LOREBOOK_TRACE
+		lorebook: EMPTY_LOREBOOK_TRACE,
+		continuationSent: tailMessages[0]?.content
 	};
 }
 

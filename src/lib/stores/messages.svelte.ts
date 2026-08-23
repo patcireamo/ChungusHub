@@ -684,7 +684,7 @@ class MessageStore {
 			// The trace this build produces is deliberately dropped: the turn already carries the
 			// record of the scan that opened it, and a continuation is a second scan whose result
 			// never shaped the text already on screen.
-			const { messages } = await buildPromptMessages({
+			const { messages, continuationSent } = await buildPromptMessages({
 				chatId: state.chat.id,
 				chatMessages: path,
 				continuation: target,
@@ -715,7 +715,9 @@ class MessageStore {
 				if (result.finishReason !== 'cancelled') toastStore.warning('The model returned no continuation text');
 				return;
 			}
-			const joined = joinContinuation(target.content, result.content);
+			// The anchor is the turn's text as the model received it (self-refs expanded, prompt
+			// regex applied), so a restatement of a macro-laden greeting is still caught.
+			const joined = joinContinuation(target.content, result.content, continuationSent);
 			if (joined === target.content) {
 				toastStore.warning('The model only restated the existing reply, so nothing was added');
 				return;

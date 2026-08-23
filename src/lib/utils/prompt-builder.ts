@@ -59,6 +59,9 @@ export interface BuiltPrompt {
 	 *  were in it and why. The scan happens once, inside assembly, so this is the record of
 	 *  what was actually sent rather than a second guess at it. */
 	lorebook: LorebookTrace;
+	/** Continue builds only: the extended turn's text as the model receives it, the anchor
+	 *  the join trims restatements against (see PromptAssembly.continuationSent). */
+	continuationSent?: string;
 }
 
 /**
@@ -127,7 +130,7 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 		featurePromptsStore.steeringDefaults
 	);
 
-	const { messages, lorebook } = assemblePrompt({
+	const { messages, lorebook, continuationSent } = assemblePrompt({
 		preset,
 		resolvedCharacters: character ? [toPromptCharacter(character)!] : [],
 		resolvedPersona: toPromptCharacter(personaEntry),
@@ -156,5 +159,5 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 			: undefined
 	});
 
-	return { messages, lorebook };
+	return { messages, lorebook, continuationSent };
 }

@@ -35,9 +35,12 @@ const DEFAULT_SPELLCHECK_PROMPT = `Correct the spelling, grammar, punctuation, a
 
 {{draft}}`;
 
-const DEFAULT_IMPERSONATE_PROMPT = `You are ghostwriting for {{user}} in a roleplay with {{char}}. Expand the draft below into a complete message written from {{user}}'s perspective, in {{perspective}} person. Stay true to {{user}}'s established voice and the current scene, keep the draft's intent, and add nothing that contradicts it. Reply with only the message.
+// Sent as the FINAL user turn, after the chat history with its roles swapped (the service
+// seats the model on the user's side structurally; see composerTransformService). Task and
+// draft close the prompt so neither decays with chat length.
+const DEFAULT_IMPERSONATE_PROMPT = `((OOC: You are playing {{user}} in this roleplay, and it is {{user}}'s turn. Expand the draft below into {{user}}'s next message, in {{perspective}} person: keep the draft's intent, match the voice of {{user}}'s earlier messages, and never write {{char}}'s dialogue, actions, or thoughts. Reply with only the message text.
 
-{{draft}}`;
+Draft: {{draft}}))`;
 
 // {{chatHistoryLast3}} rather than a hand-rolled excerpt: how much story the model reads is
 // the author's call, and turning three into one is how this engine gets cheap.

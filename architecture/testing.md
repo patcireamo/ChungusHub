@@ -66,6 +66,7 @@ Most of the suite is not integration testing at all. It works because subsystems
 | `services/zip.ts`, `crc32.ts` | `services/zip.test.ts` | none |
 | `utils/story-map-layout.ts` | `utils/story-map-layout.test.ts` | none (consumed by `storymap/` components) |
 | `utils/continuation.ts` | `utils/continuation.test.ts` | none |
+| `utils/composer-transforms.ts` (transform message shapes, Impersonate's swapped seat) | `utils/composer-transforms.test.ts` | `services/composerTransformService.ts` |
 | `utils/text-diff.ts` | `utils/text-diff.test.ts` | none |
 | `utils/date.ts` | `utils/date.test.ts` | none |
 | `debug/format.ts` (prompt-log sizing + request fields) | `debug/format.test.ts` | `debug/promptLog.svelte.ts` |
