@@ -1,7 +1,17 @@
 ---
 title: "Installation"
-description: "Run ChungusHub from source or build a portable copy."
+description: "Download a build, or run ChungusHub from source."
 ---
+
+## Download
+
+Builds for Windows, macOS (Apple Silicon) and Linux are on the
+[releases page](https://github.com/patcireamo/ChungusHub/releases/latest). Unpack one and run
+it: nothing is installed, and your data stays in the folder beside it. That is the whole
+install, and everything below is only for running from source.
+
+The executable is not signed by a developer certificate, so Windows and macOS both stop it the
+first time. The `README.txt` in the folder says how to get past each.
 
 ## Prerequisites
 
@@ -46,11 +56,9 @@ bun run package
 ```
 
 This writes `dist/ChungusHub-portable/`: one executable with Bun embedded, the built client,
-and the presets, skills and backgrounds the app ships with. It serves everything from port
-4242, keeps its data beside the executable, and opens a browser on start.
-
-The executable is not signed by a developer certificate, so Windows and macOS both stop it the
-first time. The `README.txt` in that folder says how to get past each.
+and the presets, skills and backgrounds the app ships with. It is the same layout as a release
+build: it serves everything from port 4242, keeps its data beside the executable, and opens a
+browser on start.
 
 ## Your data
 
@@ -59,13 +67,19 @@ password hash if you set one. Back that folder up and you have backed up the who
 Snapshots land in `backups/` beside it. Nothing leaves the machine except the provider requests
 you configure.
 
+**Where that folder sits depends on how you started ChungusHub.** A downloaded or packaged copy
+keeps it beside the executable. Run from source, it is created in the directory you launch from,
+which the launchers make the repository folder. A second clone therefore opens a second, empty
+workspace while the first one sits untouched where you left it. The server prints the path it is
+using as it starts, and **Settings → About** shows it with a button to copy it.
+
 ## Environment variables
 
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `CHUNGUS_PORT` | `4242` | Port the server listens on |
 | `CHUNGUS_HOST` | `0.0.0.0` | Interface to bind once Network Access is on. Loopback either way while it is off |
-| `CHUNGUS_DATA_DIR` | `user-data` next to the app | Where the database and uploads live |
+| `CHUNGUS_DATA_DIR` | `user-data`, located as above | Where the database and uploads live. Set this to pin it somewhere fixed |
 | `CHUNGUS_ALLOWLIST` | empty | Comma-separated IPs allowed to connect |
 | `CHUNGUS_NO_OPEN` | off | Set to `1` to stop the portable build opening a browser |
 | `CHUNGUS_BACKUP_DIR` | `backups` beside the data dir | Where snapshots are stored |
