@@ -921,6 +921,13 @@
 		// Frozen under an open transform strip: the box is readonly-in-effect, so neither
 		// Enter-to-send nor history recall may rewrite the draft the proposal is about.
 		if (transformOpen) return;
+		// Ctrl/⌘+Enter regenerates, above command mode because the palette owns plain Enter and
+		// nothing modified. Same gate as the menu row, so the key can never outreach the button.
+		if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+			e.preventDefault();
+			if (!isStreaming && canRegenerateLast) handleRegenerateLast();
+			return;
+		}
 		// Command mode owns the keys the palette needs and nothing else. It sits above the
 		// history recall below, which reads the same arrows, and above the touch branch: in
 		// command mode Enter runs the call on every device, since a newline in a command line

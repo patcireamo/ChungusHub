@@ -63,7 +63,9 @@
 			}
 			return chips;
 		}
-		if (shortcut.chips) return shortcut.chips;
+		// A documentation row cannot spell the modifier itself: MOD_KEY lives here, and the
+		// registry importing it would close a cycle. It writes 'mod' and this resolves it.
+		if (shortcut.chips) return shortcut.chips.map((chip) => (chip === 'mod' ? MOD_KEY : chip));
 		// Fail loud: a row saying neither what to press nor what it binds is a labelled blank,
 		// and a sheet that quietly drew one would be worse than no sheet at all.
 		throw new Error(`shortcut "${shortcut.id}" declares neither a binding nor chips`);

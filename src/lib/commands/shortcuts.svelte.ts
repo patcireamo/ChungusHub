@@ -99,7 +99,8 @@ export interface ShortcutDef {
 	binding?: ShortcutBinding;
 	/** Chips for a row with no binding of its own, where the key belongs to whatever has
 	 *  focus. Exactly one of `binding` and `chips` is set; the sheet throws on a row carrying
-	 *  neither rather than drawing a labelled blank. */
+	 *  neither rather than drawing a labelled blank. `'mod'` draws as ⌘/Ctrl: the platform's
+	 *  spelling lives in the sheet, which this file cannot import without a cycle. */
 	chips?: string[];
 	/** One call into a store or a service, handed the key that was pressed. False declines it
 	 *  and leaves the press to the browser. */
@@ -262,6 +263,10 @@ export const SHORTCUTS: ShortcutDef[] = [
 	// ===== In the composer =====
 	{ id: 'send', group: 'composer', label: 'Send message', chips: ['Enter'] },
 	{ id: 'newline', group: 'composer', label: 'New line', chips: ['Shift', 'Enter'] },
+	// Owned by the composer rather than bound here: Enter belongs to whatever box has focus, so
+	// a window-level match would also fire from the assistant's composer, a rename field or a
+	// dialog. Living there is also what lets it read the menu row's own gate.
+	{ id: 'regenerate-last', group: 'composer', label: 'Regenerate the newest reply', chips: ['mod', 'Enter'] },
 	{ id: 'commands', group: 'composer', label: 'Commands (empty composer)', chips: ['/'] },
 	{ id: 'history', group: 'composer', label: 'Input history (empty composer)', chips: ['↑', '↓'] },
 
