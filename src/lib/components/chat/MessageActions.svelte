@@ -8,7 +8,8 @@
 		onCopy: () => Promise<void>;
 		onRegenerate?: () => void;
 		showRegenerate?: boolean;
-		/** Label for the regenerate button: "Retry" (assistant) vs "Regenerate" (user reply). */
+		/** Label for the regenerate button, and its accessible name: the word labels are
+		 *  display:none on narrow screens, so a fixed one would name all three states wrong. */
 		regenerateLabel?: string;
 		/** Fork this turn into a new branch, any role: a user turn forks into a different thing
 		 *  said, a reply into a hand-written alternate you can swipe between. */
@@ -71,7 +72,7 @@
 			type="button"
 			class="action-btn"
 			onclick={onRegenerate}
-			aria-label="Regenerate reply"
+			aria-label={regenerateLabel}
 			title={regenerateLabel}
 		>
 			<Icon name="refresh" class="w-3.5 h-3.5" strokeWidth={1.75} />

@@ -352,7 +352,7 @@
 
 	const isUser = $derived(message.role === 'user');
 	// Whether this turn already has a reply below it. A user leaf (no reply) should offer
-	// "Generate" (make the first one), not "Regenerate".
+	// "Generate Reply" (make the first one), not "Regenerate".
 	const hasReply = $derived(allMessages.some((m) => m.parentId === message.id));
 	// Resolve the persona this message was sent with: locked per-message, NOT the global
 	// active persona. Switching the active persona must never re-label past messages.
@@ -639,7 +639,7 @@
 									onCopy={handleCopy}
 									onRegenerate={showRegenerate ? handleRegenerateClick : undefined}
 									{showRegenerate}
-									regenerateLabel={isUser ? (hasReply ? 'Regenerate' : 'Generate') : 'Retry'}
+									regenerateLabel={isUser ? (hasReply ? 'Regenerate' : 'Generate Reply') : 'Retry'}
 									onBranch={handleBranchClick}
 									showBranch
 								/>
