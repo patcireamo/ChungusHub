@@ -7,6 +7,8 @@
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
+	import { sortLorebooks } from '$lib/lorebook/types';
+	import { lorebookSortPref } from '$lib/stores/lorebookSort.svelte';
 	import { uiStore } from '$lib/stores/ui.svelte';
 
 	interface Props {
@@ -23,12 +25,15 @@
 	let books = $derived(lorebookStore.books);
 	let selectedSet = $derived(new Set(selected));
 
-	// Linked books first, store order within each group. The split is captured once
-	// at mount so a toggle restyles the row instead of teleporting it.
+	// Linked books first, then the shared display order (Lorebooks pane → switcher → Sort)
+	// within each group. The split is captured once at mount so a toggle restyles the row
+	// instead of teleporting it, and the outer sort is stable, so it can't undo that.
 	// svelte-ignore state_referenced_locally -- freezing the open-time order is the point
 	const linkedAtOpen = new Set(selected);
 	let ordered = $derived(
-		[...books].sort((a, b) => Number(linkedAtOpen.has(b.id)) - Number(linkedAtOpen.has(a.id)))
+		sortLorebooks(books, lorebookSortPref.order).sort(
+			(a, b) => Number(linkedAtOpen.has(b.id)) - Number(linkedAtOpen.has(a.id))
+		)
 	);
 
 	let query = $state('');

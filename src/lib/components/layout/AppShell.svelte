@@ -19,6 +19,7 @@
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { libraryViewPrefs, personasViewPrefs } from '$lib/stores/browseViewPrefs.svelte';
 	import { spriteSortPref } from '$lib/stores/spriteSort.svelte';
+	import { lorebookSortPref } from '$lib/stores/lorebookSort.svelte';
 	import { db } from '$lib/services/database';
 	import { presetService } from '$lib/services/presets.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
@@ -167,6 +168,7 @@
 			await libraryViewPrefs.initialize();
 			await personasViewPrefs.initialize();
 			await spriteSortPref.initialize();
+			await lorebookSortPref.initialize();
 			await presetService.initialize();
 			// Named connections + surface bindings ride the settings spine; load them
 			// before llmService so every surface can resolve who serves it.

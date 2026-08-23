@@ -790,6 +790,38 @@ export function sortEntries(
 	});
 }
 
+/** How a list of books orders itself on screen. Display only: no stored order moves. */
+export type LorebookSortOrder = 'updated' | 'a-z' | 'z-a';
+
+/**
+ * Return a new array of books in the chosen display order.
+ *
+ * 'updated' is the order the store already holds (most recently edited first), so it only
+ * copies. The name orders put unnamed books last in BOTH directions, because a book with no
+ * name is not an "A" and Z → A would otherwise bury it twice, and tie-break on recency so
+ * books sharing a name keep a stable, meaningful order.
+ *
+ * Never applied to `lorebookStore.books` itself: link resolution reads that order to decide
+ * what reaches the prompt first, and a display preference must not move a prompt.
+ */
+export function sortLorebooks<T extends Pick<Lorebook, 'name' | 'updatedAt'>>(
+	books: T[],
+	order: LorebookSortOrder
+): T[] {
+	if (order === 'updated') return [...books];
+	const sign = order === 'a-z' ? 1 : -1;
+	return [...books].sort((a, b) => {
+		const an = a.name.trim();
+		const bn = b.name.trim();
+		if (!an || !bn) {
+			if (!an && !bn) return b.updatedAt - a.updatedAt;
+			return an ? -1 : 1;
+		}
+		const cmp = an.localeCompare(bn, undefined, { sensitivity: 'base', numeric: true });
+		return cmp !== 0 ? cmp * sign : b.updatedAt - a.updatedAt;
+	});
+}
+
 /** Parse a comma-separated keyword string into a trimmed, non-empty list. */
 export function parseKeys(input: string): string[] {
 	return input
