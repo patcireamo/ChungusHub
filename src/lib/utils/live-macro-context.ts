@@ -66,6 +66,7 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 				}
 			: undefined;
 	const base: MacroContext = {
+		now: Date.now(),
 		resolvedPersona: personaStore.activeResolved,
 		resolvedCharacters: character ? [character] : [],
 		chatMessages,

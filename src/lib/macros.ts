@@ -29,12 +29,13 @@ import { formatControlForPrompt } from '$lib/utils/prompt-controls';
 // ============================================================================
 
 /** Display buckets for the macro reference, in the order the reference panel shows them. */
-export type MacroGroup = 'names' | 'context' | 'character-field' | 'memory';
+export type MacroGroup = 'names' | 'context' | 'time' | 'character-field' | 'memory';
 
 /** Ordered group metadata for the macro reference UIs. */
 export const MACRO_GROUPS: readonly { id: MacroGroup; label: string; hint: string }[] = [
 	{ id: 'names', label: 'Names', hint: 'inline name references' },
 	{ id: 'context', label: 'Story & context', hint: 'profiles, world info, history, memory' },
+	{ id: 'time', label: 'Date & time', hint: "the reader's own clock, stamped once per prompt" },
 	{ id: 'character-field', label: 'Character fields', hint: 'one card field at a time' },
 	{ id: 'memory', label: 'Memory pipeline', hint: 'filled while the memory engine runs, literal anywhere else' }
 ];
@@ -87,6 +88,12 @@ export const MACROS: readonly MacroDef[] = [
 	{ name: 'lastMessage', description: 'The newest turn, as inline text. A copy: the turn itself still rides {{chatHistory}}.', engine: true, group: 'context' },
 	{ name: 'lastUserMessage', description: 'The newest user turn, as inline text.', engine: true, group: 'context' },
 	{ name: 'lastCharMessage', description: 'The newest character turn, as inline text.', engine: true, group: 'context' },
+
+	{ name: 'time', description: 'Current local time, e.g. 6:02 PM.', engine: true, group: 'time' },
+	{ name: 'date', description: 'Current local date, e.g. August 22, 2026.', engine: true, group: 'time' },
+	{ name: 'weekday', description: 'Current day of the week, e.g. Saturday.', engine: true, group: 'time' },
+	{ name: 'isotime', description: 'Current local time as 24-hour HH:MM:SS.', engine: true, group: 'time' },
+	{ name: 'isodate', description: 'Current local date as YYYY-MM-DD.', engine: true, group: 'time' },
 
 	// ----- Per-field character macros (place one card field individually) -----
 	{ name: 'description', description: "The character's description field, on its own.", engine: true, group: 'character-field' },
@@ -331,6 +338,64 @@ export interface MacroContext {
 	exampleSeparator?: string;
 	/** Budget-trim signal: drop this many oldest example-dialogue blocks. */
 	droppedExampleBlocks?: number;
+	/**
+	 * When this prompt was assembled, stamped ONCE by the context builder and read by every
+	 * clock macro.
+	 *
+	 * Not `Date.now()` inside the resolver, for the same reason the lorebook is scanned once
+	 * and carried: macros are re-resolved several times during one assembly (the budget trim
+	 * re-runs them), so a resolver that read the clock could print 6:02 PM in one item and
+	 * 6:03 PM in another, inside a single prompt. Absent - a preview surface that built no
+	 * context - falls back to the clock, which is right for a preview and impossible in a
+	 * prompt.
+	 */
+	now?: number;
+}
+
+/**
+ * The clock macros' formatting, matched to what SillyTavern's own macros print so a preset
+ * written there reads the same here: `{{time}}` is moment's `LT` (6:02 PM), `{{date}}` is
+ * `LL` (August 22, 2026), `{{weekday}}` is `dddd` (Saturday).
+ *
+ * The locale is pinned to en-US rather than following the browser's, which is the one place
+ * this deliberately does NOT do the locally-correct thing. A preset that says "the current
+ * real time is {{time}}, {{weekday}} {{date}}" was written against a shape - 6:02 PM,
+ * Saturday August 22, 2026 - and a reader on en-GB would silently get "6:02 pm, Saturday 22
+ * August 2026" instead, changing what the model reads because of where the reader lives.
+ * SillyTavern's default is the same shape, so a preset carries over unchanged.
+ *
+ * The TIME ZONE is still the reader's own: `Date`'s own accessors are local, so this is the
+ * clock on their wall written in a fixed format, not a fixed clock. The ISO pair is not
+ * localised either, for the stronger version of the same reason.
+ */
+function clockDate(now: number | undefined): Date {
+	return new Date(now ?? Date.now());
+}
+
+function formatClock(now: number | undefined): string {
+	return clockDate(now).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatLongDate(now: number | undefined): string {
+	return clockDate(now).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+function formatWeekday(now: number | undefined): string {
+	return clockDate(now).toLocaleDateString('en-US', { weekday: 'long' });
+}
+
+function pad(n: number): string {
+	return String(n).padStart(2, '0');
+}
+
+function formatIsoTime(now: number | undefined): string {
+	const d = clockDate(now);
+	return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function formatIsoDate(now: number | undefined): string {
+	const d = clockDate(now);
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 export interface PromptCharacter {
@@ -448,6 +513,19 @@ function resolveMacro(name: string, context: MacroContext): string | undefined {
 			// Chat-memory recall, pre-rendered by the prompt builder. Empty when memory is
 			// off, so the macro simply vanishes from the prompt.
 			return context.memory ?? '';
+		// The reader's own clock and locale, because these resolve in the browser: a model
+		// told the time should be told the time where the person typing is, not where the
+		// server happens to be racked.
+		case 'time':
+			return formatClock(context.now);
+		case 'date':
+			return formatLongDate(context.now);
+		case 'weekday':
+			return formatWeekday(context.now);
+		case 'isotime':
+			return formatIsoTime(context.now);
+		case 'isodate':
+			return formatIsoDate(context.now);
 	}
 
 	// {{mesExamples}} is block-formatted separately from the other per-field macros: <START>
