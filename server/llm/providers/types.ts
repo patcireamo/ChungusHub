@@ -12,7 +12,7 @@ import type {
 	ModelInfo,
 	ModelEndpoint,
 	ProviderAccount,
-	ReasoningEffort
+	ReasoningPolicy
 } from '../types';
 
 /**
@@ -40,29 +40,20 @@ export type ResolvedParamPolicy = 'reported' | 'base-only' | string[];
  */
 export type ParamPolicy = ResolvedParamPolicy | 'declared';
 
+export type { ReasoningPolicy } from '../types';
+
 /**
- * How a provider's API expresses reasoning controls. Drives BOTH the request
- * translation (OpenAICompatibleProvider / native provider) and the client UI
- * (which effort levels appear, whether a visibility toggle shows). Declared
- * once here so what is visible is exactly what is sent.
+ * What a profile may declare about reasoning. A concrete policy is already
+ * resolved; 'declared' states the opposite of a capability, exactly as the
+ * ParamPolicy literal of the same name does: the endpoint is the user's own
+ * (the BYO openai-compatible profile), so nothing here can know which dialect
+ * it speaks. The CONNECTION carries the choice instead (`Connection.reasoningDialect`),
+ * resolved into a real policy by `resolveReasoningPolicy` (config/sampling.ts)
+ * before any visibility or request-building code sees it. The visibility helpers
+ * take `ReasoningPolicy | null`, so leaving it unresolved is a type error rather
+ * than a control that renders and sends nothing.
  */
-export interface ReasoningPolicy {
-	/**
-	 * App effort level → the provider's documented wire value. Only mapped levels
-	 * are selectable in the UI. 'off' appears here when the API disables thinking
-	 * via an effort value (e.g. OpenRouter 'none'); use `offViaThinking` when the
-	 * API uses `thinking: {type: "disabled"}` instead.
-	 */
-	efforts?: Partial<Record<ReasoningEffort, string>>;
-	/** Where effort values go: flat `reasoning_effort` (default) or nested `reasoning: {effort}`. */
-	effortField?: 'reasoning_effort' | 'reasoning-object';
-	/** 'off' sends `thinking: {type: "disabled"}` (DeepSeek / Z.AI / Moonshot style). */
-	offViaThinking?: boolean;
-	/** Reasoning visibility is controllable independently via `reasoning: {exclude: true}`. */
-	exclude?: boolean;
-	/** Show reasoning controls only for models flagged isReasoning (from /models). */
-	gate?: 'model';
-}
+export type ProfileReasoning = ReasoningPolicy | 'declared';
 
 /**
  * How a provider handles prompt caching, so the app can offer honest, per-provider
@@ -141,8 +132,9 @@ export interface ProviderProfile {
 	routing?: boolean;
 	/** The API honours the OpenAI `service_tier` field. */
 	serviceTier?: boolean;
-	/** Reasoning controls the API documents (absent = none; controls stay hidden). */
-	reasoning?: ReasoningPolicy;
+	/** Reasoning controls the API documents (absent = none; controls stay hidden), or
+	 *  'declared' when only the endpoint's owner can know (BYO). */
+	reasoning?: ProfileReasoning;
 	/** Inline-image support (absent = the API takes no image content parts). */
 	media?: MediaPolicy;
 	/** The API accepts a `verbosity` field: true = provider-wide (OpenAI GPT-5),

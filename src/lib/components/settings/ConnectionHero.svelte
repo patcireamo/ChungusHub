@@ -18,6 +18,9 @@
 		status: Status;
 		account: ProviderAccount | null;
 		error: string;
+		/** The endpoint served no model list, rather than rejecting the key. Requests still
+		 *  go to the URL as typed, so the model can be named by hand. */
+		apiNotFound: boolean;
 		modelCount: number;
 		onSelectProvider: (name: ProviderName) => void;
 		onKeyChange: (value: string) => void;
@@ -35,6 +38,7 @@
 		status,
 		account,
 		error,
+		apiNotFound,
 		modelCount,
 		onSelectProvider,
 		onKeyChange,
@@ -195,6 +199,12 @@
 		<p class="status-line muted"><Icon name="radar" class="w-3.5 h-3.5" strokeWidth={1.75} /> Reading your key…</p>
 	{:else if error}
 		<p class="status-line err"><Icon name="warning" class="w-3.5 h-3.5" strokeWidth={1.75} /> {error}</p>
+		<!-- The verdict stays red: a mistyped URL is by far the likeliest cause and must keep
+		     shouting. But a server that only answers /chat/completions is a real setup, and it
+		     still gets its request, so the way out is stated instead of left to be discovered. -->
+		{#if apiNotFound}
+			<p class="status-hint">Requests still go to this URL as typed, so you can name the model yourself below.</p>
+		{/if}
 	{/if}
 
 	<!-- The ledger wakes up once a key is bound -->
@@ -483,6 +493,16 @@
 
 	.status-line.err {
 		color: var(--color-error);
+	}
+
+	/* Follows the red verdict without competing with it: the diagnosis is the loud half,
+	   this is only what to do next. Indented under the warning icon it answers. */
+	.status-hint {
+		margin: -0.25rem 0 0;
+		padding-left: 1.15rem;
+		font-family: var(--font-ui);
+		font-size: 0.72rem;
+		color: var(--color-text-muted);
 	}
 
 	/* ===== Ledger ===== */

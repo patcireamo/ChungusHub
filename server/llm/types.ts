@@ -28,6 +28,31 @@ export interface LLMMessage {
 export type ReasoningEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'max';
 
 /**
+ * How a provider's API expresses reasoning controls. Drives BOTH the request
+ * translation (OpenAICompatibleProvider / native provider) and the client UI
+ * (which effort levels appear, whether a visibility toggle shows), so what is
+ * visible is exactly what is sent. Lives here beside `ReasoningEffort`, which
+ * keys it; `providers/types.ts` re-exports it for the profiles.
+ */
+export interface ReasoningPolicy {
+	/**
+	 * App effort level → the provider's documented wire value. Only mapped levels
+	 * are selectable in the UI. 'off' appears here when the API disables thinking
+	 * via an effort value (e.g. OpenRouter 'none'); use `offViaThinking` when the
+	 * API uses `thinking: {type: "disabled"}` instead.
+	 */
+	efforts?: Partial<Record<ReasoningEffort, string>>;
+	/** Where effort values go: flat `reasoning_effort` (default) or nested `reasoning: {effort}`. */
+	effortField?: 'reasoning_effort' | 'reasoning-object';
+	/** 'off' sends `thinking: {type: "disabled"}` (DeepSeek / Z.AI / Moonshot style). */
+	offViaThinking?: boolean;
+	/** Reasoning visibility is controllable independently via `reasoning: {exclude: true}`. */
+	exclude?: boolean;
+	/** Show reasoning controls only for models flagged isReasoning (from /models). */
+	gate?: 'model';
+}
+
+/**
  * Per-request response tuning built from the user's generation settings. Every
  * field is optional; absent = provider default. Providers translate only the
  * fields their profile declares support for and ignore the rest. The client
@@ -35,6 +60,15 @@ export type ReasoningEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'm
  */
 export interface GenerationTuning {
 	reasoningEffort?: ReasoningEffort;
+	/**
+	 * The reasoning dialect for THIS request, sent only by connections whose provider
+	 * declares `reasoning: 'declared'` (the BYO openai-compatible profile), where the
+	 * endpoint is the user's own and nothing on our side can know what it speaks. The
+	 * connection's owner picks it and the client resolves it here, so the server stays
+	 * the same dumb translator it is for a profile-declared policy. Ignored by every
+	 * provider whose own dialect is known.
+	 */
+	reasoningPolicy?: ReasoningPolicy;
 	/** Return the model's reasoning alongside the reply (visibility, where controllable). */
 	showReasoning?: boolean;
 	/** false = leave inline reasoning markers (<think> …, see inline-reasoning.ts) in message

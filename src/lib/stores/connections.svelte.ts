@@ -19,7 +19,7 @@
 import { readSetting, writeSetting, registerSettingsReload } from '$lib/services/syncedSetting';
 import { db } from '$lib/services/database';
 import { ENGINES } from '$lib/engines/registry';
-import { DECLARABLE_PARAMS } from '$lib/config/sampling';
+import { DECLARABLE_PARAMS, REASONING_DIALECTS } from '$lib/config/sampling';
 import {
 	DEFAULT_CONTEXT_SIZE,
 	DEFAULT_GENERATION_SETTINGS,
@@ -29,7 +29,8 @@ import {
 	type CallTarget,
 	type Connection,
 	type ProviderName,
-	type PromptPostProcessingMode
+	type PromptPostProcessingMode,
+	type ReasoningDialect
 } from '$lib/types/llm';
 
 const CONNECTIONS_KEY = 'connections';
@@ -57,6 +58,7 @@ function makeConnection(name: string, provider: ProviderName = DEFAULT_PROVIDER)
 		promptPlaceholder: DEFAULT_PROMPT_PLACEHOLDER,
 		routing: null,
 		samplingParams: [],
+		reasoningDialect: 'none',
 		generation: { ...DEFAULT_GENERATION_SETTINGS }
 	};
 }
@@ -80,6 +82,11 @@ function normalizeConnection(raw: Partial<Connection> | null): Connection | null
 	const post = PROMPT_POST_PROCESSING_MODES.includes(raw.postProcessing as PromptPostProcessingMode)
 		? (raw.postProcessing as PromptPostProcessingMode)
 		: 'merge';
+	// Absent (every connection until now, and every non-BYO one) or unknown = 'none',
+	// which shows no reasoning control and sends nothing: exactly today's behaviour.
+	const dialect = REASONING_DIALECTS.some((d) => d.value === raw.reasoningDialect)
+		? (raw.reasoningDialect as ReasoningDialect)
+		: 'none';
 	return {
 		id: raw.id,
 		name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : 'Connection',
@@ -96,6 +103,7 @@ function normalizeConnection(raw: Partial<Connection> | null): Connection | null
 				: DEFAULT_PROMPT_PLACEHOLDER,
 		routing: raw.routing ?? null,
 		samplingParams: normalizeSamplingParams(raw.samplingParams),
+		reasoningDialect: dialect,
 		generation: { ...DEFAULT_GENERATION_SETTINGS, ...(raw.generation ?? {}) }
 	};
 }

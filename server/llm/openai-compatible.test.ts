@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { OpenAICompatibleProvider } from './openai-compatible';
+import type { ProviderProfile } from './providers/types';
 
 /**
  * Wiring tests for the provider class against a real local endpoint: net.ts SSE
@@ -593,5 +594,98 @@ describe('OpenAICompatibleProvider base URL resolution', () => {
 		const result = await pending;
 		expect(result.content).toBe('ok');
 		expect(recorded.auth).toBe('Bearer key-A');
+	});
+});
+
+// ===== Reasoning dialects =====
+// applyTuning is the one place a reasoning policy becomes wire fields. For a BYO profile
+// ('declared') the policy rides the request, because only the endpoint's owner knows which
+// shape their server speaks; everywhere else the profile's own policy is the truth and the
+// request's copy must not be able to touch it. These two shapes mirror REASONING_DIALECTS
+// (src/lib/config/sampling.ts), whose vocabulary contracts.test.ts holds to this file's types.
+
+const FLAT_DIALECT = { efforts: { off: 'none', low: 'low', medium: 'medium', high: 'high' } } as const;
+const NESTED_DIALECT = {
+	efforts: { off: 'none', minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', max: 'max' },
+	effortField: 'reasoning-object',
+	exclude: true
+} as const;
+
+/** Captures the completion POST's body, so a test can read what actually went out. */
+let sentBody: Record<string, unknown> = {};
+const dialectServer = Bun.serve({
+	port: 0,
+	async fetch(req) {
+		sentBody = (await req.json()) as Record<string, unknown>;
+		return Response.json(COMPLETION);
+	}
+});
+
+afterAll(() => {
+	dialectServer.stop(true);
+});
+
+function dialectProvider(reasoning: ProviderProfile['reasoning']): OpenAICompatibleProvider {
+	const p = new OpenAICompatibleProvider({
+		name: 'dialect',
+		displayName: 'Dialect',
+		defaultBaseUrl: `http://127.0.0.1:${dialectServer.port}/v1`,
+		requiresApiKey: false,
+		baseUrlEditable: false,
+		reasoning
+	});
+	p.configure({ apiKey: '' });
+	return p;
+}
+
+describe('OpenAICompatibleProvider declared reasoning dialects', () => {
+	test('a declared flat dialect becomes reasoning_effort', async () => {
+		await dialectProvider('declared').complete({
+			model: 'm',
+			messages: USER,
+			tuning: { reasoningEffort: 'off', reasoningPolicy: FLAT_DIALECT }
+		});
+		expect(sentBody.reasoning_effort).toBe('none');
+		expect(sentBody.reasoning).toBeUndefined();
+	});
+
+	test('a declared nested dialect becomes a reasoning object, effort and visibility together', async () => {
+		await dialectProvider('declared').complete({
+			model: 'm',
+			messages: USER,
+			tuning: { reasoningEffort: 'high', showReasoning: false, reasoningPolicy: NESTED_DIALECT }
+		});
+		expect(sentBody.reasoning).toEqual({ effort: 'high', exclude: true });
+		expect(sentBody.reasoning_effort).toBeUndefined();
+	});
+
+	test('a declared profile with no dialect on the request sends no reasoning field', async () => {
+		await dialectProvider('declared').complete({
+			model: 'm',
+			messages: USER,
+			tuning: { reasoningEffort: 'high' }
+		});
+		expect(sentBody.reasoning_effort).toBeUndefined();
+		expect(sentBody.reasoning).toBeUndefined();
+	});
+
+	test("a known provider's own dialect wins over a policy on the request", async () => {
+		await dialectProvider(FLAT_DIALECT).complete({
+			model: 'm',
+			messages: USER,
+			tuning: { reasoningEffort: 'high', reasoningPolicy: NESTED_DIALECT }
+		});
+		expect(sentBody.reasoning_effort).toBe('high');
+		expect(sentBody.reasoning).toBeUndefined();
+	});
+
+	test('a provider that documents no reasoning ignores a policy on the request', async () => {
+		await dialectProvider(undefined).complete({
+			model: 'm',
+			messages: USER,
+			tuning: { reasoningEffort: 'high', reasoningPolicy: FLAT_DIALECT }
+		});
+		expect(sentBody.reasoning_effort).toBeUndefined();
+		expect(sentBody.reasoning).toBeUndefined();
 	});
 });

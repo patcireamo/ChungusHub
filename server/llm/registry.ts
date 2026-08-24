@@ -21,7 +21,7 @@ import type {
 } from './types';
 import { OpenAICompatibleProvider } from './openai-compatible';
 import { PROVIDER_PROFILES } from './providers';
-import type { CachingPolicy, ChatProvider, MediaPolicy, ParamPolicy, ReasoningPolicy } from './providers/types';
+import type { CachingPolicy, ChatProvider, MediaPolicy, ParamPolicy, ProfileReasoning } from './providers/types';
 import { serverDb } from '../db';
 
 /**
@@ -105,8 +105,9 @@ export interface ProviderMetadata {
 	serviceTier: boolean;
 	/** An account/balance snapshot is available (drives the connection ledger). */
 	account: boolean;
-	/** Reasoning controls the API documents (null = none; controls stay hidden). */
-	reasoning: ReasoningPolicy | null;
+	/** Reasoning controls the API documents (null = none; controls stay hidden), or
+	 *  'declared' when the connection names the dialect (BYO). */
+	reasoning: ProfileReasoning | null;
 	/** Inline-image support (null = the API takes no image content parts). */
 	media: MediaPolicy | null;
 	/** `verbosity` support: true provider-wide, 'reported' per model, false = hidden. */

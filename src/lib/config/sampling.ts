@@ -13,6 +13,8 @@ import type {
 	CachingPolicy,
 	MediaPolicy,
 	ModelInfo,
+	ProfileReasoning,
+	ReasoningDialect,
 	ReasoningEffort,
 	ReasoningPolicy,
 	SamplingParamKey,
@@ -77,6 +79,65 @@ export const DECLARABLE_PARAMS: { key: string; label: string; info: string }[] =
  */
 export function resolveParamPolicy(policy: ParamPolicy, declared: string[]): ResolvedParamPolicy {
 	return policy === 'declared' ? declared : policy;
+}
+
+/**
+ * The reasoning wire shapes a BYO endpoint's owner can declare, and the policy each
+ * one resolves to. One table: the Select renders from it and `resolveReasoningPolicy`
+ * reads from it, so a dialect cannot be offered without a translation behind it.
+ *
+ * Neither dialect gates on the model's `isReasoning` flag: a BYO /models almost never
+ * carries one, and gating would hide the control its owner just declared.
+ *
+ * Effort levels are the documented ones, not a superset: vLLM takes low/medium/high
+ * plus "none" to disable, Ollama rejects "minimal", and llama.cpp only acts on "none".
+ * The nested shape mirrors the OpenRouter profile, which is the request surface the
+ * gateways speaking it copy.
+ */
+export const REASONING_DIALECTS: {
+	value: ReasoningDialect;
+	label: string;
+	hint: string;
+	policy: ReasoningPolicy | null;
+}[] = [
+	{
+		value: 'none',
+		label: 'None',
+		hint: 'No reasoning control, and nothing added to the request.',
+		policy: null
+	},
+	{
+		value: 'reasoning_effort',
+		label: 'reasoning_effort',
+		hint: 'A flat reasoning_effort field. vLLM, Ollama, llama.cpp and NVIDIA NIM read this one.',
+		policy: { efforts: { off: 'none', low: 'low', medium: 'medium', high: 'high' } }
+	},
+	{
+		value: 'reasoning-object',
+		label: 'reasoning.effort',
+		hint: 'A nested reasoning object. Gateways built on OpenRouter’s request shape read this one.',
+		policy: {
+			efforts: { off: 'none', minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', max: 'max' },
+			effortField: 'reasoning-object',
+			exclude: true
+		}
+	}
+];
+
+/**
+ * Collapse a provider's declared reasoning into the policy the visibility helpers and
+ * `applyTuning` consume. Everything but 'declared' passes through untouched; for
+ * 'declared' (BYO endpoints) the connection's chosen dialect IS the policy, because the
+ * person who stood the endpoint up is the only source of truth about what it speaks.
+ * 'none' resolves to null: no controls, nothing sent, which is where a connection stays
+ * until its owner says otherwise.
+ */
+export function resolveReasoningPolicy(
+	reasoning: ProfileReasoning | null,
+	dialect: ReasoningDialect
+): ReasoningPolicy | null {
+	if (reasoning !== 'declared') return reasoning;
+	return REASONING_DIALECTS.find((d) => d.value === dialect)?.policy ?? null;
 }
 
 export const SERVICE_TIERS: { value: ServiceTier; label: string; hint: string }[] = [
@@ -287,17 +348,25 @@ export function cachingControl(caching: CachingPolicy | null): { mode: 'explicit
  */
 export function buildGenerationTuning(
 	g: GenerationSettings,
-	reasoning: ReasoningPolicy | null,
+	reasoning: ProfileReasoning | null,
+	dialect: ReasoningDialect,
 	media: MediaPolicy | null,
 	verbosity: boolean | 'reported',
 	caching: CachingPolicy | null,
 	model: ModelInfo | undefined
 ): GenerationTuning | undefined {
 	const out: GenerationTuning = {};
-	if (g.reasoningEffort !== 'auto' && effortVisible(reasoning, model) && effortOptions(reasoning).includes(g.reasoningEffort)) {
+	const policy = resolveReasoningPolicy(reasoning, dialect);
+	if (g.reasoningEffort !== 'auto' && effortVisible(policy, model) && effortOptions(policy).includes(g.reasoningEffort)) {
 		out.reasoningEffort = g.reasoningEffort;
 	}
-	if (!g.showReasoning && showReasoningVisible(reasoning, model)) out.showReasoning = false;
+	if (!g.showReasoning && showReasoningVisible(policy, model)) out.showReasoning = false;
+	// The server knows every shipped provider's dialect; only a declared one has to ride
+	// along, and only when something actually uses it. Sending it beside nothing would put
+	// a policy on the wire (and in the prompt debug panel) that translates to no field.
+	if (reasoning === 'declared' && policy && (out.reasoningEffort !== undefined || out.showReasoning !== undefined)) {
+		out.reasoningPolicy = policy;
+	}
 	// Inline-marker parsing is our own post-processing, not a wire param, so no capability
 	// gate applies: only the non-default (off) state is carried.
 	if (!g.parseReasoning) out.parseInlineReasoning = false;

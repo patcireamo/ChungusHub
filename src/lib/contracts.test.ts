@@ -23,6 +23,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { PROVIDER_NAMES } from '$lib/types/llm';
+import { REASONING_DIALECTS } from '$lib/config/sampling';
 import { PERMANENT_TRAITS } from '$lib/types/library';
 import { MACROS } from '$lib/macros';
 import { AMBIENT_EFFECTS } from '$lib/types/ambient';
@@ -921,6 +922,63 @@ describe('sampling parameters (architecture/prompt-pipeline.md #2, architecture/
 		}
 		expect(checked, 'found no static provider allow-lists, so the scan pattern is stale').toBeGreaterThan(0);
 		expect(offenders).toEqual([]);
+	});
+});
+
+describe('reasoning + tuning shapes (architecture/llm-providers.md #2)', () => {
+	const stripComments = (s: string): string =>
+		s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
+	const SERVER = ['server', 'llm', 'types.ts'];
+	const CLIENT = ['src', 'lib', 'types', 'llm.ts'];
+
+	/** One interface's top-level field names, comments stripped so prose can differ. */
+	const fields = (path: string[], name: string): string[] => {
+		const body = stripComments(
+			block(read(...path), new RegExp(`export interface ${name} \\{[\\s\\S]*?\\n\\}`), `${name} in ${path.at(-1)}`)
+		);
+		return scan(body, /^\t(\w+)\??:/gm, `${name} fields in ${path.at(-1)}`).sort();
+	};
+
+	/** One interface's string literals: the wire values its fields may carry. */
+	const literals = (path: string[], name: string): string[] => {
+		const body = stripComments(
+			block(read(...path), new RegExp(`export interface ${name} \\{[\\s\\S]*?\\n\\}`), `${name} in ${path.at(-1)}`)
+		);
+		return [...new Set(scan(body, /'([a-z_-]+)'/g, `${name} literals in ${path.at(-1)}`))].sort();
+	};
+
+	// The profiles declare a ReasoningPolicy server-side and applyTuning translates it; the
+	// client renders the effort pills from the same shape and, for a declared (BYO) dialect,
+	// puts a policy on the wire. Neither side imports the other. A field or a wire value that
+	// exists on one side only is a control that renders and sends nothing, or a request field
+	// nothing can ever produce.
+	test('both ReasoningPolicy copies carry the same fields', () => {
+		expect(fields(SERVER, 'ReasoningPolicy')).toEqual(fields(CLIENT, 'ReasoningPolicy'));
+	});
+
+	test('both ReasoningPolicy copies carry the same wire values', () => {
+		expect(literals(SERVER, 'ReasoningPolicy')).toEqual(literals(CLIENT, 'ReasoningPolicy'));
+	});
+
+	// GenerationTuning is the whole per-request tuning payload. A field the client sets and
+	// the server's copy has never heard of is silently dropped at the type boundary, which is
+	// exactly "visible but not sent".
+	test('both GenerationTuning copies carry the same fields', () => {
+		expect(fields(SERVER, 'GenerationTuning')).toEqual(fields(CLIENT, 'GenerationTuning'));
+	});
+
+	// The union is the stored vocabulary, the table is what the editor offers and what
+	// resolveReasoningPolicy reads. A dialect missing from the table resolves to null: a
+	// stored declaration that quietly stops sending anything.
+	test('every reasoning dialect has exactly one row, and only none has no policy', () => {
+		const union = scan(
+			block(read(...CLIENT), /export type ReasoningDialect =[^;]*;/, 'ReasoningDialect'),
+			/'([a-z_-]+)'/g,
+			'reasoning dialects'
+		);
+		expect(REASONING_DIALECTS.map((d) => d.value).sort()).toEqual([...union].sort());
+		expect(REASONING_DIALECTS.filter((d) => (d.value === 'none') !== (d.policy === null))).toEqual([]);
 	});
 });
 

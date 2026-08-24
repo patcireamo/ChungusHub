@@ -44,6 +44,24 @@ export interface ReasoningPolicy {
 	gate?: 'model';
 }
 
+/**
+ * Mirrors the server-side ProfileReasoning: what a provider profile declares about
+ * reasoning. 'declared' says the dialect is unknowable from here (BYO endpoints), so
+ * the connection names it and `resolveReasoningPolicy` (config/sampling.ts) turns the
+ * pair into a real policy. The helpers take `ReasoningPolicy | null`, so an unresolved
+ * value fails to type-check instead of rendering controls that send nothing.
+ */
+export type ProfileReasoning = ReasoningPolicy | 'declared';
+
+/**
+ * Which wire shape a bring-your-own endpoint speaks for reasoning, named by its
+ * request field. Nothing on our side can detect it (/models never reports it), so
+ * the person who stood the endpoint up picks it; 'none' means no control is shown
+ * and nothing is sent. The dialects and the policies they resolve to live in one
+ * table, REASONING_DIALECTS in config/sampling.ts.
+ */
+export type ReasoningDialect = 'none' | 'reasoning_effort' | 'reasoning-object';
+
 /** Mirrors the server-side MediaPolicy: inline-image support of a provider's API. */
 export interface MediaPolicy {
 	images: boolean;
@@ -72,6 +90,10 @@ export interface CachingPolicy {
  */
 export interface GenerationTuning {
 	reasoningEffort?: ReasoningEffort;
+	/** The dialect this request speaks, carried only by connections whose provider declares
+	 *  `reasoning: 'declared'` (BYO). Every other provider's dialect is known server-side and
+	 *  this is ignored there, so it can never override one we ship. */
+	reasoningPolicy?: ReasoningPolicy;
 	showReasoning?: boolean;
 	/** false = leave inline reasoning markers (<think> …) in message content instead of
 	 *  extracting them to `thinking` server-side. Absent/true = extract. Provider-agnostic
@@ -374,6 +396,14 @@ export interface Connection {
 	 * connection stays in until its owner says otherwise). See DECLARABLE_PARAMS.
 	 */
 	samplingParams: string[];
+	/**
+	 * The reasoning wire shape this endpoint speaks, the same declaration as
+	 * `samplingParams` in a different vocabulary: only BYO openai-compatible
+	 * connections use it, every other provider's dialect is known and wins.
+	 * 'none' (the state a connection stays in until its owner says otherwise)
+	 * shows no reasoning control and sends nothing.
+	 */
+	reasoningDialect: ReasoningDialect;
 	generation: GenerationSettings;
 }
 

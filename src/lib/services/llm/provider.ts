@@ -21,7 +21,7 @@ import type {
 	ModelInfo,
 	ModelEndpoint,
 	ProviderAccount,
-	ReasoningPolicy,
+	ProfileReasoning,
 	ParamPolicy,
 	PromptPostProcessingMode,
 	RoutingConfig,
@@ -68,8 +68,9 @@ export interface ProviderMeta {
 	serviceTier: boolean;
 	/** An account/balance snapshot is available (drives the connection ledger). */
 	account: boolean;
-	/** Reasoning controls the API documents (null = none; controls stay hidden). */
-	reasoning: ReasoningPolicy | null;
+	/** Reasoning controls the API documents (null = none; controls stay hidden), or
+	 *  'declared' when the connection names the dialect (BYO endpoints). */
+	reasoning: ProfileReasoning | null;
 	/** Inline-image support (null = the API takes no image content parts). */
 	media: MediaPolicy | null;
 	/** `verbosity` support: true provider-wide, 'reported' per model, false = hidden. */
@@ -283,6 +284,7 @@ class LLMService {
 		return buildGenerationTuning(
 			conn.generation,
 			meta?.reasoning ?? null,
+			conn.reasoningDialect,
 			meta?.media ?? null,
 			meta?.verbosity ?? false,
 			meta?.caching ?? null,
@@ -319,6 +321,7 @@ class LLMService {
 		const tuning = buildGenerationTuning(
 			conn.generation,
 			meta?.reasoning ?? null,
+			conn.reasoningDialect,
 			meta?.media ?? null,
 			meta?.verbosity ?? false,
 			meta?.caching ?? null,

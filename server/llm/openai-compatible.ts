@@ -210,7 +210,10 @@ export class OpenAICompatibleProvider implements ChatProvider {
 	 * left over from another connection must not leak into the request.
 	 */
 	private applyTuning(body: Record<string, unknown>, tuning: GenerationTuning): void {
-		const r = this.profile.reasoning;
+		// A BYO profile knows no dialect of its own, so the request carries the one its
+		// connection declared. Gated on 'declared' rather than merged: a provider whose
+		// dialect we DO know must never be overridable from the wire.
+		const r = this.profile.reasoning === 'declared' ? tuning.reasoningPolicy : this.profile.reasoning;
 		if (r) {
 			const effort = tuning.reasoningEffort;
 			if (effort === 'off' && r.offViaThinking) {

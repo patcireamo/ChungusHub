@@ -23,6 +23,7 @@
 		type GenerationSettings,
 		type ModelInfo,
 		type ProviderAccount,
+		type ReasoningDialect,
 		type ServiceTier,
 		type PromptPostProcessingMode
 	} from '$lib/types/llm';
@@ -33,7 +34,9 @@
 		SERVICE_TIERS,
 		EFFORT_LABELS,
 		DECLARABLE_PARAMS,
+		REASONING_DIALECTS,
 		resolveParamPolicy,
+		resolveReasoningPolicy,
 		sliderVisible,
 		seedVisible,
 		serviceTierEligible,
@@ -70,6 +73,10 @@
 	let resolvedBaseUrl = $state<string | null>(null);
 	let status = $state<Status>('idle');
 	let connectionError = $state('');
+	/** The endpoint served no model list at all, as opposed to rejecting the key. A named
+	 *  reason on a failed validation IS that distinction: the server throws for "no API
+	 *  here" and returns a plain false for a credential rejection. */
+	let apiNotFound = $state(false);
 	let account = $state<ProviderAccount | null>(null);
 	let models = $state<ModelInfo[]>([]);
 	let loadingModels = $state(false);
@@ -105,9 +112,20 @@
 	// The slider list mirrors exactly what this connection sends ("visible === sent").
 	const visibleSliders = $derived(SAMPLING_SLIDERS.filter((p) => sliderVisible(p, modelInfo, samplingPolicy)));
 
-	const reasoningEffortOptions = $derived(effortOptions(meta?.reasoning ?? null));
-	const showEffort = $derived(effortVisible(meta?.reasoning ?? null, modelInfo));
-	const showShowReasoning = $derived(showReasoningVisible(meta?.reasoning ?? null, modelInfo));
+	// A BYO endpoint's reasoning dialect is unknowable from here, so that provider's
+	// profile says 'declared' and the connection names it. Every other provider's real
+	// policy passes through untouched.
+	const declaresReasoning = $derived(meta?.reasoning === 'declared');
+	const reasoningPolicy = $derived(
+		resolveReasoningPolicy(meta?.reasoning ?? null, conn?.reasoningDialect ?? 'none')
+	);
+	const dialectHint = $derived(
+		conn ? REASONING_DIALECTS.find((d) => d.value === conn.reasoningDialect)?.hint : undefined
+	);
+
+	const reasoningEffortOptions = $derived(effortOptions(reasoningPolicy));
+	const showEffort = $derived(effortVisible(reasoningPolicy, modelInfo));
+	const showShowReasoning = $derived(showReasoningVisible(reasoningPolicy, modelInfo));
 	const showVerbosity = $derived(verbosityVisible(meta?.verbosity ?? false, modelInfo));
 	const showSendImages = $derived(imagesEnabled(meta?.media ?? null, modelInfo));
 	const showImageDetail = $derived(imageDetailVisible(meta?.media ?? null, modelInfo) && gen.sendImages);
@@ -221,10 +239,16 @@
 		if (!conn || name === conn.provider) return;
 		if (bindTimer) clearTimeout(bindTimer);
 		const m = PROVIDERS.find((p) => p.name === name);
-		// A provider switch is a fresh connection: clear the model + routing + any declared
-		// endpoint params (they described the OLD endpoint), and reset the credential row
-		// to the new provider with no key (the old key was for the old one).
-		connectionStore.update(id, { provider: name, model: '', routing: null, samplingParams: [] });
+		// A provider switch is a fresh connection: clear the model + routing + everything the
+		// user declared about the OLD endpoint (accepted params, reasoning dialect), and reset
+		// the credential row to the new provider with no key (the old key was for the old one).
+		connectionStore.update(id, {
+			provider: name,
+			model: '',
+			routing: null,
+			samplingParams: [],
+			reasoningDialect: 'none'
+		});
 		apiKey = '';
 		baseUrl = m?.baseUrlEditable ? m.defaultBaseUrl : '';
 		await llmService.setConnectionCredentials(id, name, '', baseUrl || undefined);
@@ -249,12 +273,14 @@
 			models = [];
 			loadingModels = false;
 			connectionError = '';
+			apiNotFound = false;
 			return;
 		}
 		const seq = ++connectSeq;
 		const provider = conn.provider;
 		status = 'binding';
 		connectionError = '';
+		apiNotFound = false;
 		account = null;
 		loadingModels = true;
 		try {
@@ -267,7 +293,10 @@
 				const { valid, error: reason } = await llmService.validateConnection(id, provider);
 				if (seq !== connectSeq) return;
 				status = valid ? 'valid' : 'invalid';
-				if (!valid) connectionError = reason || 'The provider rejected these credentials.';
+				if (!valid) {
+					connectionError = reason || 'The provider rejected these credentials.';
+					apiNotFound = !!reason;
+				}
 			}
 			if (status === 'valid') {
 				const list = await llmService.fetchAvailableModels(id, provider);
@@ -340,6 +369,10 @@
 
 	function updatePostProcessing(mode: PromptPostProcessingMode): void {
 		connectionStore.update(id, { postProcessing: mode });
+	}
+
+	function updateDialect(dialect: ReasoningDialect): void {
+		connectionStore.update(id, { reasoningDialect: dialect });
 	}
 
 	function commitPlaceholder(text: string): void {
@@ -415,6 +448,7 @@
 			{status}
 			{account}
 			error={connectionError}
+			{apiNotFound}
 			modelCount={models.length}
 			onSelectProvider={selectProvider}
 			{onKeyChange}
@@ -438,6 +472,12 @@
 				onpick={pickModel}
 				onConfigureRouting={meta.routing ? openRouting : undefined}
 			/>
+
+			<!-- Only worth saying when a list exists to contradict it: with no list at all
+			     (a server that serves no /models) there is nothing this could mean. -->
+			{#if conn.model && models.length > 0 && !modelInfo}
+				<p class="mode-hint">Not in the loaded model list. Sent exactly as typed.</p>
+			{/if}
 
 			{#if modelInfo}
 				{@const info = modelInfo}
@@ -734,6 +774,28 @@
 						</div>
 						<Toggle checked={gen.parseReasoning} onchange={(v) => updateGen('parseReasoning', v)} label="Auto-parse reasoning" />
 					</div>
+					{#if declaresReasoning}
+						<!-- BYO endpoints: these stacks disagree on which field carries the
+						     thinking settings and /models never says which, so its owner names
+						     it and the Effort row below follows that exactly. -->
+						<div class="row-block">
+							<div class="slider-label-wrap">
+								<span class="slider-label">Reasoning field</span>
+								<InfoTip
+									text="Nothing here can check that your server reads it: the field is simply added to the request."
+								/>
+							</div>
+							<Select
+								value={conn.reasoningDialect}
+								onchange={(e) => updateDialect((e.currentTarget as HTMLSelectElement).value as ReasoningDialect)}
+							>
+								{#each REASONING_DIALECTS as d (d.value)}
+									<option value={d.value}>{d.label}</option>
+								{/each}
+							</Select>
+							{#if dialectHint}<p class="mode-hint">{dialectHint}</p>{/if}
+						</div>
+					{/if}
 					{#if showEffort}
 						<div class="row-block">
 							<div class="slider-label-wrap">

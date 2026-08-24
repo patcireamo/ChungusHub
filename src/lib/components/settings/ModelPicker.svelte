@@ -99,11 +99,33 @@
 	const selectedInfo = $derived(models.find((m) => m.id === value));
 	const hasRouting = $derived(!!value && !!routedModels?.has(value));
 
+	/**
+	 * The typed text, offered verbatim as a model id. A list is not the whole truth
+	 * anywhere: an endpoint can serve /chat/completions and no /models at all, a
+	 * gateway can accept ids it never advertises, and OpenRouter's `:nitro`/`:floor`
+	 * shortcuts work on any model without being listed. Null once the text matches a
+	 * listed id exactly, since picking that row is the same act. Model ids are
+	 * case-sensitive, so the comparison is too.
+	 */
+	const customId = $derived.by(() => {
+		const typed = search.trim();
+		return typed && !models.some((m) => m.id === typed) ? typed : null;
+	});
+
+	// The custom entry is keyboard-reachable as one more index past the listed models,
+	// while rendering outside the scrolling list (see the pinned row below).
+	const customIndex = $derived(view.visible.length);
+	const navCount = $derived(view.visible.length + (customId ? 1 : 0));
+
 	function pick(modelId: string): void {
 		search = '';
 		open = false;
 		highlighted = -1;
 		onpick(modelId);
+	}
+
+	function pickCustom(): void {
+		if (customId) pick(customId);
 	}
 
 	function scrollHighlightedIntoView(): void {
@@ -113,6 +135,9 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent): void {
+		// Mid-composition Enter closes the IME candidate, it does not choose a model:
+		// acting on it would commit a half-composed string as a model id.
+		if (e.isComposing) return;
 		if (!open) {
 			if (e.key === 'ArrowDown' || e.key === 'Enter') {
 				open = true;
@@ -121,7 +146,7 @@
 			}
 			return;
 		}
-		const last = view.visible.length - 1;
+		const last = navCount - 1;
 		if (e.key === 'ArrowDown') {
 			highlighted = Math.min(highlighted + 1, last);
 			scrollHighlightedIntoView();
@@ -130,10 +155,14 @@
 			highlighted = Math.max(highlighted - 1, 0);
 			scrollHighlightedIntoView();
 			e.preventDefault();
-		} else if (e.key === 'Enter' && highlighted >= 0 && view.visible[highlighted]) {
-			pick(view.visible[highlighted].id);
-			inputEl?.blur();
-			e.preventDefault();
+		} else if (e.key === 'Enter' && highlighted >= 0) {
+			// Read the id before pick() clears the search the custom entry is derived from.
+			const id = customId && highlighted === customIndex ? customId : view.visible[highlighted]?.id;
+			if (id) {
+				pick(id);
+				inputEl?.blur();
+				e.preventDefault();
+			}
 		} else if (e.key === 'Escape') {
 			// Consume the press so the workspace's global Esc doesn't also close
 			// the hosting Settings panel.
@@ -188,7 +217,7 @@
 				type="text"
 				class="input-base search-input"
 				class:has-routing-btn={!!onConfigureRouting && !!value}
-				placeholder={loading ? 'Loading models…' : value && !open ? '' : 'Search models…'}
+				placeholder={loading ? 'Loading models…' : value && !open ? '' : 'Search or type a model id…'}
 				value={open ? search : ''}
 				disabled={loading}
 				onfocus={() => {
@@ -201,6 +230,9 @@
 				}}
 				onkeydown={handleKeydown}
 				autocomplete="off"
+				autocapitalize="off"
+				autocorrect="off"
+				spellcheck="false"
 			/>
 			{#if !open && value}
 				<span class="selected-label">
@@ -254,13 +286,17 @@
 
 			<div bind:this={listEl} class="list">
 				{#if view.visible.length === 0}
-					<div class="empty">
-						{#if models.length === 0}
-							{emptyHint}
-						{:else}
-							No models match "{search}"
-						{/if}
-					</div>
+					<!-- The pinned row below already answers "nothing matched", so the message
+					     stays out of its way and only speaks when there is nothing typed. -->
+					{#if !customId}
+						<div class="empty">
+							{#if models.length === 0}
+								{emptyHint}
+							{:else}
+								No models match "{search}"
+							{/if}
+						</div>
+					{/if}
 				{:else}
 					{#each view.rows as row (row.kind === 'header' ? `h:${row.label}` : row.model.id)}
 						{#if row.kind === 'header'}
@@ -315,6 +351,23 @@
 					{/each}
 				{/if}
 			</div>
+
+			<!-- Pinned outside the scrolling list on purpose: at the bottom of a few hundred
+			     matches nobody would ever meet an affordance they don't know exists. -->
+			{#if customId}
+				<button
+					type="button"
+					class="custom-row"
+					class:highlighted={highlighted === customIndex}
+					role="option"
+					aria-selected={customId === value}
+					onmouseenter={() => (highlighted = customIndex)}
+					onclick={pickCustom}
+				>
+					<Icon name="plus" class="custom-icon" strokeWidth={2} />
+					<span class="custom-text">Use <span class="custom-id">{customId}</span></span>
+				</button>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -580,6 +633,51 @@
 		align-items: center;
 		gap: 0.3rem;
 		flex-shrink: 0;
+	}
+
+	/* Sits under the list rather than in it, so it survives any amount of scrolling.
+	   Quieter than a match: this is the way out when the list has no answer, not a
+	   result competing with the ones above it. */
+	.custom-row {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		width: 100%;
+		padding: 0.5rem 0.7rem;
+		border: none;
+		border-top: 1px solid color-mix(in srgb, var(--color-border-subtle) 60%, transparent);
+		background: transparent;
+		cursor: pointer;
+		text-align: left;
+		transition: background 80ms ease;
+	}
+
+	.custom-row:hover,
+	.custom-row.highlighted {
+		background: color-mix(in srgb, var(--color-bg-tertiary) 80%, transparent);
+	}
+
+	.custom-row :global(.custom-icon) {
+		width: 0.85rem;
+		height: 0.85rem;
+		color: var(--color-text-muted);
+		flex-shrink: 0;
+	}
+
+	.custom-text {
+		font-family: var(--font-ui);
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.custom-id {
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		color: var(--color-text-primary);
 	}
 
 	.option-meta :global(.meta-route) {
