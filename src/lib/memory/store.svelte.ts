@@ -14,7 +14,7 @@
  */
 
 import type { Message } from '$lib/types/chat';
-import type { LLMMessage } from '$lib/types/llm';
+import type { LLMCompletionResult, LLMMessage } from '$lib/types/llm';
 import { llmService } from '$lib/services/llm/provider';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
@@ -104,6 +104,23 @@ const EMPTY_COVERAGE: Coverage = {
 	foldCeilingIndex: null
 };
 
+/**
+ * Why a reply carries no content. The cause lives in the two channels the pure core
+ * never sees, so only the port can name it: a reasoning model that never closes its
+ * thinking inside the output cap leaves the whole answer in the thinking channel.
+ */
+function emptyReplyReason(result: LLMCompletionResult): string {
+	const capped = result.finishReason === 'length';
+	if (result.thinking) {
+		return capped
+			? 'The model spent its entire output on reasoning and never answered. Raise Max tokens on the connection Chat Memory uses, or turn reasoning off there.'
+			: 'The model returned reasoning and no answer.';
+	}
+	return capped
+		? 'The model reached its output cap before writing anything.'
+		: 'The model returned an empty reply.';
+}
+
 /** The LLM port: memory side-tasks ride the Memory engine's connection and that
  *  connection's own generation settings, non-streaming. */
 const llm: LlmFn = async (messages, signal) => {
@@ -111,6 +128,9 @@ const llm: LlmFn = async (messages, signal) => {
 		{ engine: 'memory' },
 		{ messages: messages as LLMMessage[], source: 'memory', signal }
 	);
+	// Thrown here rather than left to the parser: retrying an empty reply spends a
+	// second identical call, and the quoted "" names nothing.
+	if (!result.content.trim()) throw new Error(emptyReplyReason(result));
 	return result.content;
 };
 
