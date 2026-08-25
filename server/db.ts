@@ -1035,7 +1035,7 @@ class ServerDatabase {
 		 *  than by the caller so a page that never comes back cannot leave guidance armed to
 		 *  apply itself twice (architecture/chat-sessions.md). */
 		spendSteeringIds: string[];
-	}): { messageId: string; spentSteering: boolean } | null {
+	}): { messageId: string; spentSteeringIds: string[] } | null {
 		return this.inTransaction(() => {
 			const chat = this.select<{ active_leaf_id: string | null; root_message_id: string | null }[]>(
 				'SELECT active_leaf_id, root_message_id FROM chats WHERE id = ?',
@@ -1082,7 +1082,10 @@ class ServerDatabase {
 			if (commit.claimsRoot && !chat.root_message_id) pointers.rootMessageId = messageId;
 			this.updateChat(pointers, { touchUpdatedAt: true });
 
-			let spentSteering = false;
+			// The ids actually deleted, not a count: the caller records their texts in the chat's
+			// reuse list, and a note this loop declined to spend is still armed. Listing it as
+			// spent would show it in Recent while it is about to inject again.
+			const spentSteeringIds: string[] = [];
 			for (const id of commit.spendSteeringIds) {
 				const row = this.select<{ data_json: string }[]>('SELECT data_json FROM steering_notes WHERE id = ?', [
 					id
@@ -1102,10 +1105,10 @@ class ServerDatabase {
 				}
 				if (mode !== 'once') continue;
 				this.execute('DELETE FROM steering_notes WHERE id = ?', [id]);
-				spentSteering = true;
+				spentSteeringIds.push(id);
 			}
 
-			return { messageId, spentSteering };
+			return { messageId, spentSteeringIds };
 		});
 	}
 

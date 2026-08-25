@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -210,6 +210,14 @@ beforeAll(async () => {
 		})
 	});
 	expect(res.status).toBe(200);
+});
+
+// The gate is module-level and the endpoint reads it mid-response, so a test that fails
+// before its own `releaseGate()` would leave every later generation blocked on a promise
+// nothing resolves: one real failure becomes a file of timeouts that hides which assertion
+// actually broke. Opening it here runs whatever the outcome.
+afterEach(() => {
+	releaseGate();
 });
 
 afterAll(async () => {

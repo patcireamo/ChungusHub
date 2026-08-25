@@ -149,16 +149,19 @@ class SteeringStore {
 	}
 
 	/**
-	 * Consume the one-shot notes that rode a successful generation: each is deleted and
-	 * its text returned, newest last, so the caller can push them into the chat's reuse
-	 * history. Called ONLY after a persisted success: an abort or an error must leave a
-	 * one-shot armed for the retry.
+	 * Consume named one-shot notes after a persisted success, answering the ids actually
+	 * spent so the caller can record only those in the chat's reuse history.
+	 *
+	 * By id, and never by re-resolving the scope, because the generation that is spending
+	 * them finished some time ago: a note added while it ran never rode its prompt, and one
+	 * edited to permanent meanwhile is no longer the reader's to throw away. Both are left
+	 * standing, which is why an id absent from the answer is not an error. Called ONLY after
+	 * a persisted success: an abort or an error must leave a one-shot armed for the retry.
 	 */
-	async consumeOnce(target: SteeringTarget): Promise<string[]> {
-		const spent = this.activeFor(target).filter((n) => n.mode === 'once');
-		if (spent.length === 0) return [];
+	async consumeById(ids: string[]): Promise<Set<string>> {
+		const spent = this.notes.filter((n) => ids.includes(n.id) && n.mode === 'once');
 		await Promise.all(spent.map((n) => this.remove(n.id)));
-		return spent.map((n) => n.text);
+		return new Set(spent.map((n) => n.id));
 	}
 }
 

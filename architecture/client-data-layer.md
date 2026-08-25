@@ -21,7 +21,7 @@ Everything the client persists or streams goes through exactly two files: [`tran
 
 ## Shared contracts
 
-The client and the Bun server never import each other: the client is bundled by Vite, the server runs (and compiles) under Bun alone. What they must both know lives in [`shared/`](../shared/): dependency-free modules imported by relative path from `server/` and through the `$shared` alias (declared in `svelte.config.js`) from `src/`. Today that is [`shared/sync.ts`](../shared/sync.ts), the live-sync scope vocabulary. Anything that is genuinely one contract with two consumers belongs here rather than in two hand-matched declarations.
+The client and the Bun server never import each other: the client is bundled by Vite, the server runs (and compiles) under Bun alone. What they must both know lives in [`shared/`](../shared/): dependency-free modules imported by relative path from `server/` and through the `$shared` alias (declared in `svelte.config.js`) from `src/`. Today that is [`shared/sync.ts`](../shared/sync.ts), the live-sync scope vocabulary, and [`shared/generation.ts`](../shared/generation.ts), the story-turn placement a `commit` request carries plus the guard that recognises one. That second is here for a sharper reason than tidiness: `handleLlm` types its inbound message structurally, so a field renamed in a per-side copy would vanish through `JSON.stringify` with nothing failing to build. Anything that is genuinely one contract with two consumers belongs here rather than in two hand-matched declarations.
 
 ## Hand-kept couplings
 

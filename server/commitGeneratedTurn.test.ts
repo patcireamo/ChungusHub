@@ -187,7 +187,7 @@ describe('commitGeneratedTurn (architecture/server-core.md, the generation map)'
 
 		const landed = serverDb.commitGeneratedTurn(commit({ chatId, spendSteeringIds: [once] }));
 
-		expect(landed.spentSteering).toBe(true);
+		expect(landed.spentSteeringIds).toEqual([once]);
 		expect(serverDb.getAllSteeringNotes().some((n: { id: string }) => n.id === once)).toBe(false);
 	});
 
@@ -199,7 +199,9 @@ describe('commitGeneratedTurn (architecture/server-core.md, the generation map)'
 
 		const landed = serverDb.commitGeneratedTurn(commit({ chatId, spendSteeringIds: [note] }));
 
-		expect(landed.spentSteering).toBe(false);
+		// Not merely "nothing was spent": the id is absent, which is what stops the caller
+		// listing it under Recent as though it had been consumed.
+		expect(landed.spentSteeringIds).toEqual([]);
 		expect(serverDb.getAllSteeringNotes().some((n: { id: string }) => n.id === note)).toBe(true);
 	});
 });

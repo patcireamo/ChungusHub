@@ -357,28 +357,16 @@ export interface LlmResult {
 	 *  Null for every other call, and also for a committing one that had nothing to land: a
 	 *  stop before the first token, or a chat deleted while the model was writing. */
 	committedMessageId: string | null;
+	/** The one-shot steering notes the commit really deleted, which is a subset of what the
+	 *  request asked it to spend: a note edited to permanent, or deleted, while the model was
+	 *  writing is left armed. Empty for every non-committing call. */
+	spentSteeringIds: string[];
+	/** This request lived through a dropped socket, so no duration measured on this side
+	 *  means anything: the gap is inside it. `firstTokenMs`/`reasoningMs` are already nulled
+	 *  here, and a caller clocking the call itself owes the same (architecture/llm-providers.md). */
+	reattached: boolean;
 }
 
-/**
- * Where a generated reply belongs in the story, sent with the request so the SERVER can write
- * the turn when the generation ends. Carried by the two calls that create a turn, a reply and
- * an opening scene, and by nothing else: see the same type on the server for why the other
- * calls keep their result client-side (architecture/server-core.md).
- */
-export interface GenerationCommit {
-	chatId: string;
-	/** The row the turn hangs under; null lands a root sibling. */
-	parentId: string | null;
-	/** The chat's leaf as this request leaves: the commit moves it only if it still reads
-	 *  that, so a reader who walked to another branch meanwhile is left where they are. */
-	expectedLeafId: string | null;
-	/** Claim `rootMessageId` when the chat holds none. Opening scene only. */
-	claimsRoot: boolean;
-	/** The lorebook scan that shaped this turn, stored on the row it produces. */
-	lorebook: unknown;
-	/** Ids of the 'once' steering notes this prompt resolved, spent inside the commit. */
-	spendSteeringIds: string[];
-}
 
 const pendingLlm = new Map<string, PendingLlm>();
 
@@ -729,6 +717,10 @@ const CONNECT_TIMEOUT_MS = 5_000;
 /** How long a Stop waits for the server's final (cancelled) result before settling as a
  *  plain abort. Only a server that has stopped answering on a live socket gets here. */
 const CANCEL_GRACE_MS = 5_000;
+/** How long a Stop pressed with no socket waits for one to travel on. Comfortably past the
+ *  2s reconnect cadence, and short enough that a host which never returns cannot leave the
+ *  composer holding a button that does nothing. */
+const PARKED_CANCEL_MS = 30_000;
 /** Whether a socket has ever opened: tells the first connect apart from a reconnect. */
 let hasConnected = false;
 
@@ -807,12 +799,10 @@ function handleSocketDown(socket: WebSocket): void {
 	// A Stop already in flight is NOT settled here either, for the same reason: the generation
 	// it was aimed at is still running, and giving up on it locally would leave it going with
 	// nobody able to stop it. The cancel waits for a socket to travel on.
-	for (const [, pending] of pendingLlm) {
-		if (pending.cancelTimer) {
-			clearTimeout(pending.cancelTimer);
-			pending.cancelTimer = undefined;
-			pending.cancelPending = true;
-		}
+	for (const [id, pending] of pendingLlm) {
+		// A Stop whose grace window was still running: it may never have reached the server,
+		// so it re-parks to travel on the next socket rather than being dropped here.
+		if (pending.cancelTimer) parkLlmCancel(id, pending);
 		pending.reattached = true;
 	}
 	// Assistant turns SURVIVE a dropped socket: the server keeps running them and
@@ -858,10 +848,32 @@ function reattachGenerations(): void {
 
 /** Send the Stop for a generation and arm the grace window for its final (cancelled) result. */
 function sendLlmCancel(id: string, pending: PendingLlm): void {
+	pending.cancelPending = false;
+	if (pending.cancelTimer) clearTimeout(pending.cancelTimer);
 	ws?.send(JSON.stringify({ t: 'llm-cancel', id }));
 	pending.cancelTimer = setTimeout(() => {
 		if (pendingLlm.delete(id)) pending.reject(abortError());
 	}, CANCEL_GRACE_MS);
+}
+
+/**
+ * Park a Stop that has no socket to travel on. It rides the next re-attach, which is what
+ * keeps a reply from generating on with nobody able to stop it.
+ *
+ * The wait is BOUNDED, and that is not a detail: an `AbortSignal` fires once, so a second
+ * press of Stop is a no-op, and a host that never comes back would leave the promise
+ * unsettled, the streaming indicator spinning and `warnIfBusy` refusing every edit until the
+ * page is reloaded. When the window runs out the Stop is answered as the abort it asked for.
+ */
+function parkLlmCancel(id: string, pending: PendingLlm): void {
+	pending.cancelPending = true;
+	if (pending.cancelTimer) clearTimeout(pending.cancelTimer);
+	pending.cancelTimer = setTimeout(() => {
+		// A re-attach that landed inside the window cleared the flag and sent the real cancel.
+		if (!pendingLlm.get(id)?.cancelPending) return;
+		pendingLlm.delete(id);
+		pending.reject(abortError());
+	}, PARKED_CANCEL_MS);
 }
 
 function scheduleReconnect(): void {
@@ -1122,10 +1134,7 @@ function handleWsMessage(raw: unknown): void {
 			}
 			// A Stop pressed while there was no socket to send it on. It travels now, and the
 			// generation answers it with the partial exactly as an unbroken one would have.
-			if (pending.cancelPending) {
-				pending.cancelPending = false;
-				sendLlmCancel(String(msg.id), pending);
-			}
+			if (pending.cancelPending) sendLlmCancel(String(msg.id), pending);
 			break;
 		}
 		case 'llm-attach-miss': {
@@ -1157,6 +1166,8 @@ function handleWsMessage(raw: unknown): void {
 				pending.resolve({
 					...(msg.result as LlmResult),
 					committedMessageId: typeof msg.committedMessageId === 'string' ? msg.committedMessageId : null,
+					spentSteeringIds: Array.isArray(msg.spentSteeringIds) ? (msg.spentSteeringIds as string[]) : [],
+					reattached: !!pending.reattached,
 					firstTokenMs:
 						pending.reattached || pending.firstTokenAt === undefined
 							? null
@@ -1328,8 +1339,9 @@ export interface LlmRequest {
 	onToken?: (token: string) => void;
 	onThinkingToken?: (token: string) => void;
 	signal?: AbortSignal;
-	/** Present only for the two calls whose reply the SERVER writes into the story. */
-	commit?: GenerationCommit;
+	/** Present only for the two calls whose reply the SERVER writes into the story. The shape
+	 *  is shared, since the server reads it off the wire (shared/generation.ts). */
+	commit?: import('$shared/generation').GenerationCommit;
 }
 
 export async function llmComplete(req: LlmRequest): Promise<LlmResult> {
@@ -1369,13 +1381,10 @@ export async function llmComplete(req: LlmRequest): Promise<LlmResult> {
 				sendLlmCancel(id, pending);
 				return;
 			}
-			// No socket, and the generation on the other end is still running. Two different
-			// situations, and they need opposite answers. A blip: the Stop waits for the
-			// reconnect that can deliver it, because giving up locally would leave a reply
-			// generating with nobody able to stop it. A host that has already failed a
-			// reconnect: nothing is coming, and waiting would leave the composer holding a
-			// Stop button that does nothing, so settle it as the abort it asked for.
-			if (isReachable()) pending.cancelPending = true;
+			// No socket, and the generation on the other end is still running. A host that has
+			// already failed a reconnect is answered on the spot, since nothing is coming;
+			// anything else parks and travels on the next socket, under its own bounded wait.
+			if (isReachable()) parkLlmCancel(id, pending);
 			else if (pendingLlm.delete(id)) reject(abortError());
 		});
 

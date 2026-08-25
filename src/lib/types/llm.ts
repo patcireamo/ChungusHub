@@ -423,18 +423,7 @@ export interface LLMCompletionOptions {
 	/** Where this reply belongs in the story, for the two calls whose turn the SERVER writes
 	 *  (a reply, an opening scene). Absent everywhere else, which is what keeps every other
 	 *  call's result the client's to persist. See architecture/chat-sessions.md. */
-	commit?: GenerationCommit;
-}
-
-/** Placement for a server-committed turn. Mirrored on the server (`GenerationCommit` in
- *  server/index.ts) and in the transport, which is the layer that puts it on the wire. */
-export interface GenerationCommit {
-	chatId: string;
-	parentId: string | null;
-	expectedLeafId: string | null;
-	claimsRoot: boolean;
-	lorebook: unknown;
-	spendSteeringIds: string[];
+	commit?: import('$shared/generation').GenerationCommit;
 }
 
 export interface LLMCompletionResult {
@@ -458,6 +447,12 @@ export interface LLMCompletionResult {
 	/** The row the server wrote this reply as, for a call that carried a `commit`. Null for
 	 *  every other call, and for a committing one that had nothing to land. */
 	committedMessageId: string | null;
+	/** The one-shot steering notes the commit really deleted. A subset of what the request
+	 *  asked it to spend, since a note edited to permanent meanwhile is left armed. */
+	spentSteeringIds: string[];
+	/** The request lived through a dropped socket. Nothing this side clocked around the call
+	 *  is usable: the disconnection is inside it. */
+	reattached: boolean;
 }
 
 export interface LLMProviderConfig {
