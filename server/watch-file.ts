@@ -23,12 +23,18 @@ const SETTLE_MS = 150;
 export function watchDataFile(path: string, onSettled: () => void): void {
 	const name = basename(path);
 	let timer: ReturnType<typeof setTimeout> | null = null;
-	watch(dirname(path), (_event, filename) => {
+	const watcher = watch(dirname(path), (_event, filename) => {
 		if (filename !== name) return;
 		if (timer) clearTimeout(timer);
 		timer = setTimeout(() => {
 			timer = null;
 			onSettled();
 		}, SETTLE_MS);
+	});
+	// A watcher raises this on things it met and could not read, and an unheard `error` event
+	// ends the process: losing the ability to notice an edit is a feature going quiet, not a
+	// reason for the server to stop serving. It says so rather than passing silently.
+	watcher.on('error', (error) => {
+		console.error(`  ${path} is no longer being watched for edits: ${error.message}`);
 	});
 }

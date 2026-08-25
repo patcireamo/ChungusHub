@@ -13,9 +13,7 @@
  * to hand to something else. A listening socket answers the question by existing. The kernel
  * releases it the instant the holder dies, however it dies, so there is no stale state to sweep
  * and no liveness to infer. On Windows that is a named pipe, which lives nowhere on disk; on
- * everything else a unix socket inside the data folder itself (see `addressFor`), which is a
- * path long enough to matter on macOS, where a socket path over about a hundred characters is
- * refused: a data folder buried that deep stops the launch with the reason on screen.
+ * everything else a unix socket, kept out of the data folder for the reason in `addressFor`.
  *
  * **The starting instance connects rather than binding.** Reaching the address is proof enough
  * that someone holds it, and the holder writes back who it is, so the refusal can name a port
@@ -29,7 +27,6 @@
 import { createHash } from 'node:crypto';
 import { realpathSync, unlinkSync } from 'node:fs';
 import { connect, createServer } from 'node:net';
-import { join } from 'node:path';
 
 export interface RunningInstance {
 	pid: number;
@@ -53,25 +50,29 @@ const CLAIM_RETRY_MS = 100;
 const UNNAMED: RunningInstance = { pid: 0, port: 0, startedAt: 0 };
 
 /**
- * One address per data folder, and the same address from either side of it.
+ * One address per data folder, and the same address from either side of it: the path is
+ * canonicalised before it is hashed, so a symlink, a mapped drive and a different spelling of one
+ * folder all land on one name. Two genuinely different paths to one folder across a network share
+ * do not, and cannot: nothing local can see that they are the same folder.
  *
- * Off Windows that is a socket **inside the data folder**, which is what makes the claim belong
- * to the folder rather than to whoever launched: the temp dir would have done, but it follows
- * `TMPDIR` and is per-user on macOS, so two launches that disagree about it would each find
- * their own address free and both run against one folder. It sits outside `SNAPSHOT_ENTRIES`, so
- * no snapshot carries it and no restore swaps it. Windows has no such file: a pipe lives in a
- * flat machine-global namespace, so the name is a hash of the canonicalised path, which also
- * folds a symlink, a mapped drive and a different spelling of one folder onto one name. Two
- * genuinely different paths to one folder across a network share do not meet either way, and
- * cannot: nothing local can see that they are the same folder.
+ * **The address is never inside the data folder**, however much the claim belongs to it. Two
+ * `fs.watch` handles sit on that directory for the life of the process (watch-file.ts), and on
+ * Linux a watcher meeting a new socket there opens it, gets `ENXIO` and takes the process down.
+ * Nor is it `os.tmpdir()`, which is a scratch space rather than a meeting place: it follows
+ * `TMPDIR` and is per-user on macOS, so two launches that disagreed about it would each find
+ * their own address free and both run against one folder. `/tmp` is the one directory both of
+ * those platforms agree on. Windows has no file at all: a pipe lives in a flat machine-global
+ * namespace, which is what the hashed name is for.
  */
 function addressFor(dataDir: string): string {
-	if (process.platform !== 'win32') return join(dataDir, '.instance.sock');
+	const canonical = realpathSync.native(dataDir);
 	const key = createHash('sha256')
-		.update(realpathSync.native(dataDir).toLowerCase())
+		.update(process.platform === 'win32' ? canonical.toLowerCase() : canonical)
 		.digest('hex')
 		.slice(0, 16);
-	return `\\\\.\\pipe\\chungushub-${key}`;
+	return process.platform === 'win32'
+		? `\\\\.\\pipe\\chungushub-${key}`
+		: `/tmp/chungushub-${key}.sock`;
 }
 
 /**
