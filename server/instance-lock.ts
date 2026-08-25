@@ -18,7 +18,9 @@
  * **The starting instance connects rather than binding.** Reaching the address is proof enough
  * that someone holds it, and the holder writes back who it is, so the refusal can name a port
  * and a process instead of just saying no. Binding to find out would also be the one call Bun
- * cannot report on a contended pipe: it aborts the process instead of raising.
+ * cannot report on a contended pipe: it aborts the process instead of raising. **Being refused
+ * is not the same proof in reverse**, and is asked again before it counts (`REFUSAL_ASKS`): a
+ * live holder refuses the odd connection, and that is the answer which deletes the address.
  *
  * Two launches inside the same event-loop tick can both find the address free. Nothing here
  * closes that window, and closing it would take a second lock with the staleness problem this
@@ -48,6 +50,19 @@ const CLAIM_RETRY_MS = 100;
 
 /** What a holder that answered nothing readable is reported as: it is still holding. */
 const UNNAMED: RunningInstance = { pid: 0, port: 0, startedAt: 0 };
+
+/**
+ * How many times a refusal is asked again before it counts, and how long between asks.
+ *
+ * A unix socket server refuses the occasional connection while it is alive and listening
+ * (Linux, Bun 1.3.9: about one connect in two hundred, on an otherwise idle server, with or
+ * without a backlog of its own). A refusal is the one answer that makes a launch delete the
+ * address and take the folder, so believing a false one hands a running copy's folder to the
+ * copy starting beside it, which is the whole failure this module exists to prevent. Every
+ * refusal measured from a live holder was gone by the very next ask.
+ */
+const REFUSAL_ASKS = 4;
+const REFUSAL_GAP_MS = 25;
 
 /**
  * One address per data folder, and the same address from either side of it: the path is
@@ -112,6 +127,19 @@ function askWhoHolds(address: string): Promise<{ holder: RunningInstance | null;
 }
 
 /**
+ * The enquiry a launch acts on: the same question as `askWhoHolds`, except that a refusal has
+ * to repeat before it is taken for an answer. An address that is genuinely dead refuses every
+ * time, so nothing that should get in is kept out: it costs such a launch a few milliseconds.
+ */
+async function whoHolds(address: string): Promise<{ holder: RunningInstance | null; code: string | null }> {
+	for (let ask = 1; ; ask++) {
+		const answer = await askWhoHolds(address);
+		if (answer.holder || answer.code !== 'ECONNREFUSED' || ask === REFUSAL_ASKS) return answer;
+		await new Promise((wake) => setTimeout(wake, REFUSAL_GAP_MS));
+	}
+}
+
+/**
  * Claim the data folder for this process, or report who already has it.
  *
  * `describe` is asked per enquiry rather than captured, because the claim is made before the
@@ -126,7 +154,7 @@ export async function claimDataDir(
 	let said = false;
 	let code: string | null = null;
 	for (;;) {
-		const answer = await askWhoHolds(address);
+		const answer = await whoHolds(address);
 		if (!answer.holder) {
 			code = answer.code;
 			break;
@@ -140,9 +168,10 @@ export async function claimDataDir(
 	}
 
 	// A unix socket outlives the process that made it, so the residue of a crash has to go
-	// before this one can bind. **Only for the two codes that mean nobody is there**: any other
-	// failure to reach it (a socket owned by another user, a descriptor limit) says the folder
-	// might well be held, and removing it then is how two copies end up writing one database.
+	// before this one can bind. **Only for the two codes that mean nobody is there**, and for a
+	// refusal only once it has repeated: any other failure to reach it (a socket owned by another
+	// user, a descriptor limit) says the folder might well be held, and removing it then is how
+	// two copies end up writing one database.
 	if (process.platform !== 'win32' && code !== 'ENOENT') {
 		if (code !== 'ECONNREFUSED') {
 			throw new Error(`Could not tell whether ${address} is in use (${code ?? 'no answer'}).`);
