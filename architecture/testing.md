@@ -66,6 +66,7 @@ Most of the suite is not integration testing at all. It works because subsystems
 | `services/zip.ts`, `crc32.ts` | `services/zip.test.ts` | none |
 | `utils/story-map-layout.ts` | `utils/story-map-layout.test.ts` | none (consumed by `storymap/` components) |
 | `utils/continuation.ts` | `utils/continuation.test.ts` | none |
+| `utils/prompt-review.ts` (what an edited request is allowed to be before it may reach a provider) | `utils/prompt-review.test.ts` | `chat/PromptReviewDialog.svelte` |
 | `utils/composer-transforms.ts` (transform message shapes, Impersonate's swapped seat) | `utils/composer-transforms.test.ts` | `services/composerTransformService.ts` |
 | `utils/text-diff.ts` | `utils/text-diff.test.ts` | none |
 | `utils/date.ts` | `utils/date.test.ts` | none |
@@ -75,7 +76,7 @@ Most of the suite is not integration testing at all. It works because subsystems
 | `server/assistant/freshness-core.ts` (zero imports) | `server/assistant/freshness-core.test.ts` | `server/assistant/freshness.ts` |
 | `server/assistant/files-core.ts` (structural recognition, normalization, line math, search) | `server/assistant/files-core.test.ts` | `server/assistant/files-ingest.ts` |
 
-**One file breaks the rule on purpose.** [`new-chat-flow.test.ts`](../src/lib/stores/new-chat-flow.test.ts) tests `uiStore` (a rune store) by shimming `globalThis.$state` to identity **before** dynamically importing `ui.svelte.ts`, which turns the rune classes into plain classes. That is exactly right for pinning state-machine transitions and useless for reactivity, which is not under test. Only `$state` is shimmed deliberately: if `ui.svelte.ts` ever grows a `$derived` or `$effect`, the file fails loudly instead of quietly testing stale values.
+**Two files break the rule on purpose**, both by shimming `globalThis.$state` to identity **before** dynamically importing a rune store, which turns its rune classes into plain classes. That is exactly right for pinning state-machine transitions and useless for reactivity, which is not under test. Only `$state` is shimmed deliberately: a store that grows a `$derived` or `$effect` then fails loudly instead of quietly testing stale values. [`new-chat-flow.test.ts`](../src/lib/stores/new-chat-flow.test.ts) tests `uiStore` that way, and [`prompt-hold.test.ts`](../src/lib/stores/prompt-hold.test.ts) tests the prompt hold gate (what a disarmed gate costs, what an armed one parks, and that a cancel resolves to null, which is every caller's instruction to leave the chat alone; architecture/prompt-pipeline.md). The hold's store answers `fetch` for the length of that file rather than let each switch flip log a failed settings write, and puts the real one back after: what is under test is which gate is armed, not that the write left the browser.
 
 ## Tests against a real database
 

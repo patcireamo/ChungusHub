@@ -3,13 +3,16 @@
 	import { fade, fly } from 'svelte/transition';
 	import Icon from './Icon.svelte';
 
-	type DialogSize = 'sm' | 'md' | 'lg' | 'xl';
+	type DialogSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl';
 
 	const sizeClasses: Record<DialogSize, string> = {
 		sm: 'max-w-sm',
 		md: 'max-w-md',
 		lg: 'max-w-lg',
-		xl: 'max-w-3xl'
+		xl: 'max-w-3xl',
+		// For a dialog whose subject is machine text rather than prose, where a narrow
+		// measure is not a kindness but a second scrollbar.
+		'2xl': 'max-w-5xl'
 	};
 
 	interface Props {
@@ -23,10 +26,28 @@
 		 *  nothing, which is the one thing a control is never allowed to be. Use it
 		 *  only where closing would leave the app in a state it cannot work in. */
 		dismissible?: boolean;
+		/** Hands the whole panel to the child: no padding of its own and no scroller of its
+		 *  own, so a surface that needs a head and a foot standing still around a scrolling
+		 *  middle can build one. The child then owns every edge, scrolling included. */
+		bare?: boolean;
+		/** Take the full height a dialog is allowed instead of the height of the content, so
+		 *  the box is the same size whatever it is asked to hold. For a surface that is a place
+		 *  to work rather than something to read: one that resized itself per request would
+		 *  move its own controls under the pointer between one opening and the next. */
+		fill?: boolean;
 		children: Snippet;
 	}
 
-	let { open, onClose, title, size = 'md', dismissible = true, children }: Props = $props();
+	let {
+		open,
+		onClose,
+		title,
+		size = 'md',
+		dismissible = true,
+		bare = false,
+		fill = false,
+		children
+	}: Props = $props();
 
 	/** The single door: every dismissal route runs through here, so `dismissible`
 	 *  cannot be honoured by one of them and forgotten by another. */
@@ -125,7 +146,7 @@
 <div bind:this={portalEl} class="dialog-portal">
 	<!-- Backdrop -->
 	<div
-		class="fixed inset-0 z-[300] flex items-start justify-center px-3 py-[4dvh] panel-scroll"
+		class="dialog-scrim fixed inset-0 z-[300] flex items-start justify-center px-3 panel-scroll"
 		style="background: var(--color-overlay); backdrop-filter: var(--backdrop-blur);"
 		onclick={handleBackdropClick}
 		onkeydown={handleBackdropKeydown}
@@ -137,7 +158,9 @@
 	>
 		<!-- Dialog panel wrapper - non-scrolling container for close button -->
 		<div
-			class="dialog-panel surface-float relative w-full {sizeClasses[size]} mb-8 max-h-[90dvh] rounded-[var(--radius-xl)]"
+			class="dialog-panel surface-float relative w-full {sizeClasses[size]} mb-8 rounded-[var(--radius-xl)] {bare
+				? 'flex flex-col overflow-hidden'
+				: ''} {fill ? 'dialog-panel--fill' : ''}"
 			style="box-shadow: var(--shadow-lg);"
 			transition:fly={{ y: 20, duration: 200 }}
 		>
@@ -154,8 +177,11 @@
 				</button>
 			{/if}
 
-			<!-- Scrollable content area -->
-			<div bind:this={dialogEl} class="panel-scroll overscroll-contain max-h-[90dvh]">
+			<!-- Scrollable content area, unless the child asked to own its own edges -->
+			<div
+				bind:this={dialogEl}
+				class="dialog-body {bare ? 'flex flex-col min-h-0 flex-1' : 'panel-scroll overscroll-contain'}"
+			>
 				{#if title}
 					<div class="px-5 py-3 border-b border-border-subtle">
 						<h2 id={titleId} class="text-lg font-ui font-semibold text-text-primary text-center">
@@ -164,9 +190,13 @@
 					</div>
 				{/if}
 
-				<div class="p-5">
+				{#if bare}
 					{@render children()}
-				</div>
+				{:else}
+					<div class="p-5">
+						{@render children()}
+					</div>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -174,10 +204,36 @@
 {/if}
 
 <style>
+	/* The room a panel has, declared where it is actually spent so nothing below has to
+	   restate it: this padding, top and bottom, and the panel between them. */
+	.dialog-scrim {
+		--dialog-inset: 4dvh;
+		padding-block: var(--dialog-inset);
+	}
+
+	/* The ceiling every dialog stands under, declared once so `fill` can reach for exactly it
+	   rather than restate the number and drift from it on the phone. */
+	.dialog-panel {
+		--dialog-max-h: 90dvh;
+		max-height: var(--dialog-max-h);
+	}
+
+	/* Never taller than the room the scrim leaves it, and without the gap a content-sized
+	   dialog keeps under itself: a filling panel that overshoots by a few pixels hands the
+	   backdrop a scrollbar of its own, which is a second scroller over one surface. */
+	.dialog-panel--fill {
+		height: min(var(--dialog-max-h), calc(100dvh - 2 * var(--dialog-inset)));
+		margin-bottom: 0;
+	}
+
+	.dialog-body {
+		max-height: var(--dialog-max-h);
+	}
+
 	@media (max-width: 700px) {
 		.dialog-panel {
+			--dialog-max-h: 94vh;
 			max-width: 100% !important;
-			max-height: 94vh !important;
 			border-radius: var(--radius-lg);
 		}
 	}

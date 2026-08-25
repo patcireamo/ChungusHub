@@ -5,7 +5,9 @@ import { chatStore } from './chat.svelte';
 import { toastStore } from './toast.svelte';
 import { llmService } from '$lib/services/llm/provider';
 import { findActivePath, findDeepestLeafFromNode } from '$lib/utils/message-tree';
-import { buildPromptMessages, type BuiltPrompt } from '$lib/utils/prompt-builder';
+import { buildPromptMessages, type BuiltPrompt, type PromptBuildContext } from '$lib/utils/prompt-builder';
+import { promptHoldStore } from './promptHold.svelte';
+import type { HoldGate } from '$lib/config/prompt-hold';
 import { joinContinuation } from '$lib/utils/continuation';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 import { personaStore } from './persona.svelte';
@@ -51,6 +53,13 @@ class MessageStore {
 	 *  surfaces can ask BEFORE tearing down their own state (e.g. closing an editor whose
 	 *  draft would otherwise be lost to a rejected call). */
 	warnIfBusy(): boolean {
+		// A held request is busy too (its turn is one press away from existing), but saying
+		// "still generating" about a prompt that has not left the browser sends the reader
+		// looking for a Stop button that is not the answer.
+		if (promptHoldStore.holding) {
+			toastStore.warning('A prompt is waiting for your review. Send it or cancel it first.');
+			return true;
+		}
 		if (this.isProcessing || this.isStreaming) {
 			toastStore.warning('A reply is still generating. Wait for it, or stop it first.');
 			return true;
@@ -58,24 +67,57 @@ class MessageStore {
 		return false;
 	}
 
-	async sendMessage(content: string, attachments?: MessageAttachment[]): Promise<void> {
+	/**
+	 * Send the composer's draft as a user turn and generate the reply to it.
+	 *
+	 * `onCommit` is the composer's cue that the draft is no longer its to keep. With no hold
+	 * on this gate that is the moment the send is asked for, so the box empties on the press
+	 * as it always has; with one it is the moment the reader releases the review, so a cancel
+	 * hands them back exactly what they typed, attachments included.
+	 */
+	async sendMessage(content: string, attachments?: MessageAttachment[], onCommit?: () => void): Promise<void> {
 		if (this.isProcessing) return;
 		this.isProcessing = true;
+		const held = promptHoldStore.armed('send');
+		if (!held) onCommit?.();
 
 		try {
 			const state = chatStore.currentChatState;
 			if (!state) throw new Error('No active chat');
 
-			const userMessage = await this.createMessage({
+			// The turn is BUILT here and inserted further down, after the hold releases: a
+			// review the reader cancels has to leave the chat exactly as they found it, and a
+			// row written first would already be in the tree. The same object rides the prompt
+			// and the insert, so what was reviewed and what is stored cannot be two turns.
+			const draftTurn = this.buildMessageRow({
 				chatId: state.chat.id,
 				parentId: state.chat.activeLeafId,
 				role: 'user',
 				content,
-				attachments: attachments?.length ? attachments : null,
-				// The active leaf usually has no children, but after a cancelled "alternate"
-				// regenerate it can, so never collide with an existing sibling index.
-				siblingIndex: await db.getNextSiblingIndex(state.chat.id, state.chat.activeLeafId)
+				attachments: attachments?.length ? attachments : null
 			});
+
+			const path = state.chat.activeLeafId
+				? findActivePath(await db.getMessagesByChat(state.chat.id), state.chat.activeLeafId)
+				: [];
+			const prompt = await this.prepare('send', {
+				chatId: state.chat.id,
+				chatMessages: [...path, draftTurn],
+				lorebookTrigger: 'normal'
+			});
+			// Cancelled at the review: nothing has been written, and the composer still holds
+			// the draft because `onCommit` was never called.
+			if (!prompt) return;
+			if (held) onCommit?.();
+
+			// The active leaf usually has no children, but after a cancelled "alternate"
+			// regenerate it can, so never collide with an existing sibling index. Claimed at
+			// the insert rather than at the build: a review left open must not reserve a slot.
+			const userMessage: Message = {
+				...draftTurn,
+				siblingIndex: await db.getNextSiblingIndex(state.chat.id, state.chat.activeLeafId)
+			};
+			await this.persistMessageRow(userMessage);
 
 			// Update active leaf and root if needed
 			if (!state.chat.rootMessageId) {
@@ -93,8 +135,8 @@ class MessageStore {
 
 			await chatStore.refreshChat(state.chat.id);
 
-			// Generate LLM response
-			await this.generateResponse(state.chat.id, userMessage.id);
+			// Generate LLM response from the prompt the review released.
+			await this.generateResponse(state.chat.id, userMessage.id, prompt);
 		} catch (error) {
 			if (error instanceof Error && error.name !== 'AbortError') {
 				toastStore.failed('generate the reply', error);
@@ -104,27 +146,17 @@ class MessageStore {
 		}
 	}
 
-	/** Generate an assistant reply under `parentId`. Resolves to the new message's id, or to
-	 *  null when nothing was streamed to keep (no message is created). A stop mid-stream still
-	 *  persists what streamed, so it returns an id like any other reply. Other failures throw. */
-	async generateResponse(
-		chatId: string,
-		parentId: string,
-		lorebookTrigger: LorebookTrigger = 'normal'
-	): Promise<string | null> {
+	/** Generate an assistant reply under `parentId` from a prompt `prepare` has already built
+	 *  and cleared, so nothing here has to ask whether it may run. Resolves to the new
+	 *  message's id, or to null when nothing was streamed to keep (no message is created). A
+	 *  stop mid-stream still persists what streamed, so it returns an id like any other
+	 *  reply. Other failures throw. */
+	async generateResponse(chatId: string, parentId: string, prompt: BuiltPrompt): Promise<string | null> {
+		const { messages, lorebook, oneShotSteering } = prompt;
 		this.abortController = new AbortController();
 		chatStore.startStream(chatId);
 
 		try {
-			// Commit any steering-note edit still sitting in its debounce window: the
-			// prompt builder reads the note rows from the db, not the store's copy.
-			await steeringStore.flush();
-			const { messages, lorebook, oneShotSteering } = await this.buildMessageHistory(
-				chatId,
-				parentId,
-				lorebookTrigger
-			);
-
 			// The turn is written by the SERVER, from this placement, the moment the model
 			// stops: the generation outlives this page, and a phone whose tab is discarded
 			// mid-reply would otherwise have nowhere to put the answer it paid for. The leaf
@@ -574,6 +606,13 @@ class MessageStore {
 				if (!parentId) {
 					throw new Error('Cannot regenerate: assistant message has no parent');
 				}
+				// Before the leaf moves, so a review left open or cancelled never takes the
+				// reply off the reader's screen while they are deciding about it. The path to
+				// the parent is what a retry sends either way: the turn being re-rolled hangs
+				// below it and was never in its own prompt.
+				const prompt = await this.prepareFromLeaf('regenerate', state.chat.id, parentId, 'swipe');
+				if (!prompt) return;
+
 				const prevLeafId = state.chat.activeLeafId;
 
 				// Both actions generate a SIBLING first and differ only in what happens after.
@@ -587,7 +626,7 @@ class MessageStore {
 				await chatStore.refreshCurrentChat();
 				let newId: string | null = null;
 				try {
-					newId = await this.generateResponse(state.chat.id, parentId, 'swipe');
+					newId = await this.generateResponse(state.chat.id, parentId, prompt);
 					if (newId && action === 'replace') {
 						const preDelete = await db.getMessagesByChat(state.chat.id);
 						await db.deleteMessageAndDescendants(message.id);
@@ -611,6 +650,9 @@ class MessageStore {
 				// Re-roll the AI's answer to THIS turn: the user message is never cloned (that's
 				// what the Branch action does). Mirrors the assistant path: replace nukes the replies
 				// below and regenerates one; alternate keeps them and adds a swipeable assistant sibling.
+				const prompt = await this.prepareFromLeaf('regenerate', state.chat.id, message.id, 'swipe');
+				if (!prompt) return;
+
 				const prevLeafId = state.chat.activeLeafId;
 				// Delete-after, exactly as above: a refused generation must not leave the reader
 				// holding neither the replies it deleted nor a new one.
@@ -618,7 +660,7 @@ class MessageStore {
 				await chatStore.refreshCurrentChat();
 				let newId: string | null = null;
 				try {
-					newId = await this.generateResponse(state.chat.id, message.id, 'swipe');
+					newId = await this.generateResponse(state.chat.id, message.id, prompt);
 					if (newId && action === 'replace') {
 						const preDelete = await db.getMessagesByChat(state.chat.id);
 						// Everything under the user turn EXCEPT the reply just written for it.
@@ -679,8 +721,6 @@ class MessageStore {
 		}
 
 		this.isProcessing = true;
-		this.abortController = new AbortController();
-		chatStore.startStream(state.chat.id, { continuingMessageId: leaf.id });
 
 		try {
 			// Fresh rows, never the state snapshot: the standing rule for long operations.
@@ -693,20 +733,25 @@ class MessageStore {
 			// opening scene) continues against an empty path.
 			const path = target.parentId ? findActivePath(allMessages, target.parentId) : [];
 
-			// Same steering flush as generateResponse: the prompt builder reads the db rows.
-			await steeringStore.flush();
 			// The primary connection, exactly like a send or a regenerate: a continuation is
 			// the same story turn, only picked up mid-sentence. The instruction that follows
 			// the reply is the preset's `continuePrompt`, resolved inside assembly.
 			// The trace this build produces is deliberately dropped: the turn already carries the
 			// record of the scan that opened it, and a continuation is a second scan whose result
 			// never shaped the text already on screen.
-			const { messages, continuationSent, oneShotSteering } = await buildPromptMessages({
+			const prompt = await this.prepare('continue', {
 				chatId: state.chat.id,
 				chatMessages: path,
 				continuation: target,
 				lorebookTrigger: 'continue'
 			});
+			if (!prompt) return;
+			const { messages, continuationSent, oneShotSteering } = prompt;
+
+			// After the review, never before it: the bubble must not sit there filling in
+			// while the request behind it is still a question.
+			this.abortController = new AbortController();
+			chatStore.startStream(state.chat.id, { continuingMessageId: leaf.id });
 
 			// The LLM call alone, no db awaits. Continue is the one story path that still
 			// persists its own turn, so this clock is still its own to keep.
@@ -1001,7 +1046,24 @@ class MessageStore {
 			content: string;
 		}
 	): Promise<Message> {
-		const message: Message = {
+		const message = this.buildMessageRow(data);
+		await this.persistMessageRow(message);
+		return message;
+	}
+
+	/**
+	 * The row a turn will be, before it is one. Split from the insert for the send path,
+	 * which has to show the reader the prompt this turn produces before writing it: the
+	 * object it reviews and the object it stores are then the same one by construction.
+	 */
+	private buildMessageRow(
+		data: Partial<Message> & {
+			chatId: string;
+			role: 'user' | 'assistant' | 'system';
+			content: string;
+		}
+	): Message {
+		return {
 			id: crypto.randomUUID(),
 			chatId: data.chatId,
 			parentId: data.parentId ?? null,
@@ -1039,12 +1101,13 @@ class MessageStore {
 			lorebook: data.lorebook ?? null,
 			siblingIndex: data.siblingIndex ?? 0
 		};
+	}
 
+	private async persistMessageRow(message: Message): Promise<void> {
 		await db.insertMessage(message);
 		// Keep the chat→persona index in step with the persona this message just locked
 		// in, so the welcome/chat lists show whose persona the chat belongs to.
 		if (message.role === 'user') chatCastStore.setPersonaForChat(message.chatId, message.personaId);
-		return message;
 	}
 
 	/**
@@ -1081,22 +1144,39 @@ class MessageStore {
 		await chatStore.pushSteeringHistory(chatId, rode.filter((n) => spent.has(n.id)).map((n) => n.text));
 	}
 
-	private async buildMessageHistory(
+	/**
+	 * Build a generation's prompt and put it through the hold, before this path has written
+	 * anything at all.
+	 *
+	 * Null is the reader cancelling the review, and every caller reads it the same way: leave
+	 * the chat exactly as they found it. That is why the hold lives here rather than beside
+	 * the LLM call. A turn already inserted or a leaf already moved would have to be undone,
+	 * and an undo is not what "cancel" means.
+	 *
+	 * What comes back carries the reader's edits as its messages and everything else the
+	 * build resolved untouched: the lorebook trace and the one-shot steering ids describe the
+	 * scan and the guidance that shaped this prompt, which happened either way.
+	 */
+	private async prepare(gate: HoldGate, context: PromptBuildContext): Promise<BuiltPrompt | null> {
+		// Commit any steering-note edit still sitting in its debounce window: the prompt
+		// builder reads the note rows from the db, not the store's copy.
+		await steeringStore.flush();
+		const built = await buildPromptMessages(context);
+		const approved = await promptHoldStore.review(gate, built.messages, context.target ?? 'primary');
+		if (!approved) return null;
+		return { ...built, messages: approved };
+	}
+
+	/** `prepare` for the paths whose prompt is simply the story up to a leaf. Chat history
+	 *  reaches it through the preset's own {{chatHistory}} macro. */
+	private async prepareFromLeaf(
+		gate: HoldGate,
 		chatId: string,
 		leafId: string,
 		lorebookTrigger: LorebookTrigger
-	): Promise<BuiltPrompt> {
+	): Promise<BuiltPrompt | null> {
 		const messages = await db.getMessagesByChat(chatId);
-		const path = findActivePath(messages, leafId);
-
-		// Build prompt messages with macro expansion. The chat's character/persona
-		// looked up by chat id.
-		// Chat history reaches the prompt through the {{chatHistory}} macro in the preset
-		return buildPromptMessages({
-			chatId,
-			chatMessages: path,
-			lorebookTrigger
-		});
+		return this.prepare(gate, { chatId, chatMessages: findActivePath(messages, leafId), lorebookTrigger });
 	}
 }
 

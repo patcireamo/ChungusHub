@@ -10,6 +10,7 @@
 	import ImportBar from '$lib/components/layout/ImportBar.svelte';
 	import { deleteGuard } from '$lib/stores/delete-guard.svelte';
 	import { advancedSettingsStore } from '$lib/stores/advanced-settings.svelte';
+	import { promptHoldStore } from '$lib/stores/promptHold.svelte';
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 	import { inputHistoryStore } from '$lib/stores/inputHistory.svelte';
@@ -147,6 +148,9 @@
 			// workspace paints so the toolbars open with the user's saved view. All
 			// ride the settings sync spine.
 			await advancedSettingsStore.initialize();
+			// Which request gates hold their prompt for review. Before the workspace paints,
+			// like every other switch a surface reads the moment it is used.
+			await promptHoldStore.initialize();
 			// After the settings it reads: the guard derives its rung from them, and its
 			// outage rule has to be armed before any surface can ask it anything.
 			deleteGuard.initialize();

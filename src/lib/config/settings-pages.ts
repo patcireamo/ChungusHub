@@ -221,6 +221,7 @@ export const ANCHOR_PAGES: Record<string, SettingsPage> = {
 	'prompt-builder': 'prompt-builder',
 	'regex-rules': 'regex',
 	'prompt-debug-panel': 'advanced',
+	'prompt-review': 'advanced',
 	'delete-confirmations': 'advanced',
 	thumbnails: 'advanced'
 };

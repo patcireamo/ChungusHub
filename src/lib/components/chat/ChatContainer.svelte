@@ -34,9 +34,9 @@
 		uiStore.startNewChat();
 	}
 
-	function handleSendMessage(content: string, attachments?: MessageAttachment[]) {
+	function handleSendMessage(content: string, attachments?: MessageAttachment[], onCommit?: () => void) {
 		if (!chatState) return;
-		messageStore.sendMessage(content, attachments);
+		messageStore.sendMessage(content, attachments, onCommit);
 	}
 
 	function handleCancelGeneration() {

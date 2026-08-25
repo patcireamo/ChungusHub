@@ -14,6 +14,7 @@
 	import WelcomeView from '$lib/components/layout/WelcomeView.svelte';
 	import AmbientCanvas from '$lib/components/ambient/AmbientCanvas.svelte';
 	import PromptDebugPanel from '$lib/components/debug/PromptDebugPanel.svelte';
+	import PromptReviewDialog from '$lib/components/chat/PromptReviewDialog.svelte';
 	import { fade, fly } from 'svelte/transition';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { viewport } from '$lib/stores/viewport.svelte';
@@ -313,6 +314,11 @@
 		{/if}
 	</main>
 </div>
+
+<!-- A held request, waiting to be read and released. Mounted here rather than beside the
+     composer because the five gates that can hold one are raised from different places, and
+     a request must not lose its review to whichever of them happened to unmount. -->
+<PromptReviewDialog />
 
 <!-- Lives here rather than in a panel: both its triggers are global (Ctrl+/ above,
      the Settings root's footer row), so the dialog must stay mounted whatever is

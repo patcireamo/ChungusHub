@@ -3,6 +3,8 @@
 	import { deleteGuard, WINDOW_CHOICES, QUICK_WINDOW_MS } from '$lib/stores/delete-guard.svelte';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { promptLogStore } from '$lib/debug/promptLog.svelte';
+	import { promptHoldStore } from '$lib/stores/promptHold.svelte';
+	import { HOLD_GATES } from '$lib/config/prompt-hold';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
 	import PillRow from '$lib/components/ui/PillRow.svelte';
@@ -152,6 +154,32 @@
 		{/if}
 	</section>
 
+	<!-- Sits beside the debug panel because the two answer the same question at opposite ends
+	     of a request: that one shows what was sent, this one shows what is about to be. -->
+	<section class="card" data-setting="prompt-review">
+		<div class="card-head">
+			<span class="card-title">Prompt Review</span>
+			<InfoTip
+				text="Holds the chosen requests and shows you the whole prompt before it goes out, to read or to edit. Edits apply to that one request; nothing in your chat, your preset or your lorebook changes."
+			/>
+		</div>
+		<div class="card-body">
+			{#each HOLD_GATES as gate (gate.id)}
+				<div class="toggle-row" use:toggleRow>
+					<span class="gate-label">
+						<Icon name={gate.icon} class="w-3.5 h-3.5 shrink-0 text-text-muted" strokeWidth={1.75} />
+						{gate.name}
+					</span>
+					<Toggle
+						checked={promptHoldStore.armed(gate.id)}
+						onchange={(v) => promptHoldStore.setGate(gate.id, v)}
+						label={`Hold ${gate.name} for review`}
+					/>
+				</div>
+			{/each}
+		</div>
+	</section>
+
 	<!-- The thumbnail is what nearly every picture in the app actually draws, so one that is
 	     stale or was never written is invisible until a gallery is slow or blank. Nothing else
 	     puts them right: the encoder is the browser's, and this is the only control that
@@ -200,6 +228,17 @@
 	}
 
 	.toggle-label {
+		font-family: var(--font-ui);
+		font-size: 0.8rem;
+		color: var(--color-text-primary);
+	}
+
+	/* The glyph each action already wears, so a row reads as the press it holds. */
+	.gate-label {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		min-width: 0;
 		font-family: var(--font-ui);
 		font-size: 0.8rem;
 		color: var(--color-text-primary);

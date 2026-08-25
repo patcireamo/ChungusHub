@@ -12,13 +12,15 @@
  * live inputs it needs.
  *
  * No UI, no store writes, no persistence here: the result only ever reaches the draft
- * through `TransformPanel`'s approve/reject.
+ * through `TransformPanel`'s approve/reject. The one thing this file waits on a person for
+ * is the prompt hold, and that is a gate on the request rather than a surface of its own.
  */
 
 import type { LLMMessage } from '$lib/types/llm';
 import type { Message, ImpersonatePerspective } from '$lib/types/chat';
 import { llmService } from '$lib/services/llm/provider';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
+import { promptHoldStore } from '$lib/stores/promptHold.svelte';
 import { resolveMacroValues, substitute } from '$lib/macros';
 import { buildLiveMacroContext } from '$lib/utils/live-macro-context';
 import { shapeComposerTransform } from '$lib/utils/composer-transforms';
@@ -69,7 +71,9 @@ export function buildComposerTransformPrompt(params: ComposerTransformParams): L
 	});
 }
 
-export async function runComposerTransform(opts: ComposerTransformParams): Promise<string> {
+/** The rewrite, or null when the reader cancelled this kind's prompt hold: nothing was spent
+ *  and the panel goes back to where its press came from. */
+export async function runComposerTransform(opts: ComposerTransformParams): Promise<string | null> {
 	const { kind, draft, signal } = opts;
 
 	// Fail loud at the top, same style as generateOpeningScene's disabled-guard
@@ -85,10 +89,16 @@ export async function runComposerTransform(opts: ComposerTransformParams): Promi
 
 	const messages = buildComposerTransformPrompt(opts);
 
+	// The hold, when this gate is armed: what the reader approves is what goes out. It sits
+	// here rather than in the panel so the request cannot be built twice, once to review and
+	// once to send. Nothing has been spent at this point, which is what makes a cancel free.
+	const approved = await promptHoldStore.review(kind, messages, { engine: kind });
+	if (!approved) return null;
+
 	// Unlike a background sidecar, these transforms are user-triggered foreground actions
 	// the caller is actively waiting on, so errors (including AbortError) PROPAGATE: no
 	// catch-and-null here. The approve/reject dialog renders them.
-	const result = await llmService.complete({ engine: kind }, { messages, source: kind, signal });
+	const result = await llmService.complete({ engine: kind }, { messages: approved, source: kind, signal });
 
 	const text = result.content.trim();
 	if (!text) throw new Error('The transform returned an empty result');

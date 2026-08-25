@@ -29,6 +29,7 @@
 	import PillRow from '$lib/components/ui/PillRow.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { personaStore } from '$lib/stores/persona.svelte';
+	import { promptHoldStore } from '$lib/stores/promptHold.svelte';
 	import { engineById } from '$lib/engines/registry';
 	import { failureText } from '$lib/stores/toast.svelte';
 	import { llmService } from '$lib/services/llm/provider';
@@ -125,6 +126,16 @@
 		return `${fixCount} ${fixCount === 1 ? 'fix' : 'fixes'}`;
 	});
 
+	// A held request has not been made yet, so the strip says what is actually happening
+	// rather than claiming work that is still waiting on a press.
+	let runningNote = $derived(
+		promptHoldStore.holding
+			? 'Waiting for your review…'
+			: kind === 'spellcheck'
+				? 'Correcting your draft…'
+				: 'Ghostwriting your message…'
+	);
+
 	let staleResult = $derived(kind === 'impersonate' && perspective !== ranPerspective);
 	let rewriteTitle = $derived.by(() => {
 		if (kind === 'spellcheck') return 'Check the draft again';
@@ -147,6 +158,12 @@
 				signal
 			});
 			if (signal.aborted) return; // superseded by a re-run or the panel closing
+			// Cancelled at the prompt review: nothing was spent, so this lands exactly where a
+			// stop does, on the press that would try again.
+			if (result === null) {
+				phase = 'setup';
+				return;
+			}
 			proposed = result;
 			ranPerspective = asked;
 			phase = 'ready';
@@ -161,7 +178,10 @@
 		perspective = chatStore.featureState(chatId).impersonatePerspective;
 		ranPerspective = perspective;
 		// Spellcheck's own menu row was the press; there is nothing here to decide first.
-		if (kind === 'spellcheck') void run();
+		// Unless its prompt is held: the review would then arrive over a strip the reader
+		// never saw, and cancelling it would land them on a button that had not existed yet.
+		// A held gate says they want a step before the call, so this is that step.
+		if (kind === 'spellcheck' && !promptHoldStore.armed('spellcheck')) void run();
 		return () => abortController?.abort();
 	});
 
@@ -223,7 +243,7 @@
 	{#if phase === 'running'}
 		<div class="body body--state font-ui" aria-live="polite">
 			<Icon name="refresh" class="w-4 h-4 animate-spin shrink-0" />
-			<span>{kind === 'spellcheck' ? 'Correcting your draft…' : 'Ghostwriting your message…'}</span>
+			<span>{runningNote}</span>
 		</div>
 	{:else if phase === 'error'}
 		<div class="body body--state body--error font-ui" aria-live="polite">

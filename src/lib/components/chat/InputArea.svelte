@@ -49,7 +49,8 @@
 	} from '$lib/commands/registry';
 
 	interface Props {
-		onSend: (content: string, attachments?: MessageAttachment[]) => void;
+		/** `onCommit` fires once the send is certain to proceed, which is what empties the box. */
+		onSend: (content: string, attachments?: MessageAttachment[], onCommit?: () => void) => void;
 		onCancel?: () => void;
 		onInsertDummy?: (role: 'user' | 'assistant') => void;
 		onContinue?: () => void;
@@ -822,16 +823,25 @@
 		const trimmed = content.trim();
 		if ((trimmed || pendingImages.length) && !isStreaming && !uploadingImages) {
 			const attachments: MessageAttachment[] = pendingImages.map((img) => ({ kind: 'image', path: img.path }));
-			onSend(trimmed, attachments.length ? attachments : undefined);
-			if (trimmed) inputHistoryStore.record(chatStore.activeChatId, trimmed);
-			content = '';
-			pendingImages = [];
-			historyPos = null;
-			// The message is sent, so the draft's job is done.
-			if (chatStore.activeChatId) inputDraftStore.clear(chatStore.activeChatId);
-			if (textareaElement) {
-				textareaElement.style.height = 'auto';
-			}
+			// The box empties when the send COMMITS, not when it is asked for. With a prompt
+			// hold on this gate those are different moments, and a review the reader cancels
+			// has to hand back exactly what they typed, pictures and all. The chat is named
+			// here rather than read again later, so the draft cleared is the one sent.
+			const chatId = chatStore.activeChatId;
+			onSend(trimmed, attachments.length ? attachments : undefined, () => releaseDraft(chatId, trimmed));
+		}
+	}
+
+	/** The draft is the message's now: record it for ↑ recall and clear the box. */
+	function releaseDraft(chatId: string | null, sent: string) {
+		if (sent) inputHistoryStore.record(chatId, sent);
+		content = '';
+		pendingImages = [];
+		historyPos = null;
+		// The message is sent, so the draft's job is done.
+		if (chatId) inputDraftStore.clear(chatId);
+		if (textareaElement) {
+			textareaElement.style.height = 'auto';
 		}
 	}
 
