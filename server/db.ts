@@ -984,6 +984,131 @@ class ServerDatabase {
 		this.execute('UPDATE chats SET updated_at = ? WHERE id = ?', [Date.now(), chatId]);
 	}
 
+	/**
+	 * Land a generated assistant turn: the row, the chat's pointers, and the one-shot steering
+	 * notes that rode it, in ONE transaction.
+	 *
+	 * It exists because a generation outlives the page that asked for it (architecture/server-core.md),
+	 * so the answer has to be written by the side that is still there. It is a single method for
+	 * the reason every whole-write here is one: `bun:sqlite` is synchronous, so nothing can
+	 * interleave inside a transaction, and that is exactly what keeps a concurrent delete from
+	 * repairing the chat's pointers around a row this is still inserting.
+	 *
+	 * Two guards, and both are about a turn that outlived its reader's session:
+	 *
+	 * A **missing chat** answers null rather than throwing. The story was deleted while the
+	 * model was writing; there is nothing to land and nothing that went wrong.
+	 *
+	 * The **leaf only moves when it still names what the request left it on**. Client-side this
+	 * could not come up, because the composer is locked for the length of a generation. Here the
+	 * reader can reload, walk to another branch and play five more turns before this lands, and
+	 * yanking them back to a reply on the branch they left would be worse than the reply simply
+	 * appearing as a sibling they can swipe to.
+	 *
+	 * A **missing parent throws**: the FK would refuse the insert anyway, and a turn with nowhere
+	 * to hang is a real failure rather than a race to absorb quietly.
+	 */
+	commitGeneratedTurn(commit: {
+		chatId: string;
+		/** The row the turn hangs under; null lands a root sibling (an opening scene). */
+		parentId: string | null;
+		/** What `active_leaf_id` was when the request went out. The leaf moves only if it
+		 *  still reads that, so a reader who moved on in the meantime is left where they are. */
+		expectedLeafId: string | null;
+		/** Opening scene only: claim `root_message_id` when the chat holds none. That pointer
+		 *  names the chat's FIRST root, so an opening written beside existing greetings must
+		 *  not renumber which of them that is. */
+		claimsRoot: boolean;
+		content: string;
+		thinking: string | null;
+		model: string;
+		provider: string;
+		tokensPrompt: number | null;
+		tokensCompletion: number | null;
+		finishReason: string | null;
+		generationMs: number | null;
+		firstTokenMs: number | null;
+		reasoningMs: number | null;
+		/** The lorebook scan that shaped this turn. Carried verbatim, never interpreted. */
+		lorebook: unknown;
+		/** Ids of the 'once' steering notes this turn's prompt resolved. Spent here rather
+		 *  than by the caller so a page that never comes back cannot leave guidance armed to
+		 *  apply itself twice (architecture/chat-sessions.md). */
+		spendSteeringIds: string[];
+	}): { messageId: string; spentSteering: boolean } | null {
+		return this.inTransaction(() => {
+			const chat = this.select<{ active_leaf_id: string | null; root_message_id: string | null }[]>(
+				'SELECT active_leaf_id, root_message_id FROM chats WHERE id = ?',
+				[commit.chatId]
+			)[0];
+			if (!chat) return null;
+
+			if (commit.parentId) {
+				const parent = this.select<{ id: string }[]>('SELECT id FROM messages WHERE id = ?', [commit.parentId]);
+				if (!parent[0]) {
+					throw new Error(
+						`commitGeneratedTurn: parent ${commit.parentId} is gone, so the generated turn has nowhere to hang.`
+					);
+				}
+			}
+
+			const messageId = randomUUID();
+			this.insertMessage({
+				id: messageId,
+				chatId: commit.chatId,
+				parentId: commit.parentId,
+				// Stamped here rather than taken from the caller, for the same reason
+				// `insertAssistantMessage` stamps its own: the user's turn was written by a
+				// browser and this one by the server, and letting each supply its own clock puts
+				// a reply ahead of the message it answers whenever the two drift.
+				createdAt: Date.now(),
+				role: 'assistant',
+				content: commit.content,
+				thinking: commit.thinking,
+				model: commit.model,
+				provider: commit.provider,
+				tokensPrompt: commit.tokensPrompt,
+				tokensCompletion: commit.tokensCompletion,
+				finishReason: commit.finishReason,
+				generationMs: commit.generationMs,
+				firstTokenMs: commit.firstTokenMs,
+				reasoningMs: commit.reasoningMs,
+				lorebook: commit.lorebook,
+				siblingIndex: this.getNextSiblingIndex(commit.chatId, commit.parentId)
+			});
+
+			const pointers: Record<string, unknown> & { id: string } = { id: commit.chatId };
+			if (chat.active_leaf_id === commit.expectedLeafId) pointers.activeLeafId = messageId;
+			if (commit.claimsRoot && !chat.root_message_id) pointers.rootMessageId = messageId;
+			this.updateChat(pointers, { touchUpdatedAt: true });
+
+			let spentSteering = false;
+			for (const id of commit.spendSteeringIds) {
+				const row = this.select<{ data_json: string }[]>('SELECT data_json FROM steering_notes WHERE id = ?', [
+					id
+				])[0];
+				if (!row) continue;
+				// The mode rides `data_json` rather than a column of its own, so the guard has to
+				// read it, and it is a guard rather than a formality: a note edited to permanent
+				// while the model was writing must not be deleted out from under its author. An
+				// unparseable row keeps the note and says so; the reply is worth more than the
+				// tidiness of spending it.
+				let mode: unknown;
+				try {
+					mode = (JSON.parse(row.data_json) as { mode?: unknown }).mode;
+				} catch {
+					console.error(`[steering] note ${id} will not parse, so it was left armed instead of spent.`);
+					continue;
+				}
+				if (mode !== 'once') continue;
+				this.execute('DELETE FROM steering_notes WHERE id = ?', [id]);
+				spentSteering = true;
+			}
+
+			return { messageId, spentSteering };
+		});
+	}
+
 	// ===== Chat image attachments (files under images/chat/) =====
 	//
 	// A deleted chat, message, or assistant session must leave nothing behind on disk: the

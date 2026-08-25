@@ -21,10 +21,15 @@ import { join } from 'node:path';
 const TOKENS_BEFORE_CUT = ['Hel', 'lo '];
 const TOKENS_AFTER_CUT = ['wor', 'ld.'];
 
-let releaseGate: () => void;
-const gate = new Promise<void>((resolve) => {
-	releaseGate = resolve;
-});
+/** The endpoint holds its second half here. Re-armed per test that needs a pause; anything
+ *  else runs against a gate that is already open and streams straight through. */
+let releaseGate: () => void = () => {};
+let gate: Promise<void> = Promise.resolve();
+function armGate(): void {
+	gate = new Promise<void>((resolve) => {
+		releaseGate = resolve;
+	});
+}
 
 function sse(payload: unknown): string {
 	return `data: ${JSON.stringify(payload)}\n\n`;
@@ -140,7 +145,7 @@ function collect(
 
 const CONNECTION_ID = 'test-connection';
 
-function generateRequest(id: string): string {
+function generateRequest(id: string, commit?: Record<string, unknown>): string {
 	return JSON.stringify({
 		t: 'llm',
 		id,
@@ -149,8 +154,46 @@ function generateRequest(id: string): string {
 		model: 'scripted',
 		messages: [{ role: 'user', content: 'say hello' }],
 		stream: true,
-		source: 'chat'
+		source: 'chat',
+		commit
 	});
+}
+
+/** Call one bridged db method over the RPC endpoint, the same door the client uses. */
+async function rpc(method: string, args: unknown[]): Promise<unknown> {
+	const res = await fetch(`${origin}/api/rpc/db`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ method, args, clientId: 'test' })
+	});
+	if (!res.ok) throw new Error(`${method} failed: ${res.status} ${await res.text()}`);
+	return (await res.json()).result;
+}
+
+/** A chat holding one user turn, with the leaf on it: what a send leaves behind. */
+async function seedChat(): Promise<{ chatId: string; userTurnId: string }> {
+	const chatId = crypto.randomUUID();
+	const userTurnId = crypto.randomUUID();
+	const now = Date.now();
+	await rpc('insertChat', [
+		{
+			id: chatId,
+			title: 'A story',
+			createdAt: now,
+			updatedAt: now,
+			rootMessageId: null,
+			activeLeafId: null,
+			canonLeafId: null,
+			settings: null,
+			characterId: null,
+			characterVersionId: null
+		}
+	]);
+	await rpc('insertMessage', [
+		{ id: userTurnId, chatId, parentId: null, role: 'user', content: 'say hello', createdAt: now, siblingIndex: 0 }
+	]);
+	await rpc('updateChatActiveLeaf', [chatId, userTurnId]);
+	return { chatId, userTurnId };
 }
 
 beforeAll(async () => {
@@ -190,6 +233,7 @@ afterAll(async () => {
 describe('a generation outlives its socket (architecture/server-core.md, WebSocket protocol)', () => {
 	test('the tokens written while nobody was listening are handed to the page that comes back', async () => {
 		const id = crypto.randomUUID();
+		armGate();
 		const first = await openSocket();
 
 		// Watch until the model has said everything it will say before the cut.
@@ -227,6 +271,76 @@ describe('a generation outlives its socket (architecture/server-core.md, WebSock
 		expect(result.content).toBe([...TOKENS_BEFORE_CUT, ...TOKENS_AFTER_CUT].join(''));
 		expect(result.finishReason).toBe('stop');
 		second.close();
+	}, 30_000);
+
+	test('the reply lands in the story even though no page was ever there to write it', async () => {
+		const { chatId, userTurnId } = await seedChat();
+		armGate();
+
+		const socket = await openSocket();
+		const early = collect(socket, (frames) => frames.some((f) => f.t === 'llm-token'));
+		socket.send(
+			generateRequest(crypto.randomUUID(), {
+				chatId,
+				parentId: userTurnId,
+				expectedLeafId: userTurnId,
+				claimsRoot: false,
+				lorebook: null,
+				spendSteeringIds: []
+			})
+		);
+		await early;
+
+		// The page is gone for good: no reload, no second socket, nobody to claim anything.
+		// Everything from here on is the server finishing a turn on its own.
+		socket.close();
+		await Bun.sleep(150);
+		releaseGate();
+		await Bun.sleep(500);
+
+		const messages = (await rpc('getMessagesByChat', [chatId])) as {
+			role: string;
+			content: string;
+			parentId: string | null;
+			generationMs: number | null;
+		}[];
+		const reply = messages.find((m) => m.role === 'assistant');
+		expect(reply).toBeDefined();
+		expect(reply?.content).toBe([...TOKENS_BEFORE_CUT, ...TOKENS_AFTER_CUT].join(''));
+		expect(reply?.parentId).toBe(userTurnId);
+		// Clocked by the side that saw the frames, so a turn nobody watched still reports how
+		// long it took.
+		expect(reply?.generationMs).toBeGreaterThan(0);
+	}, 30_000);
+
+	test('a second reply for the same chat is refused while the first is still being written', async () => {
+		const { chatId, userTurnId } = await seedChat();
+		armGate();
+		const placement = {
+			chatId,
+			parentId: userTurnId,
+			expectedLeafId: userTurnId,
+			claimsRoot: false,
+			lorebook: null,
+			spendSteeringIds: []
+		};
+
+		const socket = await openSocket();
+		const first = collect(socket, (frames) => frames.some((f) => f.t === 'llm-token'));
+		socket.send(generateRequest(crypto.randomUUID(), placement));
+		await first;
+
+		// A page that could not see the running turn (its own was discarded) sends again.
+		const secondId = crypto.randomUUID();
+		const refusal = collect(socket, (frames) => frames.some((f) => f.t === 'llm-error' && f.id === secondId));
+		socket.send(generateRequest(secondId, placement));
+		expect(String((await refusal).find((f) => f.t === 'llm-error')?.message)).toMatch(/already being written/);
+
+		releaseGate();
+		await Bun.sleep(400);
+		const messages = (await rpc('getMessagesByChat', [chatId])) as { role: string }[];
+		expect(messages.filter((m) => m.role === 'assistant')).toHaveLength(1);
+		socket.close();
 	}, 30_000);
 
 	test('a claim on a generation the server never had is answered, not left hanging', async () => {

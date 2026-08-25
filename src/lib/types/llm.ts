@@ -420,6 +420,21 @@ export interface LLMCompletionOptions {
 	onToken?: (token: string) => void;
 	onThinkingToken?: (token: string) => void;
 	signal?: AbortSignal;
+	/** Where this reply belongs in the story, for the two calls whose turn the SERVER writes
+	 *  (a reply, an opening scene). Absent everywhere else, which is what keeps every other
+	 *  call's result the client's to persist. See architecture/chat-sessions.md. */
+	commit?: GenerationCommit;
+}
+
+/** Placement for a server-committed turn. Mirrored on the server (`GenerationCommit` in
+ *  server/index.ts) and in the transport, which is the layer that puts it on the wire. */
+export interface GenerationCommit {
+	chatId: string;
+	parentId: string | null;
+	expectedLeafId: string | null;
+	claimsRoot: boolean;
+	lorebook: unknown;
+	spendSteeringIds: string[];
 }
 
 export interface LLMCompletionResult {
@@ -440,6 +455,9 @@ export interface LLMCompletionResult {
 	/** How long the reasoning stream ran, first thinking token to last, in ms. Null when the
 	 *  turn produced no reasoning. */
 	reasoningMs: number | null;
+	/** The row the server wrote this reply as, for a call that carried a `commit`. Null for
+	 *  every other call, and for a committing one that had nothing to land. */
+	committedMessageId: string | null;
 }
 
 export interface LLMProviderConfig {

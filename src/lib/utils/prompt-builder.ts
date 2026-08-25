@@ -9,7 +9,7 @@
 
 import type { CallTarget, LLMMessage } from '$lib/types/llm';
 import type { Message } from '$lib/types/chat';
-import { resolveSteeringForPrompt, steeringTargetForChat } from '$lib/types/steering';
+import { activeSteeringNotes, resolveSteeringForPrompt, steeringTargetForChat } from '$lib/types/steering';
 import type { PromptPreset } from '$lib/types/database';
 import type { LibraryEntry } from '$lib/types/library';
 import type { Lorebook, LorebookTrace, LorebookTrigger } from '$lib/lorebook/types';
@@ -62,6 +62,10 @@ export interface BuiltPrompt {
 	/** Continue builds only: the extended turn's text as the model receives it, the anchor
 	 *  the join trims restatements against (see PromptAssembly.continuationSent). */
 	continuationSent?: string;
+	/** The 'once' steering notes this prompt actually resolved. The ids ride the request so
+	 *  the turn's commit spends exactly what rode it, and the texts stay here for the chat's
+	 *  reuse list, which is per-chat state the server does not author (architecture/engines.md). */
+	oneShotSteering: { id: string; text: string }[];
 }
 
 /**
@@ -124,11 +128,18 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 	// assemblePrompt alone decides placement and pricing; this is only the gate and the
 	// scope match.
 	const steeringNotes = featurePromptsStore.steeringEnabled ? await db.getAllSteeringNotes() : [];
+	const steeringTarget = steeringTargetForChat(chat);
 	const resolvedSteering = resolveSteeringForPrompt(
 		steeringNotes,
-		steeringTargetForChat(chat),
+		steeringTarget,
 		featurePromptsStore.steeringDefaults
 	);
+	// The one-shots by id, from the same rows and the same gate as the stack above, because
+	// what a turn spends must be what a turn sent. The pure resolver deliberately drops ids
+	// (assembly has no use for them), so the set is taken again rather than threaded through it.
+	const oneShotSteering = activeSteeringNotes(steeringNotes, steeringTarget)
+		.filter((note) => note.mode === 'once')
+		.map((note) => ({ id: note.id, text: note.text }));
 
 	const { messages, lorebook, continuationSent } = assemblePrompt({
 		preset,
@@ -159,5 +170,5 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 			: undefined
 	});
 
-	return { messages, lorebook, continuationSent };
+	return { messages, lorebook, continuationSent, oneShotSteering };
 }

@@ -353,6 +353,31 @@ export interface LlmResult {
 	 *  frame reports a span near zero, because that is what it did: the thinking time it hid
 	 *  lands in `firstTokenMs`, where the wait actually showed. */
 	reasoningMs: number | null;
+	/** The row this reply was written as, for a request that carried a `commit` placement.
+	 *  Null for every other call, and also for a committing one that had nothing to land: a
+	 *  stop before the first token, or a chat deleted while the model was writing. */
+	committedMessageId: string | null;
+}
+
+/**
+ * Where a generated reply belongs in the story, sent with the request so the SERVER can write
+ * the turn when the generation ends. Carried by the two calls that create a turn, a reply and
+ * an opening scene, and by nothing else: see the same type on the server for why the other
+ * calls keep their result client-side (architecture/server-core.md).
+ */
+export interface GenerationCommit {
+	chatId: string;
+	/** The row the turn hangs under; null lands a root sibling. */
+	parentId: string | null;
+	/** The chat's leaf as this request leaves: the commit moves it only if it still reads
+	 *  that, so a reader who walked to another branch meanwhile is left where they are. */
+	expectedLeafId: string | null;
+	/** Claim `rootMessageId` when the chat holds none. Opening scene only. */
+	claimsRoot: boolean;
+	/** The lorebook scan that shaped this turn, stored on the row it produces. */
+	lorebook: unknown;
+	/** Ids of the 'once' steering notes this prompt resolved, spent inside the commit. */
+	spendSteeringIds: string[];
 }
 
 const pendingLlm = new Map<string, PendingLlm>();
@@ -1129,6 +1154,7 @@ function handleWsMessage(raw: unknown): void {
 				// frames, so both would carry the length of the disconnection inside them.
 				pending.resolve({
 					...(msg.result as LlmResult),
+					committedMessageId: typeof msg.committedMessageId === 'string' ? msg.committedMessageId : null,
 					firstTokenMs:
 						pending.reattached || pending.firstTokenAt === undefined
 							? null
@@ -1300,6 +1326,8 @@ export interface LlmRequest {
 	onToken?: (token: string) => void;
 	onThinkingToken?: (token: string) => void;
 	signal?: AbortSignal;
+	/** Present only for the two calls whose reply the SERVER writes into the story. */
+	commit?: GenerationCommit;
 }
 
 export async function llmComplete(req: LlmRequest): Promise<LlmResult> {
@@ -1365,7 +1393,8 @@ export async function llmComplete(req: LlmRequest): Promise<LlmResult> {
 				tuning: req.tuning,
 				routing: req.routing,
 				stream: !!req.onToken,
-				source: req.source ?? 'completion'
+				source: req.source ?? 'completion',
+				commit: req.commit
 			})
 		);
 	});

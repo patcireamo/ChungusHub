@@ -113,12 +113,16 @@ interface LiveGeneration {
 	/** What has streamed so far, so a re-attach can be answered with the remainder alone. */
 	content: string;
 	thinking: string;
-	/** Set once the call ended. Until it is claimed, this is the only copy of the answer. */
-	settled: { result: LlmCompletionResult } | { error: string } | null;
+	/** Set once the call ended. For a call nobody commits, this is the only copy of the answer;
+	 *  for one that does, `committedMessageId` names the row it already landed as. */
+	settled: { result: LlmCompletionResult; committedMessageId: string | null } | { error: string } | null;
 	/** Armed when the generation settles, cleared when the map entry goes. */
 	dropTimer: ReturnType<typeof setTimeout> | null;
 	/** Debug label ('chat', 'memory', …), for the line logged if the answer is dropped. */
 	source: string;
+	/** The chat this generation will write a turn into, for the single-flight rule below.
+	 *  Null for every call that writes nothing. */
+	commitChatId: string | null;
 }
 type LlmCompletionResult = Awaited<ReturnType<typeof complete>>;
 const generations = new Map<string, LiveGeneration>();
@@ -1044,6 +1048,90 @@ async function handleApi(req: Request, url: URL, clientIp: string | null): Promi
 
 // ===== WebSocket message handling (sync + LLM streaming) =====
 
+/**
+ * Where a generated reply belongs in the story. Carried by the two calls that CREATE a turn
+ * and by nothing else, which is the whole rule for who writes an answer down.
+ *
+ * A reply and an opening scene are written HERE, because the page that asked for them may
+ * never come back: a phone whose browser is discarded loses the request id with the tab, and
+ * the reply it paid for would sit unclaimed until its window ran out. Every other call keeps
+ * its result client-side, and the difference is what the loss costs. Chat memory refires on
+ * the next turn, a sprite is re-read, a spellcheck is a button press, and a continue extends
+ * a turn that is already safe on disk and re-continues with one click. None of those is a
+ * story the reader cannot get back, and giving each of them a commit path would be machinery
+ * that only ever runs where nothing was at stake.
+ */
+interface GenerationCommit {
+	chatId: string;
+	parentId: string | null;
+	expectedLeafId: string | null;
+	claimsRoot: boolean;
+	lorebook: unknown;
+	spendSteeringIds: string[];
+}
+
+function isGenerationCommit(value: unknown): value is GenerationCommit {
+	const c = value as GenerationCommit | null;
+	return (
+		!!c &&
+		typeof c === 'object' &&
+		typeof c.chatId === 'string' &&
+		!!c.chatId &&
+		(c.parentId === null || typeof c.parentId === 'string') &&
+		(c.expectedLeafId === null || typeof c.expectedLeafId === 'string') &&
+		typeof c.claimsRoot === 'boolean' &&
+		Array.isArray(c.spendSteeringIds)
+	);
+}
+
+/**
+ * Write a finished generation's reply into the story and tell every device, in that order,
+ * so a page reading the `messages` hint finds committed state rather than racing it.
+ *
+ * Returns the new turn's id for the `llm-done` frame, or null when there was nothing to
+ * land: a stop that kept no text (the reader asked for nothing to be kept), or a chat that
+ * was deleted while the model was writing.
+ *
+ * The broadcast deliberately carries no origin, unlike an ordinary mutation's: the page that
+ * started this may be gone, and the one that is still here needs the hint as much as the
+ * others. Its own copy defers safely behind `missedSyncWhileStreaming` while it is streaming
+ * (architecture/chat-sessions.md).
+ */
+function commitGeneration(
+	commit: GenerationCommit,
+	result: LlmCompletionResult,
+	timings: { generationMs: number; firstTokenMs: number | null; reasoningMs: number | null }
+): string | null {
+	// The stop contract, and it is the client's rule moved rather than a new one: a stop
+	// mid-stream keeps everything that streamed, and only a stop that beat the first token
+	// has nothing worth a row.
+	if (result.finishReason === 'cancelled' && !result.content.trim()) return null;
+
+	const landed = serverDb.commitGeneratedTurn({
+		chatId: commit.chatId,
+		parentId: commit.parentId,
+		expectedLeafId: commit.expectedLeafId,
+		claimsRoot: commit.claimsRoot,
+		content: result.content,
+		thinking: result.thinking ?? null,
+		model: result.model,
+		provider: result.provider,
+		tokensPrompt: result.usage.promptTokens,
+		tokensCompletion: result.usage.completionTokens,
+		finishReason: result.finishReason,
+		generationMs: timings.generationMs,
+		firstTokenMs: timings.firstTokenMs,
+		reasoningMs: timings.reasoningMs,
+		lorebook: commit.lorebook ?? null,
+		spendSteeringIds: commit.spendSteeringIds
+	});
+	if (!landed) return null;
+
+	broadcastSync('messages', null);
+	if (landed.spentSteering) broadcastSync('steering', null);
+	return landed.messageId;
+}
+
 async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 	id: string;
 	connectionId: string;
@@ -1060,6 +1148,11 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 	stream?: boolean;
 	/** Debug-panel label for what kind of query this is ('chat', 'memory', …). */
 	source?: string;
+	/** Where this generation's reply belongs in the story, when it belongs in one at all.
+	 *  Present for the two paths that CREATE a turn (a reply, an opening scene) and absent
+	 *  for every other call, which is what decides who writes the answer down. See
+	 *  `commitGeneration`. */
+	commit?: GenerationCommit;
 }): Promise<void> {
 	if (!isProvider(msg.provider)) {
 		ws.send(JSON.stringify({ t: 'llm-error', id: msg.id, message: `Unknown provider: ${msg.provider}` }));
@@ -1071,12 +1164,38 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 	}
 
 	if (typeof msg.id !== 'string' || !msg.id) return;
+	// A placement that does not typecheck would land a turn somewhere nobody asked for, so it
+	// is refused before a token is paid for rather than absorbed at commit time.
+	if (msg.commit !== undefined && !isGenerationCommit(msg.commit)) {
+		ws.send(JSON.stringify({ t: 'llm-error', id: msg.id, message: 'Malformed commit placement on the request.' }));
+		return;
+	}
 	// A reused id would orphan the first controller (uncancellable, unclaimable) and let the
 	// first generation's ending overwrite the second's. The check is global because the map
 	// is: two sockets sharing an id collide in exactly the same way as one socket reusing it.
 	if (generations.has(msg.id)) {
 		ws.send(JSON.stringify({ t: 'llm-error', id: msg.id, message: 'Duplicate request id: this request is already running.' }));
 		return;
+	}
+	// One turn at a time per chat, and only for the calls that write one. A generation
+	// outlives the page that asked for it, so a reader whose tab was discarded can reopen the
+	// story, find it looking idle because the reply has not landed yet, and send again. Both
+	// would commit, and the chat would hold two replies to one message. The composer's own
+	// lock cannot see this: it belongs to a page that no longer exists. Engine calls stay
+	// unlocked, since memory folding a chat while a reply is written into it is ordinary.
+	if (msg.commit) {
+		for (const live of generations.values()) {
+			if (live.commitChatId === msg.commit.chatId && !live.settled) {
+				ws.send(
+					JSON.stringify({
+						t: 'llm-error',
+						id: msg.id,
+						message: 'A reply is already being written for this chat. Wait for it to land, or stop it first.'
+					})
+				);
+				return;
+			}
+		}
 	}
 	const controller = new AbortController();
 	const gen: LiveGeneration = {
@@ -1086,7 +1205,8 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 		thinking: '',
 		settled: null,
 		dropTimer: null,
-		source: msg.source ?? 'completion'
+		source: msg.source ?? 'completion',
+		commitChatId: msg.commit?.chatId ?? null
 	};
 	generations.set(msg.id, gen);
 
@@ -1116,6 +1236,14 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 		broadcastPromptLog({ type: 'request', entry });
 	}
 
+	// A committing generation stamps its own clocks, because it also writes the row they land
+	// on and it is the one side that is present for every frame. The client keeps measuring
+	// its own for everything it still persists itself; the two never write the same column.
+	const startedAt = Date.now();
+	let firstTokenAt: number | null = null;
+	let thinkingFirstAt: number | null = null;
+	let thinkingLastAt: number | null = null;
+
 	try {
 		const result = await complete(msg.connectionId, msg.provider, {
 			model: msg.model,
@@ -1133,19 +1261,36 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 			// can still be handed it.
 			onToken: stream
 				? (token) => {
+						firstTokenAt ??= Date.now();
 						gen.content += token;
 						emitGeneration(gen, { t: 'llm-token', id: msg.id, token });
 					}
 				: undefined,
 			onThinkingToken: stream
 				? (token) => {
+						// Reasoning counts as the model speaking: on a model that thinks first, its
+						// first thinking token IS the moment the wait ended.
+						const at = Date.now();
+						firstTokenAt ??= at;
+						thinkingFirstAt ??= at;
+						thinkingLastAt = at;
 						gen.thinking += token;
 						emitGeneration(gen, { t: 'llm-thinking', id: msg.id, token });
 					}
 				: undefined
 		});
-		emitGeneration(gen, { t: 'llm-done', id: msg.id, result });
-		settleGeneration(msg.id, gen, { result });
+		// Before the frame that announces it, so a page told the turn is done can read it.
+		const committedMessageId = msg.commit
+			? commitGeneration(msg.commit, result, {
+					generationMs: Date.now() - startedAt,
+					firstTokenMs: firstTokenAt === null ? null : firstTokenAt - startedAt,
+					reasoningMs:
+						thinkingFirstAt === null || thinkingLastAt === null ? null : thinkingLastAt - thinkingFirstAt
+				})
+			: null;
+		const done = { t: 'llm-done', id: msg.id, result, committedMessageId };
+		emitGeneration(gen, done);
+		settleGeneration(msg.id, gen, { result, committedMessageId });
 		if (capture) {
 			const res: promptLog.PromptLogResult = {
 				// A stopped generation RESOLVES with everything it streamed (see
@@ -1209,8 +1354,18 @@ function handleLlmAttach(
 		})
 	);
 	if (gen.settled) {
-		if ('result' in gen.settled) ws.send(JSON.stringify({ t: 'llm-done', id, result: gen.settled.result }));
-		else ws.send(JSON.stringify({ t: 'llm-error', id, message: gen.settled.error }));
+		if ('result' in gen.settled) {
+			ws.send(
+				JSON.stringify({
+					t: 'llm-done',
+					id,
+					result: gen.settled.result,
+					committedMessageId: gen.settled.committedMessageId
+				})
+			);
+		} else {
+			ws.send(JSON.stringify({ t: 'llm-error', id, message: gen.settled.error }));
+		}
 	}
 }
 

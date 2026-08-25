@@ -349,7 +349,8 @@ class LLMService {
 			source: options.source,
 			onToken: stream ? options.onToken : undefined,
 			onThinkingToken: stream ? options.onThinkingToken : undefined,
-			signal: options.signal
+			signal: options.signal,
+			commit: options.commit
 		});
 		return result as LLMCompletionResult;
 	}
