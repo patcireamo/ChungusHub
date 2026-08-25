@@ -1136,9 +1136,11 @@ function handleWsMessage(raw: unknown): void {
 			if (!pending) break;
 			pendingLlm.delete(String(msg.id));
 			if (pending.cancelTimer) clearTimeout(pending.cancelTimer);
-			pending.reject(
-				new Error('The connection dropped and this generation is no longer on the server. Nothing was saved.')
-			);
+			// Deliberately says nothing about whether anything was saved, because this side
+			// cannot know: a story turn is written by the server, so one that finished before
+			// the process lost track of it is already in the chat. Claiming either way would
+			// be a guess, and the refresh the caller does on the way out shows the truth.
+			pending.reject(new Error('Lost track of this generation when the connection dropped.'));
 			break;
 		}
 		case 'llm-done': {

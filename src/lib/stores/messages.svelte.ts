@@ -159,9 +159,13 @@ class MessageStore {
 				// A stop the server never answered (dead socket, or it aborted before the
 				// stream opened): nothing streamed, nothing to keep.
 				return null;
-			} else {
-				throw error;
 			}
+			// The turn is the server's to write, so a break on this side says nothing about
+			// whether one landed: a generation that finished before the connection was lost
+			// is already in the chat. Re-read before surfacing the failure, or the reply sits
+			// there unseen until something else happens to refresh.
+			await chatStore.refreshChat(chatId);
+			throw error;
 		} finally {
 			chatStore.endStream();
 			this.abortController = null;
@@ -866,8 +870,9 @@ class MessageStore {
 					chatId: state.chat.id,
 					parentId: null,
 					// The reader asked for this beginning, so it is the one they land on, unless
-					// they moved on while it was being written.
-					expectedLeafId: state.chat.activeLeafId,
+					// they moved on while it was being written. Off the fresh row rather than the
+					// store's snapshot: this is a claim about where the chat stands right now.
+					expectedLeafId: chat.activeLeafId,
 					claimsRoot: true,
 					lorebook,
 					spendSteeringIds: oneShotSteering.map((note) => note.id)
@@ -893,6 +898,9 @@ class MessageStore {
 			if (error instanceof Error && error.name === 'AbortError') {
 				// User cancelled
 			} else if (error instanceof Error) {
+				// Same re-read as generateResponse: the scene is the server's to write, so a
+				// break here does not mean none landed.
+				await chatStore.refreshChat(state.chat.id);
 				toastStore.failed('generate the opening scene', error);
 			}
 		} finally {
