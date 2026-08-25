@@ -1096,10 +1096,24 @@
 		padding: 0 0 0.5rem;
 	}
 
+	/* The position context the BrowsePopover panels in this row anchor to, the same job
+	   .brw-bar does for the library toolbars. Without it the panel resolves against an
+	   ancestor further up, lands away from its trigger, and .panel-scroll clips it: the
+	   sort menu renders in full and is never visible. */
 	.lb-controls-row {
+		position: relative;
 		display: flex;
 		align-items: center;
 		gap: 0.375rem;
+	}
+
+	/* And left aligned, not right. BrowsePopover pins its panel to the anchor's right edge,
+	   which suits the library toolbars because their triggers sit at that end. Here Sort is the
+	   leftmost control and New is at the far end of the row, so the default would open the menu
+	   under New: visible, but a whole row away from the button that summoned it. */
+	.lb-controls-row :global(.brw-pop-panel) {
+		right: auto;
+		left: 0;
 	}
 
 	/* Inside the column the bulk bar reads as a banner, not a full-bleed strip. */
