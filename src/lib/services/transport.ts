@@ -327,6 +327,15 @@ interface PendingLlm {
 	thinkingLastAt?: number;
 	/** Armed on abort: the grace window for the server's final (cancelled) result. */
 	cancelTimer?: ReturnType<typeof setTimeout>;
+	/** Characters of each stream already applied here, which is what a re-attach asks the
+	 *  server to skip. Counted from what `onToken` was actually handed, so the two can't drift. */
+	receivedContent: number;
+	receivedThinking: number;
+	/** This request has lived through a dropped socket. Both clocks above are measured from
+	 *  frame ARRIVAL, so the gap is inside them and nothing honest can be read off either. */
+	reattached?: boolean;
+	/** A Stop pressed while the socket was down, waiting for a connection to land on. */
+	cancelPending?: boolean;
 }
 
 export interface LlmResult {
@@ -692,6 +701,9 @@ let wsReady: Promise<void> | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 /** How long a connection attempt may hang before it counts as a failure. */
 const CONNECT_TIMEOUT_MS = 5_000;
+/** How long a Stop waits for the server's final (cancelled) result before settling as a
+ *  plain abort. Only a server that has stopped answering on a live socket gets here. */
+const CANCEL_GRACE_MS = 5_000;
 /** Whether a socket has ever opened: tells the first connect apart from a reconnect. */
 let hasConnected = false;
 
@@ -735,7 +747,12 @@ export function connectWs(): Promise<void> {
 			sendDebugState();
 			startHeartbeat();
 			setReachable(true);
-			if (hasConnected) for (const handler of reconnectHandlers) handler();
+			if (hasConnected) {
+				// Before the scope handlers: a generation still running is state this page owns
+				// and the re-reads below know nothing about.
+				reattachGenerations();
+				for (const handler of reconnectHandlers) handler();
+			}
 			hasConnected = true;
 			resolve();
 		};
@@ -760,17 +777,19 @@ function handleSocketDown(socket: WebSocket): void {
 	if (ws !== socket) return;
 	ws = null;
 	stopHeartbeat();
-	// Drop in-flight generations; the caller surfaces the break. One already stopped by the
-	// user settles as a clean abort: its result is never coming, but nothing broke.
+	// Generations SURVIVE a dropped socket: the server keeps running them and holds what they
+	// streamed, so the pending stays and claims it back on the next open (`reattachGenerations`).
+	// A Stop already in flight is NOT settled here either, for the same reason: the generation
+	// it was aimed at is still running, and giving up on it locally would leave it going with
+	// nobody able to stop it. The cancel waits for a socket to travel on.
 	for (const [, pending] of pendingLlm) {
 		if (pending.cancelTimer) {
 			clearTimeout(pending.cancelTimer);
-			pending.reject(abortError());
-		} else {
-			pending.reject(new Error('Connection lost'));
+			pending.cancelTimer = undefined;
+			pending.cancelPending = true;
 		}
+		pending.reattached = true;
 	}
-	pendingLlm.clear();
 	// Assistant turns SURVIVE a dropped socket: the server keeps running them and
 	// commits the finished turn itself, so it syncs in when the connection returns.
 	// A pending with an armed cancelTimer was deliberately stopped, so settle it as a
@@ -789,6 +808,35 @@ function handleSocketDown(socket: WebSocket): void {
 	for (const [, pending] of pendingStatus) pending.reject(new Error('Connection lost'));
 	pendingStatus.clear();
 	scheduleReconnect();
+}
+
+/**
+ * Claim back every generation this page had in flight when the socket went away. Each one
+ * says how much it already applied, so the server answers with the remainder alone and the
+ * transcript picks up mid-word instead of repainting.
+ *
+ * A request the server never received (it was written into a socket that was already dying)
+ * is answered as a miss and rejected, which is the truth: it never ran.
+ */
+function reattachGenerations(): void {
+	for (const [id, pending] of pendingLlm) {
+		ws?.send(
+			JSON.stringify({
+				t: 'llm-attach',
+				id,
+				haveContent: pending.receivedContent,
+				haveThinking: pending.receivedThinking
+			})
+		);
+	}
+}
+
+/** Send the Stop for a generation and arm the grace window for its final (cancelled) result. */
+function sendLlmCancel(id: string, pending: PendingLlm): void {
+	ws?.send(JSON.stringify({ t: 'llm-cancel', id }));
+	pending.cancelTimer = setTimeout(() => {
+		if (pendingLlm.delete(id)) pending.reject(abortError());
+	}, CANCEL_GRACE_MS);
 }
 
 function scheduleReconnect(): void {
@@ -1012,7 +1060,9 @@ function handleWsMessage(raw: unknown): void {
 			const pending = pendingLlm.get(String(msg.id));
 			if (!pending) break;
 			pending.firstTokenAt ??= performance.now();
-			pending.onToken?.(String(msg.token));
+			const token = String(msg.token);
+			pending.receivedContent += token.length;
+			pending.onToken?.(token);
 			break;
 		}
 		case 'llm-thinking': {
@@ -1025,7 +1075,45 @@ function handleWsMessage(raw: unknown): void {
 			pending.firstTokenAt ??= at;
 			pending.thinkingFirstAt ??= at;
 			pending.thinkingLastAt = at;
-			pending.onThinkingToken?.(String(msg.token));
+			const token = String(msg.token);
+			pending.receivedThinking += token.length;
+			pending.onThinkingToken?.(token);
+			break;
+		}
+		case 'llm-attached': {
+			// Everything that streamed while this page was not listening, in one piece.
+			// Thinking first, because that is the order it arrived in on the server.
+			const pending = pendingLlm.get(String(msg.id));
+			if (!pending) break;
+			const thinking = String(msg.thinking ?? '');
+			const content = String(msg.content ?? '');
+			if (thinking) {
+				pending.receivedThinking += thinking.length;
+				pending.onThinkingToken?.(thinking);
+			}
+			if (content) {
+				pending.receivedContent += content.length;
+				pending.onToken?.(content);
+			}
+			// A Stop pressed while there was no socket to send it on. It travels now, and the
+			// generation answers it with the partial exactly as an unbroken one would have.
+			if (pending.cancelPending) {
+				pending.cancelPending = false;
+				sendLlmCancel(String(msg.id), pending);
+			}
+			break;
+		}
+		case 'llm-attach-miss': {
+			// The server has never heard of this request: it restarted, or the answer waited
+			// past its window, or the request died in the socket it was written to. Either way
+			// there is nothing to come back for, and the caller has a composer locked on it.
+			const pending = pendingLlm.get(String(msg.id));
+			if (!pending) break;
+			pendingLlm.delete(String(msg.id));
+			if (pending.cancelTimer) clearTimeout(pending.cancelTimer);
+			pending.reject(
+				new Error('The connection dropped and this generation is no longer on the server. Nothing was saved.')
+			);
 			break;
 		}
 		case 'llm-done': {
@@ -1033,16 +1121,22 @@ function handleWsMessage(raw: unknown): void {
 			if (pending) {
 				pendingLlm.delete(String(msg.id));
 				if (pending.cancelTimer) clearTimeout(pending.cancelTimer);
+				// The server held this answer until somebody took it; tell it we have.
+				ws?.send(JSON.stringify({ t: 'llm-release', id: String(msg.id) }));
 				// The server owns the result; the two stream clocks are this side's alone,
-				// since only this side saw the frames arrive.
+				// since only this side saw the frames arrive. Which is exactly why a request
+				// that lived through a drop reports neither: this page was not there for the
+				// frames, so both would carry the length of the disconnection inside them.
 				pending.resolve({
 					...(msg.result as LlmResult),
 					firstTokenMs:
-						pending.firstTokenAt === undefined
+						pending.reattached || pending.firstTokenAt === undefined
 							? null
 							: Math.round(pending.firstTokenAt - pending.startedAt),
 					reasoningMs:
-						pending.thinkingFirstAt === undefined || pending.thinkingLastAt === undefined
+						pending.reattached ||
+						pending.thinkingFirstAt === undefined ||
+						pending.thinkingLastAt === undefined
 							? null
 							: Math.round(pending.thinkingLastAt - pending.thinkingFirstAt)
 				});
@@ -1053,6 +1147,7 @@ function handleWsMessage(raw: unknown): void {
 			const pending = pendingLlm.get(String(msg.id));
 			if (pending) {
 				pendingLlm.delete(String(msg.id));
+				ws?.send(JSON.stringify({ t: 'llm-release', id: String(msg.id) }));
 				// A stopped request that errors instead of finishing has nothing streamed to
 				// hand back (a non-streamed call, or an abort during the request itself), and
 				// the message would just be the abort restated. Settle it as the clean abort
@@ -1226,26 +1321,32 @@ export async function llmComplete(req: LlmRequest): Promise<LlmResult> {
 			reject,
 			onToken: req.onToken,
 			onThinkingToken: req.onThinkingToken,
-			startedAt: performance.now()
+			startedAt: performance.now(),
+			receivedContent: 0,
+			receivedThinking: 0
 		});
 
 		req.signal?.addEventListener('abort', () => {
 			const pending = pendingLlm.get(id);
-			if (!pending || pending.cancelTimer) return;
+			if (!pending || pending.cancelTimer || pending.cancelPending) return;
 			// Don't reject yet: every provider answers an abort with a normal `llm-done`
 			// carrying everything it streamed before the stop (finishReason 'cancelled').
 			// Rejecting here threw that text away: a reply the user stopped mid-stream lost
 			// every token they had watched arrive, and on a 'replace' regenerate the reply it
-			// was replacing was already gone. The timer is the safety net for a dead
-			// server/socket only.
-			try {
-				ws?.send(JSON.stringify({ t: 'llm-cancel', id }));
-			} catch {
-				/* socket already gone: the timer below settles the promise */
+			// was replacing was already gone. The timer is the safety net for a server that
+			// stops answering on a socket that is still up.
+			if (ws && ws.readyState === WebSocket.OPEN) {
+				sendLlmCancel(id, pending);
+				return;
 			}
-			pending.cancelTimer = setTimeout(() => {
-				if (pendingLlm.delete(id)) reject(abortError());
-			}, 5000);
+			// No socket, and the generation on the other end is still running. Two different
+			// situations, and they need opposite answers. A blip: the Stop waits for the
+			// reconnect that can deliver it, because giving up locally would leave a reply
+			// generating with nobody able to stop it. A host that has already failed a
+			// reconnect: nothing is coming, and waiting would leave the composer holding a
+			// Stop button that does nothing, so settle it as the abort it asked for.
+			if (isReachable()) pending.cancelPending = true;
+			else if (pendingLlm.delete(id)) reject(abortError());
 		});
 
 		// Logging is captured server-side (the shared debug log). We just tag the request

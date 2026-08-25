@@ -90,8 +90,70 @@ interface SocketData {
 }
 
 const sockets = new Set<ServerWebSocket<SocketData>>();
-// Active LLM generations per socket, so a client can cancel mid-stream.
-const generations = new WeakMap<ServerWebSocket<SocketData>, Map<string, AbortController>>();
+
+/**
+ * Every LLM generation in flight or waiting to be claimed, keyed by request id.
+ *
+ * Deliberately NOT per-socket state, and that is the whole point of the map. A phone that
+ * backgrounds its browser has its socket torn down by the OS, and a generation bound to
+ * that socket died with it: the answer was gone, and so was every token the reader had
+ * already watched arrive, because the only copy of a streamed reply lives in the page that
+ * asked for it until the call resolves. So a generation outlives its socket, keeps running
+ * and keeps accumulating; `ws` is whoever is listening right now, null while nobody is, and
+ * a page that comes back claims what it missed with `llm-attach`.
+ *
+ * A settled generation stays here for `CLAIM_WINDOW_MS`, because the socket looking open at
+ * the moment the last frame was written proves nothing about a frozen tab having read it.
+ * The window is what a returning page claims inside; past it the answer is dropped with a
+ * line in the log rather than in silence.
+ */
+interface LiveGeneration {
+	controller: AbortController;
+	ws: ServerWebSocket<SocketData> | null;
+	/** What has streamed so far, so a re-attach can be answered with the remainder alone. */
+	content: string;
+	thinking: string;
+	/** Set once the call ended. Until it is claimed, this is the only copy of the answer. */
+	settled: { result: LlmCompletionResult } | { error: string } | null;
+	/** Armed when the generation settles, cleared when the map entry goes. */
+	dropTimer: ReturnType<typeof setTimeout> | null;
+	/** Debug label ('chat', 'memory', …), for the line logged if the answer is dropped. */
+	source: string;
+}
+type LlmCompletionResult = Awaited<ReturnType<typeof complete>>;
+const generations = new Map<string, LiveGeneration>();
+/** How long an unclaimed answer is held. Long enough to cover a phone locked mid-reply,
+ *  short enough that nothing accumulates on a server nobody is using. */
+const CLAIM_WINDOW_MS = 10 * 60 * 1000;
+
+/** Hand one frame to whoever is currently watching this generation, if anyone is. */
+function emitGeneration(gen: LiveGeneration, frame: Record<string, unknown>): void {
+	gen.ws?.send(JSON.stringify(frame));
+}
+
+/** The generation has ended. Hold the answer for the claim window rather than assuming the
+ *  frame just written was read: the socket of a frozen tab looks open right up to the
+ *  moment the OS tears it down. */
+function settleGeneration(id: string, gen: LiveGeneration, settled: LiveGeneration['settled']): void {
+	gen.settled = settled;
+	// Dropped while it was still running (a restore claims the install and kills them all).
+	// Holding its answer, or arming a timer to forget it, would both be for nobody.
+	if (generations.get(id) !== gen) return;
+	gen.dropTimer = setTimeout(() => {
+		generations.delete(id);
+		console.error(
+			`[llm] dropped an unclaimed ${gen.source} answer after ${CLAIM_WINDOW_MS / 60000} minutes (request ${id}).`
+		);
+	}, CLAIM_WINDOW_MS);
+}
+
+/** Forget a generation and disarm whatever is still holding it. */
+function dropGeneration(id: string): void {
+	const gen = generations.get(id);
+	if (!gen) return;
+	if (gen.dropTimer) clearTimeout(gen.dropTimer);
+	generations.delete(id);
+}
 // Sockets whose device currently has the debug panel enabled. Capture + broadcast of
 // prompt logs only happens while at least one is listening, so an idle server pays nothing.
 const debugSockets = new Set<ServerWebSocket<SocketData>>();
@@ -174,6 +236,13 @@ let dataEpoch = 0;
  */
 function quiesceForRestore(): void {
 	kickAllSockets('Restoring a backup');
+	// Generations outlive their socket, so the kick above leaves them running and holding
+	// answers for a database that is about to be replaced. This is the one place they are
+	// deliberately killed rather than detached.
+	for (const [id, gen] of generations) {
+		gen.controller.abort();
+		dropGeneration(id);
+	}
 	// Aborting only breaks the loop; the turn still finalizes its own rows. That is fine
 	// here (those rows are about to be replaced), but it is why nothing waits on them.
 	for (const turn of assistantTurns.values()) turn.controller.abort();
@@ -1002,19 +1071,24 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 	}
 
 	if (typeof msg.id !== 'string' || !msg.id) return;
-	const controller = new AbortController();
-	let perSocket = generations.get(ws);
-	if (!perSocket) {
-		perSocket = new Map();
-		generations.set(ws, perSocket);
-	}
-	// A reused id would orphan the first controller (uncancellable, invisible to the
-	// close sweep) and let the first `finally` delete the second's handle. Refuse.
-	if (perSocket.has(msg.id)) {
+	// A reused id would orphan the first controller (uncancellable, unclaimable) and let the
+	// first generation's ending overwrite the second's. The check is global because the map
+	// is: two sockets sharing an id collide in exactly the same way as one socket reusing it.
+	if (generations.has(msg.id)) {
 		ws.send(JSON.stringify({ t: 'llm-error', id: msg.id, message: 'Duplicate request id: this request is already running.' }));
 		return;
 	}
-	perSocket.set(msg.id, controller);
+	const controller = new AbortController();
+	const gen: LiveGeneration = {
+		controller,
+		ws,
+		content: '',
+		thinking: '',
+		settled: null,
+		dropTimer: null,
+		source: msg.source ?? 'completion'
+	};
+	generations.set(msg.id, gen);
 
 	const stream = msg.stream !== false;
 
@@ -1055,14 +1129,23 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 			// Only wire the callbacks when streaming: their presence is what makes the
 			// provider issue a streaming request, so stream:false now genuinely asks the
 			// API for a single non-streamed completion instead of just muting tokens.
+			// Each token is kept as well as sent, so a page that was not listening for it
+			// can still be handed it.
 			onToken: stream
-				? (token) => ws.send(JSON.stringify({ t: 'llm-token', id: msg.id, token }))
+				? (token) => {
+						gen.content += token;
+						emitGeneration(gen, { t: 'llm-token', id: msg.id, token });
+					}
 				: undefined,
 			onThinkingToken: stream
-				? (token) => ws.send(JSON.stringify({ t: 'llm-thinking', id: msg.id, token }))
+				? (token) => {
+						gen.thinking += token;
+						emitGeneration(gen, { t: 'llm-thinking', id: msg.id, token });
+					}
 				: undefined
 		});
-		ws.send(JSON.stringify({ t: 'llm-done', id: msg.id, result }));
+		emitGeneration(gen, { t: 'llm-done', id: msg.id, result });
+		settleGeneration(msg.id, gen, { result });
 		if (capture) {
 			const res: promptLog.PromptLogResult = {
 				// A stopped generation RESOLVES with everything it streamed (see
@@ -1080,18 +1163,60 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 			if (promptLog.patchResult(msg.id, res)) broadcastPromptLog({ type: 'result', id: msg.id, result: res });
 		}
 	} catch (e) {
-		ws.send(JSON.stringify({ t: 'llm-error', id: msg.id, message: e instanceof Error ? e.message : String(e) }));
+		const message = e instanceof Error ? e.message : String(e);
+		emitGeneration(gen, { t: 'llm-error', id: msg.id, message });
+		settleGeneration(msg.id, gen, { error: message });
 		if (capture) {
 			const res: promptLog.PromptLogResult = {
 				status: controller.signal.aborted ? 'cancelled' : 'error',
 				endedAt: Date.now(),
-				error: e instanceof Error ? e.message : String(e)
+				error: message
 			};
 			if (promptLog.patchResult(msg.id, res)) broadcastPromptLog({ type: 'result', id: msg.id, result: res });
 		}
-	} finally {
-		perSocket.delete(msg.id);
 	}
+}
+
+/**
+ * A page claiming a generation it started before its socket went away: it says how many
+ * characters of each stream it already applied, and gets back the remainder plus, when the
+ * call has already ended, the ending it missed. Applying those in the order they are sent
+ * leaves it exactly where a page that never dropped would be.
+ *
+ * A generation nobody here has heard of (a server restart, a claim past the window, or a
+ * request that died in the socket it was written to) is answered as gone. It must never be
+ * left hanging: the asking page has a composer locked on it.
+ */
+function handleLlmAttach(
+	ws: ServerWebSocket<SocketData>,
+	msg: { id?: unknown; haveContent?: unknown; haveThinking?: unknown }
+): void {
+	const id = typeof msg.id === 'string' ? msg.id : '';
+	const gen = id ? generations.get(id) : undefined;
+	if (!gen) {
+		ws.send(JSON.stringify({ t: 'llm-attach-miss', id }));
+		return;
+	}
+	gen.ws = ws;
+	const haveContent = typeof msg.haveContent === 'number' ? msg.haveContent : 0;
+	const haveThinking = typeof msg.haveThinking === 'number' ? msg.haveThinking : 0;
+	ws.send(
+		JSON.stringify({
+			t: 'llm-attached',
+			id,
+			content: gen.content.slice(haveContent),
+			thinking: gen.thinking.slice(haveThinking)
+		})
+	);
+	if (gen.settled) {
+		if ('result' in gen.settled) ws.send(JSON.stringify({ t: 'llm-done', id, result: gen.settled.result }));
+		else ws.send(JSON.stringify({ t: 'llm-error', id, message: gen.settled.error }));
+	}
+}
+
+/** The claiming page has the answer and no longer needs the server to hold it. */
+function handleLlmRelease(msg: { id?: unknown }): void {
+	if (typeof msg.id === 'string' && msg.id) dropGeneration(msg.id);
 }
 
 /**
@@ -1544,13 +1669,13 @@ function serve(hostname: string) {
 			close(ws) {
 				sockets.delete(ws);
 				debugSockets.delete(ws);
-				// Plain llm generations die with their socket (their tokens have nowhere to go
-				// and the client rejected the pending on close). Assistant turns deliberately
-				// DON'T: they live in assistantTurns, keep working headless, and commit
-				// server-side: the finished turn syncs to the reconnected client.
-				const perSocket = generations.get(ws);
-				if (perSocket) {
-					for (const controller of perSocket.values()) controller.abort();
+				// Detach, never abort. A backgrounded phone has this socket torn down by the
+				// OS mid-reply, and aborting here threw away the call and every token the
+				// reader had already watched arrive. The generation keeps running with nobody
+				// listening; whoever comes back claims it (`llm-attach`). Assistant turns
+				// survive their socket the same way, in assistantTurns.
+				for (const gen of generations.values()) {
+					if (gen.ws === ws) gen.ws = null;
 				}
 			},
 			async message(ws, raw) {
@@ -1578,19 +1703,23 @@ function serve(hostname: string) {
 					// broadcasts prompt logs only while someone is listening.
 					if (msg.on) debugSockets.add(ws);
 					else debugSockets.delete(ws);
-				} else if (msg.t === 'llm-cancel' || msg.t === 'assistant-cancel') {
-					const perSocket = generations.get(ws);
-					perSocket?.get(String(msg.id))?.abort();
-					if (msg.t === 'assistant-cancel') {
-						// Assistant turns are session-keyed, not socket-keyed: match by request id
-						// first, and honour an explicit session id so a Stop still lands after the
-						// requesting socket reconnected (or from another device).
-						for (const turn of assistantTurns.values()) {
-							if (turn.requestId === String(msg.id)) turn.controller.abort();
-						}
-						const sessionId = typeof msg.assistantSessionId === 'string' ? msg.assistantSessionId : '';
-						if (sessionId) assistantTurns.get(sessionId)?.controller.abort();
+				} else if (msg.t === 'llm-attach') {
+					handleLlmAttach(ws, msg as never);
+				} else if (msg.t === 'llm-release') {
+					handleLlmRelease(msg as never);
+				} else if (msg.t === 'llm-cancel') {
+					// Matched by request id across every socket, so a Stop lands after the
+					// requesting socket reconnected, exactly like assistant-cancel below.
+					generations.get(String(msg.id))?.controller.abort();
+				} else if (msg.t === 'assistant-cancel') {
+					// Assistant turns are session-keyed, not socket-keyed: match by request id
+					// first, and honour an explicit session id so a Stop still lands after the
+					// requesting socket reconnected (or from another device).
+					for (const turn of assistantTurns.values()) {
+						if (turn.requestId === String(msg.id)) turn.controller.abort();
 					}
+					const sessionId = typeof msg.assistantSessionId === 'string' ? msg.assistantSessionId : '';
+					if (sessionId) assistantTurns.get(sessionId)?.controller.abort();
 				} else if (msg.t === 'ping') {
 					ws.send(JSON.stringify({ t: 'pong' }));
 				}
