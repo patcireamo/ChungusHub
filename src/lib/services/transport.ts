@@ -54,8 +54,8 @@ export function fileUrl(relativePath: string): string {
 	return `/files/${relativePath}`;
 }
 
-export async function getServerConfig(): Promise<{ dataEpoch: number }> {
-	return (await apiGet('/api/config')) as { dataEpoch: number };
+export async function getServerConfig(): Promise<{ dataEpoch: number; dataAhead: boolean }> {
+	return (await apiGet('/api/config')) as { dataEpoch: number; dataAhead: boolean };
 }
 
 /** A blocked connection attempt the server remembers for one-click allow. */

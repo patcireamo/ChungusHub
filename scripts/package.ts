@@ -14,8 +14,9 @@
  */
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-// So the note in the zip cannot state a port the executable beside it does not use.
-import { PORT } from '../server/config';
+// The DEFAULT and not this machine's `PORT`: the zip ships without a settings file, so what
+// the note has to state is what a fresh install will listen on, not what the build machine does.
+import { DEFAULT_PORT } from '../server/config';
 
 const root = process.cwd();
 const out = join(root, 'dist', 'ChungusHub-portable');
@@ -113,7 +114,7 @@ writeFileSync(
 	join(out, 'README.txt'),
 	`ChungusHub portable
 
-Run ${exeName}. A browser opens at http://localhost:${PORT} and that is the app.
+Run ${exeName}. A browser opens at http://localhost:${DEFAULT_PORT} and that is the app.
 Keep this folder together. Your stories, characters and settings live in the
 user-data folder created next to the executable. Keep it out of OneDrive,
 Dropbox and any other synced folder: a sync client copying the database while
@@ -124,6 +125,12 @@ and always takes one before it upgrades its own database. Settings → Backups
 is where you change how often, and where you go back to an earlier one. Both
 folders hold your stories and your API keys, so copy them somewhere safe and
 treat that copy the way you treat this one.
+
+The port and both folder locations live in chungushub.config.json, written
+beside the executable the first time you run it. Change "port" there if
+something else on this machine already answers on ${DEFAULT_PORT}, or point
+"dataDir" at a folder of your own to keep one workspace while the app itself
+is replaced or moved. Changes apply the next time ChungusHub starts.
 ${firstLaunch}
 To reach the app from your phone or another computer:
 
@@ -131,7 +138,7 @@ To reach the app from your phone or another computer:
      While it is off, the app runs for this computer alone and there is
      nothing on your network to connect to.
 
-  2. On the other device, go to http://<this-machine's-ip>:${PORT}
+  2. On the other device, go to http://<this-machine's-ip>:${DEFAULT_PORT}
      It lands on a page saying it is not allowed yet. Leave it open.
 
   3. Back in Settings → Security, that device is now waiting under
@@ -148,7 +155,7 @@ text editor. Both apply straight away, with no restart.
     user-data/allowlist.json   add your computer: ["192.168.1.20"]
 
 If you do not know your computer's address, save the first file only and
-open http://<this-machine's-ip>:${PORT} from it. The page you land on names
+open http://<this-machine's-ip>:${DEFAULT_PORT} from it. The page you land on names
 the address you arrived from and retries on its own, so putting that
 address in the second file is all it takes to walk in.
 `

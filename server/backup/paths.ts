@@ -5,7 +5,7 @@
  */
 import { existsSync, realpathSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
-import { resolveBackupDir, resolveDataDir } from '../config';
+import { CONFIG_PATH, resolveBackupDir, resolveDataDir } from '../config';
 
 /**
  * What a snapshot copies, named one by one rather than "everything in the data dir".
@@ -120,22 +120,25 @@ function contains(outer: string, inner: string): boolean {
  * The store may not sit inside the data dir and the data dir may not sit inside the store.
  * The first makes every snapshot carry the ones before it, so the second snapshot is twice
  * the size of the first and the tenth is unusable. The second puts live data where
- * retention prunes, which deletes it. Both are reachable with one wrong `CHUNGUS_BACKUP_DIR`,
- * so this runs at boot and refuses to start rather than waiting for the first snapshot.
+ * retention prunes, which deletes it. Both are reachable by one edit of `backupDir`, which is
+ * a line in a text file people are told to edit, so this runs at boot and refuses to start
+ * rather than waiting for the first snapshot. The way out names the setting rather than the
+ * env var, since the env var is not what the reader touched.
  */
 export function assertBackupDirUsable(): void {
 	const data = containerOf(resolveDataDir());
 	const backups = containerOf(resolveBackupDir());
+	const moveIt = `Point "backupDir" in ${CONFIG_PATH} (or CHUNGUS_BACKUP_DIR) somewhere outside.`;
 	if (contains(data, backups)) {
 		throw new Error(
 			`The backup folder sits inside the data folder (${backups} inside ${data}). ` +
-				'Every snapshot would carry the ones before it. Point CHUNGUS_BACKUP_DIR somewhere outside.'
+				`Every snapshot would carry the ones before it. ${moveIt}`
 		);
 	}
 	if (contains(backups, data)) {
 		throw new Error(
 			`The data folder sits inside the backup folder (${data} inside ${backups}). ` +
-				'Retention would delete live data. Point CHUNGUS_BACKUP_DIR somewhere outside.'
+				`Retention would delete live data. ${moveIt}`
 		);
 	}
 }

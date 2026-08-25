@@ -2,7 +2,7 @@
  * Server configuration and filesystem paths.
  * Everything lives under a single data directory so the whole install is portable.
  */
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { ensurePrivacyMarkers } from './privacy-notice';
 
@@ -22,12 +22,132 @@ export const IS_COMPILED = META_URL.includes('$bunfs') || META_URL.includes('~BU
 // works from anywhere and user-data lands next to the exe.
 const BASE_DIR = IS_COMPILED ? dirname(process.execPath) : process.cwd();
 
-// Data directory: env override, else ./user-data under the base dir. Central, valuable, backup-able.
-// Exposed as a function because the database binds its path lazily: the test suite points
-// CHUNGUS_DATA_DIR at a throwaway dir after modules are already loaded, and an import-frozen
-// path would silently send those writes into the real user-data (see ServerDatabase in db.ts).
+/**
+ * Process settings: what this process has to know before it can answer anything, and what
+ * nobody can fix from inside the app once it is wrong. Port, address, and where the data and
+ * the snapshots live. Everything the app can change about itself is an app setting and lives
+ * in the database instead.
+ *
+ * The file sits beside the executable (beside the repo from source) and NOT under the data
+ * dir, because it is the thing that says where the data dir is. Precedence is environment
+ * variable > file > default, in that order and nowhere else: the test suite pins its throwaway
+ * dirs through the environment and has to win over whatever an install happens to carry.
+ *
+ * A value it cannot read is collected here rather than thrown: this module is imported by
+ * `vite.config.ts` as well, so the sentence belongs to the server's own startup, which reads
+ * `CONFIG_ISSUES` and stops on it.
+ */
+export const CONFIG_PATH = join(BASE_DIR, 'chungushub.config.json');
+
+/** Exported for the packaging script alone: what a fresh install will listen on, which is
+ *  what its README has to state rather than whatever port the machine doing the build uses. */
+export const DEFAULT_PORT = 4242;
+const DEFAULT_HOST = '0.0.0.0';
+const DEFAULT_DATA_DIR = 'user-data';
+/** Relative to the DATA dir, so a data folder moved somewhere else keeps its snapshots beside it. */
+const DEFAULT_BACKUP_DIR = '../backups';
+const CONFIG_KEYS = ['//', 'port', 'host', 'dataDir', 'backupDir'];
+
+export const CONFIG_ISSUES: string[] = [];
+
+function readConfigFile(): Record<string, unknown> {
+	if (!existsSync(CONFIG_PATH)) return {};
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
+	} catch (error) {
+		CONFIG_ISSUES.push(`${CONFIG_PATH} is not readable as JSON: ${error instanceof Error ? error.message : String(error)}`);
+		return {};
+	}
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+		CONFIG_ISSUES.push(`${CONFIG_PATH} must hold a JSON object.`);
+		return {};
+	}
+	const file = parsed as Record<string, unknown>;
+	// A misspelled key that silently does nothing is the whole reason this file exists to be
+	// hand-edited, so it is named rather than ignored. Anything starting with `//` is a note:
+	// the shipped file teaches that spelling with its own first line, so a reader adding a
+	// second one must not be met with an app that refuses to start.
+	for (const key of Object.keys(file)) {
+		if (key.startsWith('//')) continue;
+		if (!CONFIG_KEYS.includes(key)) {
+			CONFIG_ISSUES.push(`"${key}" in ${CONFIG_PATH} is not a setting. Known keys: ${CONFIG_KEYS.slice(1).join(', ')}.`);
+		}
+	}
+	return file;
+}
+
+const FILE = readConfigFile();
+
+/** Read once at import: called per use it would report the same fault on every call. */
+function fileText(key: 'host' | 'dataDir' | 'backupDir'): string | null {
+	const value = FILE[key];
+	if (value === undefined) return null;
+	if (typeof value !== 'string' || !value.trim()) {
+		CONFIG_ISSUES.push(`"${key}" in ${CONFIG_PATH} must be a non-empty string.`);
+		return null;
+	}
+	return value.trim();
+}
+
+const FILE_HOST = fileText('host');
+const FILE_DATA_DIR = fileText('dataDir');
+const FILE_BACKUP_DIR = fileText('backupDir');
+
+function readPort(): number {
+	const fromEnv = process.env.CHUNGUS_PORT;
+	if (fromEnv === undefined && FILE.port === undefined) return DEFAULT_PORT;
+	// The file's value has to BE a number rather than merely convert to one: `Number()` reads
+	// null and "" as a perfectly valid 0 and true as 1, and a 0 here is not a default, it is the
+	// OS handing out a different port on every launch with every saved address gone stale.
+	const port =
+		fromEnv !== undefined
+			? fromEnv.trim()
+				? Number(fromEnv)
+				: NaN
+			: typeof FILE.port === 'number'
+				? FILE.port
+				: NaN;
+	// 0 itself is legitimate and asks the OS for a free port; the test suite runs on it.
+	if (!Number.isInteger(port) || port < 0 || port > 65535) {
+		const where = fromEnv !== undefined ? 'CHUNGUS_PORT' : `"port" in ${CONFIG_PATH}`;
+		CONFIG_ISSUES.push(`${where} must be a whole number from 0 to 65535.`);
+		return DEFAULT_PORT;
+	}
+	return port;
+}
+
+/** Write the file on a first run, so the settings are visible to someone who has only a
+ *  folder and a text editor. Defaults only, never the values this launch resolved: an
+ *  environment variable outranks the file anyway, and baking one in would hand the next
+ *  launch a path that was never meant to outlive the shell that set it. */
+export function ensureConfigFile(): void {
+	if (existsSync(CONFIG_PATH)) return;
+	const contents: Record<string, unknown> = {
+		'//': 'ChungusHub process settings, read once at startup: restart to apply, and an environment variable wins over anything here. Relative paths: dataDir from this file, backupDir from the data folder.',
+		port: DEFAULT_PORT,
+		host: DEFAULT_HOST,
+		dataDir: DEFAULT_DATA_DIR,
+		backupDir: DEFAULT_BACKUP_DIR
+	};
+	try {
+		writeFileSync(CONFIG_PATH, `${JSON.stringify(contents, null, 2)}\n`);
+	} catch (error) {
+		// Not fatal, and deliberately not silent: with no file the defaults above are exactly
+		// what is running, so the launch is sound and only the way to change it is missing.
+		console.log(`  Could not write ${CONFIG_PATH}, so the defaults are in force: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
+
+// Data directory: env override, else the file, else ./user-data under the base dir. Central,
+// valuable, backup-able. Exposed as a function because the database binds its path lazily: the
+// test suite points CHUNGUS_DATA_DIR at a throwaway dir after modules are already loaded, and an
+// import-frozen path would silently send those writes into the real user-data (see
+// ServerDatabase in db.ts).
 export function resolveDataDir(): string {
-	return resolve(process.env.CHUNGUS_DATA_DIR ?? join(BASE_DIR, 'user-data'));
+	const fromEnv = process.env.CHUNGUS_DATA_DIR;
+	if (fromEnv) return resolve(fromEnv);
+	return resolve(BASE_DIR, FILE_DATA_DIR ?? DEFAULT_DATA_DIR);
 }
 export const DATA_DIR = resolveDataDir();
 
@@ -43,7 +163,8 @@ export function resolveDbPath(): string {
 // by the first snapshot, not here: an install that never backs up grows no empty folder.
 export function resolveBackupDir(): string {
 	const override = process.env.CHUNGUS_BACKUP_DIR;
-	return resolve(override ?? join(dirname(resolveDataDir()), 'backups'));
+	if (override) return resolve(override);
+	return resolve(resolveDataDir(), FILE_BACKUP_DIR ?? DEFAULT_BACKUP_DIR);
 }
 
 // Per-entity image storage: images/<category>/ with a thumbnails/ subfolder each. The
@@ -92,8 +213,8 @@ export const DEFAULT_BACKGROUNDS_DIR = resolve(join(BASE_DIR, 'defaults', 'backg
 // other devices trade those two for having nothing to set up.
 // 4242 keeps clear of what this audience already runs: SillyTavern 8000, koboldcpp 5001,
 // ComfyUI 8188, Stable Diffusion 7860, Ollama 11434. A collision costs a first launch.
-export const PORT = Number(process.env.CHUNGUS_PORT ?? 4242);
-export const HOST = process.env.CHUNGUS_HOST ?? '0.0.0.0';
+export const PORT = readPort();
+export const HOST = process.env.CHUNGUS_HOST ?? FILE_HOST ?? DEFAULT_HOST;
 
 // IPs seeded as always-allowed via env (comma-separated). Never written to the
 // allowlist file, handy for dev or scripted setups.
@@ -117,4 +238,6 @@ export function ensureDirs(): void {
 // DATA_DIR (e.g. the SQLite database) finds its parent directory already present.
 // Skipped under `bun test`, where this names the real dir no test writes to (each pins
 // its own first), so running it would only leave an empty user-data behind in the repo.
-if (process.env.NODE_ENV !== 'test') ensureDirs();
+// Skipped while a setting is unreadable too: the boot below is about to stop on that, and a
+// refused launch must not leave a data folder behind at a path nobody chose.
+if (process.env.NODE_ENV !== 'test' && CONFIG_ISSUES.length === 0) ensureDirs();

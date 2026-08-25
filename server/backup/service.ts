@@ -9,7 +9,7 @@
  * NOT looking at the page still see the new row when they open it.
  */
 import { rmSync } from 'node:fs';
-import { IS_COMPILED, resolveBackupDir } from '../config';
+import { IS_COMPILED, resolveBackupDir, resolveDataDir } from '../config';
 import { serverDb } from '../db';
 import type { SyncScope } from '../../shared/sync';
 import {
@@ -281,7 +281,16 @@ class BackupService {
 		// From source the entry is argv[1]; a compiled binary IS the entry and takes none.
 		const argv = IS_COMPILED ? [process.execPath] : [process.execPath, process.argv[1]];
 		const child = Bun.spawn(argv, {
-			env: { ...process.env, [JOB_ENV]: JSON.stringify(spec) },
+			// Both folders are handed over rather than left to be resolved again. The child runs
+			// the same `config.ts` and would read the settings file as it stands NOW, so a line
+			// edited since this process booted would point the job at a folder its parent is not
+			// using. An environment variable outranks that file, which is what pins the two together.
+			env: {
+				...process.env,
+				CHUNGUS_DATA_DIR: resolveDataDir(),
+				CHUNGUS_BACKUP_DIR: resolveBackupDir(),
+				[JOB_ENV]: JSON.stringify(spec)
+			},
 			stdout: 'pipe',
 			stderr: 'pipe'
 		});

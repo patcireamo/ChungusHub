@@ -1,9 +1,9 @@
 <script lang="ts">
 	/**
-	 * The standing channel's third condition (architecture/ui-shell-settings.md): a SillyTavern
+	 * The standing channel's last condition (architecture/ui-shell-settings.md): a SillyTavern
 	 * folder import is running.
 	 *
-	 * It earns a standing row for the reason the other two do: it is a state, not an event. An
+	 * It earns a standing row for the reason the others do: it is a state, not an event. An
 	 * import of a real library runs for minutes, the reader closes Settings and goes back to a
 	 * chat while it does, and a readout that lived on the page it was started from would leave
 	 * the app writing characters, chats and pictures behind an interface saying nothing at all.

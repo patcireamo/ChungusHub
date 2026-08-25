@@ -4,6 +4,7 @@
 	import AssistantFloatingWidget from '$lib/components/assistant/AssistantFloatingWidget.svelte';
 	import WelcomeDialog, { openWelcomeDialog } from '$lib/components/layout/WelcomeDialog.svelte';
 	import ToastContainer from '$lib/components/ui/ToastContainer.svelte';
+	import DataAheadBar, { setDataAhead } from '$lib/components/layout/DataAheadBar.svelte';
 	import ConnectionBar from '$lib/components/layout/ConnectionBar.svelte';
 	import DeleteGuardBar from '$lib/components/layout/DeleteGuardBar.svelte';
 	import ImportBar from '$lib/components/layout/ImportBar.svelte';
@@ -138,7 +139,9 @@
 			// A restore replaces all of it during a launch this page cannot witness, so
 			// `watchForRestore` compares this on every reconnect. A push could never carry the
 			// news: the process that took the decision is gone by the time it becomes true.
-			bootDataEpoch = (await getServerConfig()).dataEpoch;
+			const serverConfig = await getServerConfig();
+			bootDataEpoch = serverConfig.dataEpoch;
+			setDataAhead(serverConfig.dataAhead);
 			await themeStore.initialize();
 			// Synced UI preferences (formerly per-device localStorage). Loaded before the
 			// workspace paints so the toolbars open with the user's saved view. All
@@ -231,6 +234,9 @@
 		onReconnect(() => {
 			void getServerConfig()
 				.then((config) => {
+					// Re-read, not just re-checked: what answers after a reconnect can be an older
+					// build than the one this tab booted against, and a plain restart moves no epoch.
+					setDataAhead(config.dataAhead);
 					if (config.dataEpoch !== bootDataEpoch) window.location.reload();
 				})
 				.catch(() => {
@@ -305,6 +311,10 @@
 	{:else}
 		<!-- Only once the workspace is up: the boot failure states below say the same thing
 		     in their own words, and two accounts of one outage is one too many. -->
+		<!-- First of the four: an outage stops writes, while this one lets them through into
+		     data this build does not understand, and it is the only one here that cannot
+		     resolve while the app is open. -->
+		<DataAheadBar />
 		<ConnectionBar />
 		<!-- Under the connection row on purpose: an outage is the more urgent of the two, and
 		     an outage also closes any window, so they only ever stack on a kept rung. -->

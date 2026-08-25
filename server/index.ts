@@ -5,9 +5,10 @@
  * and runs a WebSocket for live cross-device sync and LLM token streaming.
  */
 import { existsSync, statSync } from 'node:fs';
-import { basename, join, normalize } from 'node:path';
+import { join, normalize } from 'node:path';
 import type { ServerWebSocket } from 'bun';
-import { CLIENT_DIR, DATA_DIR, DEFAULT_BACKGROUNDS_DIR, HOST, IS_COMPILED, PORT, SECURITY_PATH, ensureDirs, type ImageCategory } from './config';
+import { CLIENT_DIR, CONFIG_ISSUES, CONFIG_PATH, DATA_DIR, DEFAULT_BACKGROUNDS_DIR, HOST, IS_COMPILED, PORT, SECURITY_PATH, ensureConfigFile, ensureDirs, type ImageCategory } from './config';
+import { claimDataDir, type RunningInstance } from './instance-lock';
 import {
 	allowIp,
 	isAllowed,
@@ -236,6 +237,13 @@ let maintenance: { headline: string; detail: string; retry: boolean; cancellable
  * so a plain restart does not read as a restore and reload every open page for nothing.
  */
 let dataEpoch = 0;
+
+/**
+ * Whether this data folder was last written by a newer build (set at boot, see below). Every
+ * device is told, because the reader deciding whether to keep writing is not necessarily
+ * sitting at the machine the server printed its warning on.
+ */
+let dataAhead = false;
 
 /**
  * Stop taking work. Called the moment a restore is claimed rather than at the swap, because
@@ -534,7 +542,9 @@ async function handleApi(req: Request, url: URL, clientIp: string | null): Promi
 	// Client-readable runtime config. `dataEpoch` is how a device finds out its whole world
 	// was replaced. It compares the value it booted with on every reconnect, because the
 	// announcement cannot be pushed: a restore closes every socket before it starts.
-	if (path === '/api/config') return json({ dataEpoch });
+	// `dataAhead` rides along because it is the same kind of fact: something happened to this
+	// data folder that the running app cannot undo and the reader has to be told about.
+	if (path === '/api/config') return json({ dataEpoch, dataAhead });
 
 	// ----- Shared prompt debug log -----
 	// Backfill the panel when a device opens it (the live feed rides the WebSocket).
@@ -1613,16 +1623,86 @@ if (process.env[JOB_ENV]) {
 	await runJobChild();
 }
 
+// A setting this process cannot read is a setting it would silently substitute a default for,
+// and the two it decides are where the data lives and who can reach it.
+if (CONFIG_ISSUES.length > 0) {
+	fatal(['ChungusHub could not read its settings, so it has not started.', '', ...CONFIG_ISSUES]);
+}
 ensureDirs();
+ensureConfigFile();
 // Refuse a backup folder nested inside the data folder, or the reverse, at boot rather than
 // on the second snapshot, which is when it would otherwise become visible: by then the
 // snapshots contain each other.
-assertBackupDirUsable();
+try {
+	assertBackupDirUsable();
+} catch (error) {
+	fatal([
+		'ChungusHub cannot use these two folders together, so it has not started.',
+		'',
+		error instanceof Error ? error.message : String(error)
+	]);
+}
+
+const startedAt = Date.now();
+/** The port actually being served, which is only knowable once the socket is open (a
+ *  configured 0 asks the OS to choose). Answered to whoever else tries this data folder. */
+let boundPort = PORT;
+// Before the restore swap and before any database is opened, which is what this has to stand in
+// front of: the folder exists by now (`ensureDirs` above, and the claim needs it to), but from
+// here on every line writes into it.
+let alreadyRunning: RunningInstance | null = null;
+try {
+	alreadyRunning = await claimDataDir(DATA_DIR, () => ({
+		pid: process.pid,
+		port: boundPort,
+		startedAt
+	}));
+} catch (error) {
+	// A claim that cannot be settled either way is not a folder going spare: carrying on would
+	// be the guess this whole mechanism exists to refuse.
+	fatal([
+		'ChungusHub could not tell whether another copy is using this data folder, so it has not started.',
+		`  ${DATA_DIR}`,
+		'',
+		error instanceof Error ? error.message : String(error)
+	]);
+}
+if (alreadyRunning) {
+	fatal([
+		'ChungusHub is already using this data folder, so this copy has not started.',
+		`  ${DATA_DIR}`,
+		'',
+		alreadyRunning.pid
+			? `The copy holding it is serving on port ${alreadyRunning.port} (process ${alreadyRunning.pid}).`
+			: 'Another copy is holding it.',
+		'',
+		'Close that one first, or point this copy at a different folder:',
+		`  "dataDir" in ${CONFIG_PATH}`
+	]);
+}
+
 // A marker means a restore was claimed, or was cut short part-way through. Either way the
 // swap runs HERE and only here: nothing has opened a database yet, which is the one moment
 // this process is able to replace its own database file at all (backup/restore.ts).
 const restoredFrom = await resumeInterruptedRestore();
-await snapshotBeforeUpgrade();
+// Read once, after the restore has decided which database this is, and used twice below.
+const schemaOnDisk = schemaVersionOnDisk();
+/**
+ * Data written by a build newer than this one. Migrations only run forward, so this build sees
+ * a schema it was never written against: it reads what it knows and writes rows the newer build
+ * may not accept back. Said out loud and then allowed, because the alternative is an install
+ * that refuses to open the only copy of someone's work, and the pre-upgrade snapshot the newer
+ * build took still holds the data as it was.
+ */
+dataAhead = schemaOnDisk > LATEST_SCHEMA_VERSION;
+if (dataAhead) {
+	console.log('');
+	console.log(`  This data folder was last used by a NEWER ChungusHub (data format ${schemaOnDisk}; this one reads ${LATEST_SCHEMA_VERSION}).`);
+	console.log('  Writing here with this build can damage it. Update this copy, or open the folder');
+	console.log('  with the newer build again. To go back instead, restore the snapshot taken before');
+	console.log('  that upgrade from Settings → Backups.');
+}
+await snapshotBeforeUpgrade(schemaOnDisk);
 // Open the database now: a broken file or failing migration kills the boot loudly
 // instead of surfacing on the first request (the handle itself binds lazily, see db.ts).
 serverDb.open();
@@ -1649,8 +1729,7 @@ backupService.startSchedule();
  * not happen" is precisely the sentence nobody reads in a log. The way past it is named on
  * screen rather than left to be guessed, so a full disk is an inconvenience and not a wall.
  */
-async function snapshotBeforeUpgrade(): Promise<void> {
-	const onDisk = schemaVersionOnDisk();
+async function snapshotBeforeUpgrade(onDisk: number): Promise<void> {
 	if (onDisk === 0 || onDisk >= LATEST_SCHEMA_VERSION) return;
 	if (process.env.CHUNGUS_SKIP_UPGRADE_BACKUP === '1') {
 		console.log('  CHUNGUS_SKIP_UPGRADE_BACKUP is set: upgrading the database without a backup.');
@@ -1874,9 +1953,9 @@ function serve(hostname: string) {
 
 /** The socket. A taken port is the likeliest way a first launch ends, so it is answered
  *  in words rather than as an EADDRINUSE trace, and no bind failure is left to raise. */
-function bootServer(hostname: string) {
+async function bootServer(hostname: string) {
 	try {
-		return serve(hostname);
+		return await serveWhenFree(hostname);
 	} catch (error) {
 		if ((error as { code?: string }).code !== 'EADDRINUSE') {
 			fatal([
@@ -1884,21 +1963,45 @@ function bootServer(hostname: string) {
 				error instanceof Error ? error.message : String(error)
 			]);
 		}
-		// Windows needs the quotes: bare `set VAR=x && prog` folds the space into the value.
-		const run = IS_COMPILED ? basename(process.execPath) : 'bun server/index.ts';
 		fatal([
 			`Port ${PORT} is already in use, so ChungusHub has nothing to listen on.`,
 			'',
-			'Close whatever is holding it, or start ChungusHub on another port:',
+			'Close whatever is holding it, or give ChungusHub a port of its own:',
 			'',
-			process.platform === 'win32'
-				? `  set "CHUNGUS_PORT=${PORT + 1}" && ${run}`
-				: `  CHUNGUS_PORT=${PORT + 1} ${IS_COMPILED ? './' : ''}${run}`
+			`  "port" in ${CONFIG_PATH}`
 		]);
 	}
 }
 
-let server = bootServer(bindHostname());
+/**
+ * A port is not free the instant its holder stops: the process still has to be torn down, and
+ * a predecessor that died a moment ago is exactly what the next launch is racing. Left to fail
+ * on the first attempt, a crash costs a restart by hand; waited out, it costs a blink. The wait
+ * is bounded and says so on screen, so a port genuinely taken by something else still ends here
+ * with the same sentence, a few seconds later.
+ */
+const BIND_WAIT_MS = 5_000;
+const BIND_RETRY_MS = 100;
+
+async function serveWhenFree(hostname: string) {
+	const deadline = Date.now() + BIND_WAIT_MS;
+	let said = false;
+	for (;;) {
+		try {
+			return serve(hostname);
+		} catch (error) {
+			if ((error as { code?: string }).code !== 'EADDRINUSE' || Date.now() >= deadline) throw error;
+			if (!said) {
+				console.log(`  Port ${PORT} is busy. Waiting for it to come free…`);
+				said = true;
+			}
+			await Bun.sleep(BIND_RETRY_MS);
+		}
+	}
+}
+
+let server = await bootServer(bindHostname());
+boundPort = server.port ?? PORT;
 
 /**
  * Rebinds run one at a time, in a queue. Two flips arriving together would otherwise
@@ -1925,7 +2028,9 @@ async function applyBinding(): Promise<void> {
 	if (server.hostname === hostname) return;
 	try {
 		await server.stop(true);
-		server = serve(hostname);
+		// The socket this process just closed can still be holding the port for a moment.
+		server = await serveWhenFree(hostname);
+		boundPort = server.port ?? PORT;
 	} catch (e) {
 		// The old socket is already gone and there is nothing honest to fall back to.
 		// Staying up would leave a process that looks alive and answers nobody, which

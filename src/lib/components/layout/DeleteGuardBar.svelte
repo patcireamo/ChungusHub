@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * The standing channel's second condition (architecture/ui-shell-settings.md): the reader
+	 * The standing channel's third condition (architecture/ui-shell-settings.md): the reader
 	 * has lowered the destructive-act ladder, and it is still lowered.
 	 *
 	 * It earns a standing row rather than a toast for the same reason the connection one does:

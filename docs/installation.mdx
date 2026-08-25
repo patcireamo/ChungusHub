@@ -73,7 +73,38 @@ which the launchers make the repository folder. A second clone therefore opens a
 workspace while the first one sits untouched where you left it. The server prints the path it is
 using as it starts, and **Settings → About** shows it with a button to copy it.
 
+**Two installs, one workspace.** Point `dataDir` (below) at the same folder from both and a
+packaged copy and a copy run from source pick up where the other left off, with nothing to move
+across. Run one at a time: a second copy started while the first still has the folder refuses to
+start and names the one holding it, because two of them writing one database is how that
+database gets damaged. Opening a workspace with an older ChungusHub than the one that last wrote
+it is allowed and says so, on the server's own output and in a bar across the top of the app;
+what it wrote before that upgrade is still in your snapshots.
+
+## Settings file
+
+The port, the interface and both folder locations are read from `chungushub.config.json`, which
+ChungusHub writes beside the executable on its first run (beside the repository when you run from
+source):
+
+```json
+{
+  "port": 4242,
+  "host": "0.0.0.0",
+  "dataDir": "user-data",
+  "backupDir": "../backups"
+}
+```
+
+Edit it in any text editor and start ChungusHub again. Absolute paths are taken as written; a
+relative one is read from the file's own folder, except `backupDir`, which is read from the data
+folder, so snapshots stay beside the data when you move it. A value it cannot read stops the
+launch and names the line to fix, rather than starting somewhere nobody chose.
+
 ## Environment variables
+
+Set one and it wins over the file, which wins over the defaults above. Useful for a launcher
+script or a one-off run; anything permanent belongs in the file.
 
 | Variable | Default | What it does |
 | --- | --- | --- |

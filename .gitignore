@@ -14,6 +14,9 @@ user-data/
 backups/
 # Legacy name, kept ignored so any leftover copy never gets committed.
 data/
+# This install's own port and folders, written on its first run. It belongs to the machine
+# it was created on, never to the repository.
+chungushub.config.json
 
 # TypeScript
 *.tsbuildinfo
