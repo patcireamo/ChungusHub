@@ -351,6 +351,78 @@ describe('a generation outlives its socket (architecture/server-core.md, WebSock
 		socket.close();
 	}, 30_000);
 
+	// The refusal above is a dead end unless the page that meets it can reach the reply it is
+	// being refused for. A reload leaves that page with no record of the request it started,
+	// so this is the whole way back: ask what is running for the chat, and stop it by the id
+	// that comes back. Every step here runs on a socket that never issued the generation.
+	test('a page that lost its generation can find it by chat and stop it', async () => {
+		const { chatId, userTurnId } = await seedChat();
+		armGate();
+		const placement = {
+			chatId,
+			parentId: userTurnId,
+			expectedLeafId: userTurnId,
+			claimsRoot: false,
+			lorebook: null,
+			spendSteeringIds: []
+		};
+
+		const starter = await openSocket();
+		const started = collect(starter, (frames) => frames.some((f) => f.t === 'llm-token'));
+		starter.send(generateRequest(crypto.randomUUID(), placement));
+		await started;
+		// The page that asked for it is gone, exactly as a discarded tab leaves it.
+		starter.close();
+		await Bun.sleep(150);
+
+		const returning = await openSocket();
+		const statusId = crypto.randomUUID();
+		const answered = collect(returning, (f) => f.some((frame) => frame.t === 'llm-status-result'));
+		returning.send(JSON.stringify({ t: 'llm-status', id: statusId, chatIds: [chatId] }));
+		const running = (await answered).find((f) => f.t === 'llm-status-result')?.running as {
+			chatId: string;
+			requestId: string;
+			runningMs: number;
+		}[];
+		expect(running).toHaveLength(1);
+		expect(running[0].chatId).toBe(chatId);
+		expect(running[0].runningMs).toBeGreaterThanOrEqual(0);
+
+		returning.send(JSON.stringify({ t: 'llm-cancel', id: running[0].requestId }));
+		await Bun.sleep(200);
+
+		// Stopped before the gate ever opened: the endpoint still holds the rest of its answer,
+		// so nothing but the cancel can have ended this.
+		const after = collect(returning, (f) => f.some((frame) => frame.t === 'llm-status-result'));
+		returning.send(JSON.stringify({ t: 'llm-status', id: crypto.randomUUID(), chatIds: [chatId] }));
+		expect((await after).find((f) => f.t === 'llm-status-result')?.running).toEqual([]);
+
+		// And the chat is free again: the send that was refused a moment ago now goes through.
+		const second = collect(returning, (f) => f.some((frame) => frame.t === 'llm-token'));
+		returning.send(generateRequest(crypto.randomUUID(), placement));
+		await second;
+
+		releaseGate();
+		await Bun.sleep(400);
+		returning.close();
+	}, 30_000);
+
+	// An engine call (memory, a sprite label) writes no turn, holds nothing, and has its own
+	// surfaces. Reporting it here would put a "reply is being written" line over a chat that
+	// is free to send.
+	test('a call that writes no turn is not reported as a reply being written', async () => {
+		const { chatId } = await seedChat();
+		const socket = await openSocket();
+		const run = collect(socket, (f) => f.some((frame) => frame.t === 'llm-token'));
+		socket.send(generateRequest(crypto.randomUUID()));
+		await run;
+
+		const answered = collect(socket, (f) => f.some((frame) => frame.t === 'llm-status-result'));
+		socket.send(JSON.stringify({ t: 'llm-status', id: crypto.randomUUID(), chatIds: [chatId] }));
+		expect((await answered).find((f) => f.t === 'llm-status-result')?.running).toEqual([]);
+		socket.close();
+	}, 30_000);
+
 	test('a claim on a generation the server never had is answered, not left hanging', async () => {
 		const socket = await openSocket();
 		const frames = collect(socket, (f) => f.some((frame) => frame.t === 'llm-attach-miss'));

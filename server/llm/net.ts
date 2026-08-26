@@ -3,10 +3,10 @@
  *
  * All outbound LLM traffic goes through user-configured endpoints and keys, so
  * nothing here may hang forever or buffer an unbounded response:
- *  - timedFetch: bounds the time until response HEADERS arrive (for a
- *    non-streaming completion that is the whole generation; for a stream it is
- *    just the connection + prefill window). The caller's AbortSignal keeps
- *    governing the body for the rest of the request's life.
+ *  - timedFetch: bounds the time until response HEADERS arrive. For a completion
+ *    that bound is a backstop rather than a liveness check (see
+ *    COMPLETION_START_BACKSTOP_MS). The caller's AbortSignal keeps governing the
+ *    body for the rest of the request's life, and it is the real bound.
  *  - readBodyCapped: reads a full body with a per-chunk idle timeout and a hard
  *    byte cap, so a wedged or malicious server fails loudly instead of eating
  *    memory or blocking a generation slot forever.
@@ -19,11 +19,23 @@
 
 /** Whole control-plane request (models list, key validation, account). */
 export const CONTROL_TIMEOUT_MS = 30_000;
-/** Time allowed until a streaming completion's headers arrive. */
-export const STREAM_HEADERS_TIMEOUT_MS = 120_000;
-/** Time allowed until a NON-streaming completion's headers arrive (= the generation itself). */
-export const COMPLETION_HEADERS_TIMEOUT_MS = 600_000;
-/** Max silence between stream chunks before we call the stream dead. */
+/**
+ * How long a completion that has sent NOTHING is allowed to stay open. This is a backstop,
+ * not a liveness check, and the distinction is the whole point: until the first byte arrives
+ * there is nothing to tell a model still prefilling a long context on slow hardware from an
+ * endpoint that will never answer. Any number a person could plausibly reach is therefore a
+ * guess about their machine, and guessing low kills a healthy generation.
+ *
+ * Liveness is asked where it can be answered: STREAM_IDLE_TIMEOUT_MS measures silence once a
+ * response has started, and the user's Stop ends any request at once (both bounds a person
+ * can act on). This one exists only so a request nobody is waiting for cannot hold a socket
+ * for the life of the process, which is why it sits far past any generation worth waiting
+ * through. One value for streamed and non-streamed alike: they ask the same unanswerable
+ * question, and a tighter number for one of them would only be a smaller guess.
+ */
+export const COMPLETION_START_BACKSTOP_MS = 6 * 60 * 60 * 1000;
+/** Max silence between stream chunks before we call the stream dead. A generating model emits
+ *  continuously, so this one IS a liveness check: silence this long means nothing is coming. */
 export const STREAM_IDLE_TIMEOUT_MS = 500_000;
 
 /** Largest /models (or other control-plane) body we'll buffer. */
@@ -34,6 +46,15 @@ export const MAX_COMPLETION_BODY_BYTES = 16 * 1024 * 1024;
 export const MAX_ERROR_BODY_BYTES = 256 * 1024;
 /** Largest carry-over an SSE parser may hold for one unterminated line. */
 export const MAX_SSE_BUFFER_BYTES = 8 * 1024 * 1024;
+
+/** A deadline in the unit that reads: "21600s" names nothing a person can act on. */
+function deadlineText(ms: number): string {
+	const unit = (n: number, name: string) => `${n} ${name}${n === 1 ? '' : 's'}`;
+	if (ms < 1_000) return `${Math.round(ms)}ms`;
+	if (ms < 90_000) return unit(Math.round(ms / 1000), 'second');
+	if (ms < 5_400_000) return unit(Math.round(ms / 60_000), 'minute');
+	return unit(Math.round(ms / 3_600_000), 'hour');
+}
 
 /**
  * fetch() with a headers deadline. The returned Response's body remains
@@ -52,7 +73,7 @@ export async function timedFetch(
 	const deadline = new AbortController();
 	const signal = init.signal ? AbortSignal.any([init.signal, deadline.signal]) : deadline.signal;
 	const timer = setTimeout(
-		() => deadline.abort(new Error(`${what} timed out after ${Math.round(headersTimeoutMs / 1000)}s with no response`)),
+		() => deadline.abort(new Error(`${what} timed out after ${deadlineText(headersTimeoutMs)} with no response`)),
 		headersTimeoutMs
 	);
 	try {
@@ -81,6 +102,13 @@ type BodyStreamReader = {
 /**
  * One reader.read() bounded by an idle timeout. On timeout the reader is
  * cancelled (killing the request) and a loud error names the stalled stream.
+ *
+ * The rejection is raised BEFORE the cancel, and the order is the whole guard:
+ * cancelling settles the read this race is already waiting on with `{done:true}`,
+ * so cancelling first hands the race a clean end-of-stream and the stall is
+ * reported as a stream that finished normally. Every caller believes it: an SSE
+ * loop ends its generator, a buffered body returns the bytes it happened to have,
+ * and a wedged endpoint reads as a short but successful answer.
  */
 export async function readWithIdleTimeout(
 	reader: BodyStreamReader,
@@ -90,8 +118,8 @@ export async function readWithIdleTimeout(
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const timeout = new Promise<never>((_, reject) => {
 		timer = setTimeout(() => {
+			reject(new Error(`${what} stalled: no data for ${deadlineText(idleMs)}`));
 			reader.cancel().catch(() => {});
-			reject(new Error(`${what} stalled: no data for ${Math.round(idleMs / 1000)}s`));
 		}, idleMs);
 	});
 	try {

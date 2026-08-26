@@ -61,6 +61,10 @@
 		 *  state: Send becomes Stop, and every row that would start or rewrite a turn goes
 		 *  dead. */
 		isStreaming?: boolean;
+		/** When a reply this page never started began, or null. The composer is busy either
+		 *  way; this is the case where nothing else on screen says why, since there is no
+		 *  stream here to paint. */
+		generatingSince?: number | null;
 	}
 
 	let {
@@ -70,8 +74,38 @@
 		onContinue,
 		onRegenerateLast,
 		onSwipeLast,
-		isStreaming = false
+		isStreaming = false,
+		generatingSince = null
 	}: Props = $props();
+
+	// Typing is harmless while a reply is being written, and a reader who came back to one they
+	// cannot even see has the most reason to want the box: they are deciding whether to wait it
+	// out or stop it, and a dead box makes that decision in the corner. Only the rows that would
+	// START a turn stay disabled, and Send is already Stop. (A reply this page is writing keeps
+	// the older rule, where the tokens arriving are the thing to look at.)
+	let draftLocked = $derived(isStreaming && generatingSince === null);
+
+	// Ticks only while that line is up, and only as often as its coarsest unit changes.
+	let now = $state(Date.now());
+	$effect(() => {
+		if (generatingSince === null) return;
+		now = Date.now();
+		const timer = setInterval(() => (now = Date.now()), 30_000);
+		return () => clearInterval(timer);
+	});
+
+	// How long it has run is the whole point of the line: it is what tells a model that is
+	// merely slow apart from an endpoint that has stopped answering, and that judgement is
+	// the reader's to make. Floored, and never finer than a minute: a second-by-second count
+	// invites watching rather than deciding.
+	let generatingLine = $derived.by(() => {
+		if (generatingSince === null) return '';
+		const minutes = Math.floor(Math.max(0, now - generatingSince) / 60_000);
+		if (minutes < 1) return 'A reply is generating for this chat.';
+		if (minutes < 60) return `A reply has been generating for ${minutes} minute${minutes === 1 ? '' : 's'}.`;
+		const hours = Math.floor(minutes / 60);
+		return `A reply has been generating for ${hours} hour${hours === 1 ? '' : 's'}.`;
+	});
 
 	let content = $state('');
 	let inputTokens = $derived(countTokens(content));
@@ -1036,6 +1070,16 @@
 			/>
 		{/if}
 
+		<!-- A reply nobody on this screen started. In flow above the box, because it explains a
+		     Stop button standing where Send usually is, and because there is no streaming
+		     bubble to carry it: this page is not watching those tokens, only naming them. -->
+		{#if generatingSince !== null}
+			<div class="composer-elsewhere">
+				<Icon name="refresh" class="w-3.5 h-3.5 shrink-0 animate-spin" />
+				<span>{generatingLine}</span>
+			</div>
+		{/if}
+
 		<!-- The composer is the drop target for pictures. Files are the assistant's business,
 		     so one dropped here is refused by name rather than quietly ignored. -->
 		<div
@@ -1094,7 +1138,7 @@
 					oninput={handleComposerInput}
 					onpaste={handlePaste}
 				placeholder="Type your message…"
-				disabled={isStreaming || transformOpen}
+				disabled={draftLocked || transformOpen}
 					rows="1"
 					class="composer-textarea bg-transparent font-body text-text-primary resize-none
 				       focus:outline-none placeholder:text-text-muted
@@ -1646,6 +1690,19 @@
 		width: 100%;
 		max-width: var(--chat-content-max);
 		margin: 0 auto;
+	}
+
+	/* One quiet line above the box, in the composer's own secondary voice. Muted on purpose:
+	   it reports a state rather than asking for anything, and the answer to it (Stop) is the
+	   button already sitting in the box below. */
+	.composer-elsewhere {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0 0.3rem 0.4rem;
+		font-family: var(--font-ui);
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
 	}
 
 	.composer-shell {

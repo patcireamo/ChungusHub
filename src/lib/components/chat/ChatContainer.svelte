@@ -22,9 +22,13 @@
 	let streamingThinking = $derived(stream?.thinking ?? '');
 	let continuingMessageId = $derived(stream?.continuingMessageId ?? null);
 	let openingSceneStream = $derived(stream?.openingScene ?? false);
+	// A reply being written for this chat that this page never started: after a reload (the
+	// ordinary way a phone comes back), or from another device. It has no stream here to
+	// paint, but the chat is genuinely busy and its Stop has to work.
+	let liveElsewhere = $derived(chatStore.visibleLiveElsewhere);
 	// The composer asks the app instead: a generation running anywhere holds the one abort
 	// controller, so this chat offers Stop rather than a Send that would race it.
-	let busy = $derived(messageStore.isStreaming);
+	let busy = $derived(messageStore.isStreaming || liveElsewhere !== null);
 	let activePath = $derived(chatState?.activePath ?? []);
 	let allMessages = $derived(chatState?.allMessages ?? []);
 
@@ -154,6 +158,7 @@
 						onRegenerateLast={handleRegenerateLast}
 						onSwipeLast={handleSwipeLast}
 						isStreaming={busy}
+						generatingSince={liveElsewhere?.startedAt ?? null}
 					/>
 				</div>
 			</div>

@@ -698,8 +698,15 @@ class MessageStore {
 		await this.retryMessageResponse(lastMessage.id, action);
 	}
 
+	/** Stop whichever reply this chat's Stop button is standing for: the one this page is
+	 *  writing, or the one it merely found running (a reply started before a reload, or on
+	 *  another device), which travels by request id instead of a controller. */
 	cancelGeneration(): void {
-		this.abortController?.abort();
+		if (this.abortController) {
+			this.abortController.abort();
+			return;
+		}
+		chatStore.stopLiveElsewhere();
 	}
 
 	/**

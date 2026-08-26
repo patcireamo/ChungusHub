@@ -709,6 +709,18 @@ const pendingAssistants = new Map<string, PendingAssistant>();
 /** In-flight assistant-status requests, resolved by the matching assistant-status-result. */
 const pendingStatus = new Map<string, { resolve: (r: AssistantRunningTurn[]) => void; reject: (e: Error) => void }>();
 
+/** A reply being written for a chat, as `llmStatus` reports it. */
+export interface LiveChatGeneration {
+	chatId: string;
+	requestId: string;
+	/** How long it has been running. Measured server-side and sent as a duration, so the two
+	 *  machines' clocks never have to agree about when it started. */
+	runningMs: number;
+}
+
+/** In-flight llm-status requests, resolved by the matching llm-status-result. */
+const pendingLlmStatus = new Map<string, { resolve: (r: LiveChatGeneration[]) => void; reject: (e: Error) => void }>();
+
 let ws: WebSocket | null = null;
 let wsReady: Promise<void> | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -822,6 +834,8 @@ function handleSocketDown(socket: WebSocket): void {
 	pendingAssistants.clear();
 	for (const [, pending] of pendingStatus) pending.reject(new Error('Connection lost'));
 	pendingStatus.clear();
+	for (const [, pending] of pendingLlmStatus) pending.reject(new Error('Connection lost'));
+	pendingLlmStatus.clear();
 	scheduleReconnect();
 }
 
@@ -1276,6 +1290,14 @@ function handleWsMessage(raw: unknown): void {
 			}
 			break;
 		}
+		case 'llm-status-result': {
+			const pending = pendingLlmStatus.get(String(msg.id));
+			if (pending) {
+				pendingLlmStatus.delete(String(msg.id));
+				pending.resolve((msg.running as LiveChatGeneration[]) ?? []);
+			}
+			break;
+		}
 		case 'assistant-status-result': {
 			const pending = pendingStatus.get(String(msg.id));
 			if (pending) {
@@ -1336,6 +1358,10 @@ export interface LlmRequest {
 	routing?: import('$lib/types/llm').RoutingConfig | null;
 	/** Debug-panel label for what kind of query this is (e.g. 'chat', 'memory'). */
 	source?: string;
+	/** The resolved connection's Stream response setting: the request's WIRE shape, which is
+	 *  a different question from whether this caller wants the tokens. A call that streams
+	 *  with no `onToken` is deliberate (see llmService.complete). */
+	stream: boolean;
 	onToken?: (token: string) => void;
 	onThinkingToken?: (token: string) => void;
 	signal?: AbortSignal;
@@ -1403,7 +1429,7 @@ export async function llmComplete(req: LlmRequest): Promise<LlmResult> {
 				params: req.params,
 				tuning: req.tuning,
 				routing: req.routing,
-				stream: !!req.onToken,
+				stream: req.stream,
 				source: req.source ?? 'completion',
 				commit: req.commit
 			})
@@ -1504,6 +1530,41 @@ export async function assistantStatus(sessionIds: string[]): Promise<AssistantRu
 		pendingStatus.set(id, { resolve, reject });
 		ws!.send(JSON.stringify({ t: 'assistant-status', id, sessionIds }));
 	});
+}
+
+/**
+ * Asks which of these chats have a reply being written for them right now, and how long each
+ * one has been at it.
+ *
+ * A generation outlives the socket that asked for it, but a page's record of one does not
+ * survive a reload: a phone whose tab the OS discarded comes back to a chat that IS busy with
+ * nothing on screen saying so, and a send there is refused by the server with no Stop anywhere
+ * to reach. This is how the chat finds out.
+ *
+ * It reports the reply's existence and its age, never its tokens. Claiming the stream would
+ * point it at this socket and cut off whichever page is still watching it.
+ */
+export async function llmStatus(chatIds: string[]): Promise<LiveChatGeneration[]> {
+	await connectWs();
+	if (!ws || ws.readyState !== WebSocket.OPEN) {
+		throw new Error('Not connected to server');
+	}
+	const id = crypto.randomUUID();
+	return new Promise((resolve, reject) => {
+		pendingLlmStatus.set(id, { resolve, reject });
+		ws!.send(JSON.stringify({ t: 'llm-status', id, chatIds }));
+	});
+}
+
+/**
+ * Stop a generation this page never registered, by the id `llmStatus` named. The server
+ * matches a Stop by request id across every socket, so this needs nothing but the id.
+ * Throws with no connection rather than dropping the press: the generation would keep
+ * running and the reader would think they had ended it.
+ */
+export function stopGeneration(id: string): void {
+	if (!ws || ws.readyState !== WebSocket.OPEN) throw new Error('Not connected to server');
+	ws.send(JSON.stringify({ t: 'llm-cancel', id }));
 }
 
 /**

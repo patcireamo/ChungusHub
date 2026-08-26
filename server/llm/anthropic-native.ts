@@ -21,8 +21,7 @@ import {
 	readJsonCapped,
 	sseData,
 	CONTROL_TIMEOUT_MS,
-	STREAM_HEADERS_TIMEOUT_MS,
-	COMPLETION_HEADERS_TIMEOUT_MS,
+	COMPLETION_START_BACKSTOP_MS,
 	MAX_CONTROL_BODY_BYTES,
 	MAX_COMPLETION_BODY_BYTES,
 	MAX_ERROR_BODY_BYTES
@@ -460,7 +459,7 @@ export class AnthropicNativeProvider implements ChatProvider {
 
 		if (options.onToken) {
 			body.stream = true;
-			const response = await this.messagesRequest(body, options.signal, STREAM_HEADERS_TIMEOUT_MS);
+			const response = await this.messagesRequest(body, options.signal, COMPLETION_START_BACKSTOP_MS);
 			const s = await this.consumeStream(response, {
 				onText: options.onToken,
 				onThinking: options.onThinkingToken
@@ -476,7 +475,7 @@ export class AnthropicNativeProvider implements ChatProvider {
 			};
 		}
 
-		const response = await this.messagesRequest(body, options.signal, COMPLETION_HEADERS_TIMEOUT_MS);
+		const response = await this.messagesRequest(body, options.signal, COMPLETION_START_BACKSTOP_MS);
 		const data = (await readJsonCapped(
 			response,
 			MAX_COMPLETION_BODY_BYTES,
@@ -529,7 +528,7 @@ export class AnthropicNativeProvider implements ChatProvider {
 
 		if (!isStreaming) return this.toolCompletion(body, options);
 
-		const response = await this.messagesRequest(body, options.signal, STREAM_HEADERS_TIMEOUT_MS);
+		const response = await this.messagesRequest(body, options.signal, COMPLETION_START_BACKSTOP_MS);
 		const s = await this.consumeStream(response, {
 			onText: options.onToken,
 			onThinking: options.onThinkingToken,
@@ -645,7 +644,7 @@ export class AnthropicNativeProvider implements ChatProvider {
 	 * iteration exactly as they do on the streamed path.
 	 */
 	private async toolCompletion(body: Record<string, unknown>, options: LLMToolStreamOptions): Promise<LLMToolResult> {
-		const response = await this.messagesRequest(body, options.signal, COMPLETION_HEADERS_TIMEOUT_MS);
+		const response = await this.messagesRequest(body, options.signal, COMPLETION_START_BACKSTOP_MS);
 		const data = (await readJsonCapped(
 			response,
 			MAX_COMPLETION_BODY_BYTES,

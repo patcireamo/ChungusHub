@@ -6,6 +6,7 @@ import {
 	type ImpersonatePerspective
 } from '$lib/types/chat';
 import { db } from '$lib/services/database';
+import { llmStatus, stopGeneration } from '$lib/services/transport';
 import { findActivePath } from '$lib/utils/message-tree';
 import { formatDate } from '$lib/utils/date';
 import { convertSillyTavernChat } from '$lib/services/sillyTavernChatImport';
@@ -22,6 +23,12 @@ class ChatStore {
 	currentChatState = $state<ChatState | null>(null);
 	/** The one generation in flight, tagged with the chat that owns it. Null when idle. */
 	stream = $state<ChatStream | null>(null);
+	/** A reply being written for a chat that THIS page never asked for: one it started before
+	 *  a reload, or one another device is running. Found by asking the server, since a
+	 *  generation outlives the socket but not the page's memory of it. Without this the chat
+	 *  reads as idle and the send is refused with no Stop to reach. `startedAt` is derived
+	 *  from the server's own elapsed figure, so it is comparable to this machine's clock. */
+	liveElsewhere = $state<{ chatId: string; requestId: string; startedAt: number } | null>(null);
 	/** A sync hint that arrived mid-stream, replayed once the stream ends. */
 	private missedSyncWhileStreaming = false;
 
@@ -33,6 +40,17 @@ class ChatStore {
 	 *  chat the reader has left, which is what keeps those tokens out of this one. */
 	visibleStream = $derived(
 		this.stream && this.stream.chatId === this.currentChatState?.chat.id ? this.stream : null
+	);
+
+	/** The foreign reply only when it belongs to the chat on screen AND this page is not the
+	 *  one writing it: a generation this page owns already paints its own stream and carries
+	 *  its own Stop, so announcing it a second time would be the same reply reported twice. */
+	visibleLiveElsewhere = $derived(
+		this.liveElsewhere &&
+			this.liveElsewhere.chatId === this.currentChatState?.chat.id &&
+			this.stream?.chatId !== this.liveElsewhere.chatId
+			? this.liveElsewhere
+			: null
 	);
 
 	// Title scheme: "<character name> - YYYY-MM-DD", carrying the app's one numeric date
@@ -278,6 +296,43 @@ class ChatStore {
 		// archive boundary for the current active path so the ghost markers stay correct
 		// after swipes/branches/edits. No-op when memory is off for this chat.
 		void this.refreshMemory(chat, messages);
+		void this.refreshLiveElsewhere(chatId);
+	}
+
+	/**
+	 * Ask the server whether a reply is being written for this chat by anyone. Runs on every
+	 * load of the open chat, which covers all three doors: opening it, a `messages` sync, and
+	 * the reconnect resync. Non-blocking and never fatal, like the memory refresh above: a
+	 * transcript must still open when the socket is down.
+	 */
+	private async refreshLiveElsewhere(chatId: string): Promise<void> {
+		try {
+			const running = (await llmStatus([chatId]))[0];
+			// The chat may have changed under the round trip.
+			if (this.currentChatState?.chat.id !== chatId) return;
+			this.liveElsewhere = running
+				? { chatId, requestId: running.requestId, startedAt: Date.now() - running.runningMs }
+				: null;
+		} catch (e) {
+			console.error('[chat] could not ask what is generating:', e);
+		}
+	}
+
+	/**
+	 * Stop the reply this page found running rather than started. Cleared here rather than on
+	 * the server's word, because an abort ends the request at once and a cancelled generation
+	 * with nothing to keep commits nothing and so broadcasts nothing: there is no answer
+	 * coming to clear it. A Stop that never landed simply comes back on the next load.
+	 */
+	stopLiveElsewhere(): void {
+		const live = this.visibleLiveElsewhere;
+		if (!live) return;
+		try {
+			stopGeneration(live.requestId);
+			this.liveElsewhere = null;
+		} catch (e) {
+			toastStore.failed('stop that reply', e);
+		}
 	}
 
 	private async refreshMemory(chat: Chat, messages: Message[]): Promise<void> {

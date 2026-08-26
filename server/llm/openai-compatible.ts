@@ -27,8 +27,7 @@ import {
 	readJsonCapped,
 	sseData,
 	CONTROL_TIMEOUT_MS,
-	STREAM_HEADERS_TIMEOUT_MS,
-	COMPLETION_HEADERS_TIMEOUT_MS,
+	COMPLETION_START_BACKSTOP_MS,
 	MAX_CONTROL_BODY_BYTES,
 	MAX_COMPLETION_BODY_BYTES,
 	MAX_ERROR_BODY_BYTES
@@ -348,7 +347,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
 		const response = await timedFetch(
 			`${await this.resolveBase(typed, headers)}/chat/completions`,
 			{ method: 'POST', headers, body: JSON.stringify(body), signal: options.signal },
-			COMPLETION_HEADERS_TIMEOUT_MS,
+			COMPLETION_START_BACKSTOP_MS,
 			`${this.displayName} completion`
 		);
 
@@ -414,7 +413,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
 		const response = await timedFetch(
 			`${await this.resolveBase(typed, headers)}/chat/completions`,
 			{ method: 'POST', headers, body: JSON.stringify(body), signal: options.signal },
-			STREAM_HEADERS_TIMEOUT_MS,
+			COMPLETION_START_BACKSTOP_MS,
 			`${this.displayName} completion`
 		);
 
@@ -563,7 +562,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
 		const response = await timedFetch(
 			`${await this.resolveBase(typed, headers)}/chat/completions`,
 			{ method: 'POST', headers, body: JSON.stringify(body), signal: options.signal },
-			STREAM_HEADERS_TIMEOUT_MS,
+			COMPLETION_START_BACKSTOP_MS,
 			`${this.displayName} completion`
 		);
 		if (!response.ok) throw new Error(await this.extractErrorMessage(response));
@@ -734,7 +733,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
 		const response = await timedFetch(
 			`${await this.resolveBase(typed, headers)}/chat/completions`,
 			{ method: 'POST', headers, body: JSON.stringify(body), signal: options.signal },
-			COMPLETION_HEADERS_TIMEOUT_MS,
+			COMPLETION_START_BACKSTOP_MS,
 			`${this.displayName} completion`
 		);
 		if (!response.ok) throw new Error(await this.extractErrorMessage(response));
