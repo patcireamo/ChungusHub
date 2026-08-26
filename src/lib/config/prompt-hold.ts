@@ -11,14 +11,13 @@
  *
  * Glyphs are SOURCED, not chosen: each is what its action already draws elsewhere (the
  * composer's send arrow, a turn's Retry, a turn's Continue, and the two engines' own registry
- * icons), so a row here reads the same as the control it stands in for. Send and Continue wear
- * the same forward arrow because the two controls do; the names beside them are what tell the
- * rows apart.
+ * icons), so a row here reads the same as the control it stands in for. No two gates may share
+ * a glyph: the names tell the rows apart, but the glyph is what the eye lands on first.
  */
 import { engineById, type EngineDef } from '$lib/engines/registry';
 
-/** An engine's glyph, or one of the two the non-engine gates wear. */
-export type HoldGateIcon = EngineDef['icon'] | 'arrowRight' | 'refresh';
+/** An engine's glyph, or one of the three the non-engine gates wear. */
+export type HoldGateIcon = EngineDef['icon'] | 'arrowRight' | 'refresh' | 'feather';
 
 /** What every gate declares. The list below is the only place they are written down, and the
  *  two types under it are read back off it, so there is no second list to keep in step. */
@@ -51,7 +50,7 @@ export const HOLD_GATES = [
 		id: 'continue',
 		name: 'Continue',
 		confirm: 'Continue',
-		icon: 'arrowRight'
+		icon: 'feather'
 	},
 	{
 		id: 'spellcheck',

@@ -124,7 +124,7 @@ export const COMMANDS: CommandDef[] = [
 	{
 		name: 'continue',
 		group: 'story',
-		icon: 'arrowRight',
+		icon: 'feather',
 		describe: 'Extend the newest reply where it stops',
 		unavailable: (ctx) => (ctx.canContinue ? null : 'The newest turn must be a reply'),
 		run: (_arg, ctx) => ctx.host.continueMessage()

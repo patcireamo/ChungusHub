@@ -94,7 +94,7 @@
 			aria-label="Continue this reply"
 			title="Continue: extend this reply from where it stopped"
 		>
-			<Icon name="arrowRight" class="w-3.5 h-3.5" strokeWidth={1.75} />
+			<Icon name="feather" class="w-3.5 h-3.5" strokeWidth={1.75} />
 			<span class="action-label">Continue</span>
 		</button>
 	{/if}
