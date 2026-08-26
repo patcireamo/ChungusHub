@@ -27,8 +27,9 @@
 	// paint, but the chat is genuinely busy and its Stop has to work.
 	let liveElsewhere = $derived(chatStore.visibleLiveElsewhere);
 	// The composer asks the app instead: a generation running anywhere holds the one abort
-	// controller, so this chat offers Stop rather than a Send that would race it.
-	let busy = $derived(messageStore.isStreaming || liveElsewhere !== null);
+	// controller, so this chat offers Stop rather than a Send that would race it. That flag
+	// counts the foreign reply above, so this is still the whole busy state.
+	let busy = $derived(messageStore.isStreaming);
 	let activePath = $derived(chatState?.activePath ?? []);
 	let allMessages = $derived(chatState?.allMessages ?? []);
 

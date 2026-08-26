@@ -1362,6 +1362,11 @@ export interface LlmRequest {
 	 *  a different question from whether this caller wants the tokens. A call that streams
 	 *  with no `onToken` is deliberate (see llmService.complete). */
 	stream: boolean;
+	/** Whether the server should send the tokens back as they arrive. False for a streamed
+	 *  call whose caller reads none (every engine sidecar), which would otherwise push one
+	 *  frame per token to a page that drops every one. The generation still accumulates
+	 *  server-side, so a re-attach is answered exactly as it would be either way. */
+	deliverTokens: boolean;
 	onToken?: (token: string) => void;
 	onThinkingToken?: (token: string) => void;
 	signal?: AbortSignal;
@@ -1430,6 +1435,7 @@ export async function llmComplete(req: LlmRequest): Promise<LlmResult> {
 				tuning: req.tuning,
 				routing: req.routing,
 				stream: req.stream,
+				deliverTokens: req.deliverTokens,
 				source: req.source ?? 'completion',
 				commit: req.commit
 			})

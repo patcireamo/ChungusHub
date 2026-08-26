@@ -1139,6 +1139,10 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 	/** The connection's OpenRouter routing (openrouter only; ignored elsewhere). */
 	routing?: RoutingConfig | null;
 	stream?: boolean;
+	/** Whether the streamed tokens are wanted back as frames. False for a call whose asker
+	 *  reads none (every engine sidecar): the wire still streams, so the idle guard still
+	 *  measures silence, but nothing is pushed to a page that would drop it. */
+	deliverTokens?: boolean;
 	/** Debug-panel label for what kind of query this is ('chat', 'memory', …). */
 	source?: string;
 	/** Where this generation's reply belongs in the story, when it belongs in one at all.
@@ -1205,6 +1209,8 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 	generations.set(msg.id, gen);
 
 	const stream = msg.stream !== false;
+	// Default true: a sender that says nothing wants what it asked to stream.
+	const deliver = msg.deliverTokens !== false;
 
 	// Capture the request for the shared debug log once, up front, so the request and
 	// its result stay paired even if debug is toggled off mid-flight.
@@ -1251,15 +1257,15 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 			routing: msg.routing,
 			signal: controller.signal,
 			// Only wire the callbacks when streaming: their presence is what makes the
-			// provider issue a streaming request, so stream:false now genuinely asks the
-			// API for a single non-streamed completion instead of just muting tokens.
-			// Each token is kept as well as sent, so a page that was not listening for it
-			// can still be handed it.
+			// provider issue a streaming request, so stream:false genuinely asks the API for
+			// a single non-streamed completion instead of just muting tokens. Every token is
+			// KEPT whatever `deliver` says, so a page that was not listening for one can
+			// still be handed it; only the frame is withheld, for a caller that reads none.
 			onToken: stream
 				? (token) => {
 						firstTokenAt ??= performance.now();
 						gen.content += token;
-						emitGeneration(gen, { t: 'llm-token', id: msg.id, token });
+						if (deliver) emitGeneration(gen, { t: 'llm-token', id: msg.id, token });
 					}
 				: undefined,
 			onThinkingToken: stream
@@ -1271,7 +1277,7 @@ async function handleLlm(ws: ServerWebSocket<SocketData>, msg: {
 						thinkingFirstAt ??= at;
 						thinkingLastAt = at;
 						gen.thinking += token;
-						emitGeneration(gen, { t: 'llm-thinking', id: msg.id, token });
+						if (deliver) emitGeneration(gen, { t: 'llm-thinking', id: msg.id, token });
 					}
 				: undefined
 		});
@@ -1389,7 +1395,10 @@ function handleLlmAttach(
  * claim the stream: `gen.ws` stays with whoever is still watching, so a second device asking
  * this question cannot cut the first one off mid-reply.
  */
-function handleLlmStatus(ws: ServerWebSocket<SocketData>, msg: { id: string; chatIds?: unknown }): void {
+function handleLlmStatus(ws: ServerWebSocket<SocketData>, msg: { id?: unknown; chatIds?: unknown }): void {
+	// An answer carries the asking id back or it correlates with nothing, so a frame without
+	// one is dropped rather than answered into the void (the same guard handleLlm keeps).
+	if (typeof msg.id !== 'string' || !msg.id) return;
 	const wanted = new Set(
 		Array.isArray(msg.chatIds) ? msg.chatIds.filter((c): c is string => typeof c === 'string') : []
 	);

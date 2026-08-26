@@ -757,7 +757,7 @@
 					<div class="slider-label-wrap">
 						<span class="slider-label">Stream response</span>
 						<InfoTip
-							text="Show the reply as it's written, word by word. Off, every request this connection makes waits in silence for the whole answer, so a model that is merely slow cannot be told from an endpoint that has stopped answering. Turn it off only for an endpoint that cannot stream."
+							text="Show the reply as it's written, word by word. Off, the message appears whole once it's finished."
 						/>
 					</div>
 					<Toggle checked={gen.streamResponses} onchange={(v) => updateGen('streamResponses', v)} label="Stream response" />

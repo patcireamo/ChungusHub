@@ -408,10 +408,13 @@ describe('a generation outlives its socket (architecture/server-core.md, WebSock
 	}, 30_000);
 
 	// An engine call (memory, a sprite label) writes no turn, holds nothing, and has its own
-	// surfaces. Reporting it here would put a "reply is being written" line over a chat that
-	// is free to send.
+	// surfaces. Reporting it would put a "reply is being written" line over a chat that is
+	// free to send. The gate is armed so the call is genuinely IN FLIGHT when the question is
+	// asked: a settled generation is filtered out for a second reason, which would leave this
+	// green whatever the rule under test did.
 	test('a call that writes no turn is not reported as a reply being written', async () => {
 		const { chatId } = await seedChat();
+		armGate();
 		const socket = await openSocket();
 		const run = collect(socket, (f) => f.some((frame) => frame.t === 'llm-token'));
 		socket.send(generateRequest(crypto.randomUUID()));
@@ -420,8 +423,27 @@ describe('a generation outlives its socket (architecture/server-core.md, WebSock
 		const answered = collect(socket, (f) => f.some((frame) => frame.t === 'llm-status-result'));
 		socket.send(JSON.stringify({ t: 'llm-status', id: crypto.randomUUID(), chatIds: [chatId] }));
 		expect((await answered).find((f) => f.t === 'llm-status-result')?.running).toEqual([]);
+
+		releaseGate();
+		await Bun.sleep(200);
 		socket.close();
 	}, 30_000);
+
+	// A frame with no id correlates with nothing, so it must be dropped rather than answered:
+	// an answer whose `id` key is missing reaches the client's pending map as `undefined`,
+	// matches no entry, and leaves the real pending it was meant for waiting forever.
+	test('a status request with no id is dropped, not answered', async () => {
+		const { chatId } = await seedChat();
+		const socket = await openSocket();
+		const good = crypto.randomUUID();
+		const answered = collect(socket, (f) => f.some((frame) => frame.t === 'llm-status-result'));
+		socket.send(JSON.stringify({ t: 'llm-status', chatIds: [chatId] }));
+		socket.send(JSON.stringify({ t: 'llm-status', id: good, chatIds: [chatId] }));
+		const results = (await answered).filter((f) => f.t === 'llm-status-result');
+		expect(results).toHaveLength(1);
+		expect(results[0].id).toBe(good);
+		socket.close();
+	}, 15_000);
 
 	test('a claim on a generation the server never had is answered, not left hanging', async () => {
 		const socket = await openSocket();

@@ -26,6 +26,7 @@
 	import { viewport } from '$lib/stores/viewport.svelte';
 	import { assemblePrompt } from '$lib/utils/prompt-assembly';
 	import { portraitFocusStyle } from '$lib/utils/portrait-focus';
+	import { relativeClock } from '$lib/utils/time-format.svelte';
 	import { llmService } from '$lib/services/llm/provider';
 	import { imageService, imageRejectionReason, isImageFile } from '$lib/services/imageService';
 	import { duplicateAsksAboutMemory } from '$lib/types/chat';
@@ -85,22 +86,13 @@
 	// the older rule, where the tokens arriving are the thing to look at.)
 	let draftLocked = $derived(isStreaming && generatingSince === null);
 
-	// Ticks only while that line is up, and only as often as its coarsest unit changes.
-	let now = $state(Date.now());
-	$effect(() => {
-		if (generatingSince === null) return;
-		now = Date.now();
-		const timer = setInterval(() => (now = Date.now()), 30_000);
-		return () => clearInterval(timer);
-	});
-
 	// How long it has run is the whole point of the line: it is what tells a model that is
 	// merely slow apart from an endpoint that has stopped answering, and that judgement is
 	// the reader's to make. Floored, and never finer than a minute: a second-by-second count
 	// invites watching rather than deciding.
 	let generatingLine = $derived.by(() => {
 		if (generatingSince === null) return '';
-		const minutes = Math.floor(Math.max(0, now - generatingSince) / 60_000);
+		const minutes = Math.floor(Math.max(0, relativeClock.now - generatingSince) / 60_000);
 		if (minutes < 1) return 'A reply is generating for this chat.';
 		if (minutes < 60) return `A reply has been generating for ${minutes} minute${minutes === 1 ? '' : 's'}.`;
 		const hours = Math.floor(minutes / 60);
@@ -854,6 +846,11 @@
 			submitCommand();
 			return;
 		}
+		// Enter reaches here with the box still typable while a reply this page did not start
+		// is being written, and a press that consumed the key and produced neither a send nor
+		// a newline would just look broken. The store owns the sentence, so the composer and
+		// every other refused mutation say the same thing.
+		if (isStreaming && messageStore.warnIfBusy()) return;
 		const trimmed = content.trim();
 		if ((trimmed || pendingImages.length) && !isStreaming && !uploadingImages) {
 			const attachments: MessageAttachment[] = pendingImages.map((img) => ({ kind: 'image', path: img.path }));

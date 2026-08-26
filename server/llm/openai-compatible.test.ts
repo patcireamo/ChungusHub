@@ -282,10 +282,11 @@ describe('OpenAICompatibleProvider user aborts keep what streamed', () => {
 });
 
 describe('OpenAICompatibleProvider slow endpoints', () => {
-	// The failure this whole area exists for: on a NON-streamed request nothing comes back
-	// until everything does, so the app cannot tell a model still working from an endpoint
-	// that will never answer. It must therefore not guess, which leaves the reader's Stop as
-	// the bound, and Stop has to actually end the request rather than merely stop waiting.
+	// These two hold the shape rather than the bound: net.ts owns the deadlines and net.test.ts
+	// is what goes red if either changes. What is pinned here is that the provider carries an
+	// abort through the non-streamed path as an AbortError rather than swallowing it or
+	// waiting the deadline out, since a Stop that only stops WAITING leaves the endpoint
+	// generating and the whole "Stop is the real bound" argument with it.
 	test('non-streaming: an endpoint that never answers is ended by Stop, and by nothing else', async () => {
 		const controller = new AbortController();
 		const startedAt = performance.now();
@@ -295,7 +296,7 @@ describe('OpenAICompatibleProvider slow endpoints', () => {
 			.then(() => null)
 			.catch((e: Error) => e);
 		expect(error?.name).toBe('AbortError');
-		// Nothing shorter than the backstop may have fired here, and the backstop is hours.
+		// The abort ended the request, rather than the request ending on its own deadline.
 		expect(performance.now() - startedAt).toBeLessThan(3_000);
 	});
 
