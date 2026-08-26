@@ -35,7 +35,7 @@ export type MacroGroup = 'names' | 'context' | 'time' | 'character-field' | 'mem
 export const MACRO_GROUPS: readonly { id: MacroGroup; label: string; hint: string }[] = [
 	{ id: 'names', label: 'Names', hint: 'inline name references' },
 	{ id: 'context', label: 'Story & context', hint: 'profiles, world info, history, memory' },
-	{ id: 'time', label: 'Date & time', hint: "the reader's own clock, stamped once per prompt" },
+	{ id: 'time', label: 'Date & time', hint: "the reader's own clock, read as the prompt is built" },
 	{ id: 'character-field', label: 'Character fields', hint: 'one card field at a time' },
 	{ id: 'memory', label: 'Memory pipeline', hint: 'filled while the memory engine runs, literal anywhere else' }
 ];
@@ -92,7 +92,7 @@ export const MACROS: readonly MacroDef[] = [
 	{ name: 'time', description: 'Current local time, e.g. 6:02 PM.', engine: true, group: 'time' },
 	{ name: 'date', description: 'Current local date, e.g. August 22, 2026.', engine: true, group: 'time' },
 	{ name: 'weekday', description: 'Current day of the week, e.g. Saturday.', engine: true, group: 'time' },
-	{ name: 'isotime', description: 'Current local time as 24-hour HH:MM:SS.', engine: true, group: 'time' },
+	{ name: 'isotime', description: 'Current local time as 24-hour HH:MM.', engine: true, group: 'time' },
 	{ name: 'isodate', description: 'Current local date as YYYY-MM-DD.', engine: true, group: 'time' },
 
 	// ----- Per-field character macros (place one card field individually) -----
@@ -338,63 +338,52 @@ export interface MacroContext {
 	exampleSeparator?: string;
 	/** Budget-trim signal: drop this many oldest example-dialogue blocks. */
 	droppedExampleBlocks?: number;
-	/**
-	 * When this prompt was assembled, stamped ONCE by the context builder and read by every
-	 * clock macro.
-	 *
-	 * Not `Date.now()` inside the resolver, for the same reason the lorebook is scanned once
-	 * and carried: macros are re-resolved several times during one assembly (the budget trim
-	 * re-runs them), so a resolver that read the clock could print 6:02 PM in one item and
-	 * 6:03 PM in another, inside a single prompt. Absent - a preview surface that built no
-	 * context - falls back to the clock, which is right for a preview and impossible in a
-	 * prompt.
-	 */
-	now?: number;
 }
 
 /**
- * The clock macros' formatting, matched to what SillyTavern's own macros print so a preset
- * written there reads the same here: `{{time}}` is moment's `LT` (6:02 PM), `{{date}}` is
- * `LL` (August 22, 2026), `{{weekday}}` is `dddd` (Saturday).
+ * The clock macros, replicating SillyTavern's so a preset written there reads the same here.
+ * ST formats each through moment and reads the clock AT SUBSTITUTION TIME, which is what
+ * these do:
+ *
+ *   {{time}}     moment().format('LT')           6:02 PM
+ *   {{date}}     moment().format('LL')           August 22, 2026
+ *   {{weekday}}  moment().format('dddd')         Saturday
+ *   {{isotime}}  moment().format('HH:mm')        18:02
+ *   {{isodate}}  moment().format('YYYY-MM-DD')   2026-08-22
  *
  * The locale is pinned to en-US rather than following the browser's, which is the one place
- * this deliberately does NOT do the locally-correct thing. A preset that says "the current
- * real time is {{time}}, {{weekday}} {{date}}" was written against a shape - 6:02 PM,
- * Saturday August 22, 2026 - and a reader on en-GB would silently get "6:02 pm, Saturday 22
- * August 2026" instead, changing what the model reads because of where the reader lives.
- * SillyTavern's default is the same shape, so a preset carries over unchanged.
+ * this deliberately does NOT do the locally-correct thing. ST never calls `moment.locale`, so
+ * it runs on moment's default `en` and a preset saying "the current real time is {{time}},
+ * {{weekday}} {{date}}" was written against that shape. A reader on en-GB would otherwise
+ * silently get "6:02 pm, Saturday 22 August 2026", changing what the model reads because of
+ * where the reader lives.
  *
- * The TIME ZONE is still the reader's own: `Date`'s own accessors are local, so this is the
- * clock on their wall written in a fixed format, not a fixed clock. The ISO pair is not
- * localised either, for the stronger version of the same reason.
+ * The TIME ZONE is the reader's own: `Date`'s accessors are local, so this is the clock on
+ * their wall written in a fixed format, not a fixed clock.
  */
-function clockDate(now: number | undefined): Date {
-	return new Date(now ?? Date.now());
+function formatClock(): string {
+	return new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
-function formatClock(now: number | undefined): string {
-	return clockDate(now).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+function formatLongDate(): string {
+	return new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-function formatLongDate(now: number | undefined): string {
-	return clockDate(now).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-}
-
-function formatWeekday(now: number | undefined): string {
-	return clockDate(now).toLocaleDateString('en-US', { weekday: 'long' });
+function formatWeekday(): string {
+	return new Date().toLocaleDateString('en-US', { weekday: 'long' });
 }
 
 function pad(n: number): string {
 	return String(n).padStart(2, '0');
 }
 
-function formatIsoTime(now: number | undefined): string {
-	const d = clockDate(now);
-	return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+function formatIsoTime(): string {
+	const d = new Date();
+	return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function formatIsoDate(now: number | undefined): string {
-	const d = clockDate(now);
+function formatIsoDate(): string {
+	const d = new Date();
 	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
@@ -513,19 +502,20 @@ function resolveMacro(name: string, context: MacroContext): string | undefined {
 			// Chat-memory recall, pre-rendered by the prompt builder. Empty when memory is
 			// off, so the macro simply vanishes from the prompt.
 			return context.memory ?? '';
-		// The reader's own clock, because these resolve in the browser: a model told the time
-		// should be told the time where the person typing is, not where the server happens to
-		// be racked. Their locale is deliberately NOT followed - the formatters above say why.
+		// The reader's own clock, read here at substitution time exactly as SillyTavern reads
+		// it: these resolve in the browser, and a model told the time should be told the time
+		// where the person typing is, not where the server happens to be racked. Their locale
+		// is deliberately NOT followed - the formatters above say why.
 		case 'time':
-			return formatClock(context.now);
+			return formatClock();
 		case 'date':
-			return formatLongDate(context.now);
+			return formatLongDate();
 		case 'weekday':
-			return formatWeekday(context.now);
+			return formatWeekday();
 		case 'isotime':
-			return formatIsoTime(context.now);
+			return formatIsoTime();
 		case 'isodate':
-			return formatIsoDate(context.now);
+			return formatIsoDate();
 	}
 
 	// {{mesExamples}} is block-formatted separately from the other per-field macros: <START>

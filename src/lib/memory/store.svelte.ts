@@ -416,10 +416,6 @@ class MemoryStore {
 			: null;
 		const chatMessages = ctx.leafId ? findActivePath(ctx.allMessages, ctx.leafId) : [];
 		const base: MacroContext = {
-			// Stamped here as it is in the other two context builders. A memory request resolves
-			// macros more than once - the lorebook's own expander below, then the template - and
-			// the clock macros have to agree across all of them (architecture/macros.md).
-			now: Date.now(),
 			resolvedCharacters: character ? [character] : [],
 			resolvedPersona: personaStore.activeResolved,
 			chatMessages,

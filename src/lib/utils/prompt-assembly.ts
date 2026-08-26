@@ -182,9 +182,6 @@ export function buildMacroContext(input: AssembleInput): MacroContext {
 				}
 			: undefined;
 	const base: MacroContext = {
-		// Stamped once, here, so every clock macro in this prompt agrees with every other one
-		// however many times the budget trim re-resolves them.
-		now: Date.now(),
 		resolvedPersona: input.resolvedPersona,
 		resolvedCharacters: input.resolvedCharacters,
 		chatMessages,
