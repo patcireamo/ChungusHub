@@ -53,17 +53,17 @@
 		messageStore.insertDummyMessage(role);
 	}
 
-	// The composer's shortcut to the last reply's own Retry → "Replace current". No try/catch
-	// here on purpose: unlike continueMessage, retryMessageResponse already toasts its own
-	// failures, so wrapping it would double every error message.
+	// ⌘/Ctrl+Enter and `/retry`, both landing on the last reply's own Retry → "Replace current".
+	// No try/catch here on purpose: unlike continueMessage, retryMessageResponse already toasts
+	// its own failures, so wrapping it would double every error message.
 	function handleRegenerateLast() {
 		if (!chatState) return;
 		messageStore.regenerateLastResponse('replace');
 	}
 
 	// The same call with the non-destructive action: keep what is there and add a sibling to
-	// swipe between. Reached only by `/swipe`; the composer menu carries Retry alone, because
-	// the transcript's own Retry button already offers both rows on the turn itself.
+	// swipe between. Reached only by `/swipe`, since the transcript's own Retry button already
+	// offers both rows on the turn itself.
 	function handleSwipeLast() {
 		if (!chatState) return;
 		messageStore.regenerateLastResponse('branch');

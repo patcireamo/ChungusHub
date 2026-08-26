@@ -406,19 +406,15 @@
 
 	let lastTurn = $derived(activePath[activePath.length - 1] ?? null);
 
-	// Continue extends the newest turn in place, so it only makes sense when that turn
-	// is an AI reply (the disabled state's tooltip says why).
+	// Continue extends the newest turn in place, so it only makes sense when that turn is an
+	// AI reply. The button for it lives on that reply (MessageActions); what is left here is
+	// the gate `/continue` runs behind.
 	let canContinue = $derived(lastTurn?.role === 'assistant');
-
-	function handleContinue() {
-		menuOpen = false;
-		onContinue?.();
-	}
 
 	// Same target as Continue (the newest turn), but what it does depends on whose turn that is:
 	// a reply gets re-rolled, your own turn gets the reply it doesn't have yet. One store call
 	// covers both, because 'replace' on a user turn finds nothing below to delete and goes
-	// straight to generating. The label stays fixed; only the tooltip says which of the two.
+	// straight to generating. Reached by ⌘/Ctrl+Enter and `/retry`, both behind this gate.
 	let canRegenerateLast = $derived.by(() => {
 		const last = lastTurn;
 		if (!last) return false;
@@ -449,11 +445,6 @@
 		if (last.role === 'assistant') return last.parentId !== null;
 		return last.role === 'user';
 	});
-
-	function handleRegenerateLast() {
-		menuOpen = false;
-		onRegenerateLast?.();
-	}
 
 	// ===== Steering (guidance injected into the prompt, never into the chat) =====
 
@@ -651,7 +642,10 @@
 	}
 
 	async function executeCommand(command: CommandDef, arg: string) {
-		const ok = await runCommand(command, arg, commandContext);
+		// The mode ends on the press, not on the work: the command is accepted or refused here
+		// and runs on its own from there, so a long one never leaves the box locked around a
+		// half-typed line.
+		const ok = runCommand(command, arg, commandContext);
 		// A refusal leaves the line alone: the text is still the fastest way to fix it.
 		if (!ok) return;
 		content = '';
@@ -963,10 +957,11 @@
 		// Enter-to-send nor history recall may rewrite the draft the proposal is about.
 		if (transformOpen) return;
 		// Ctrl/⌘+Enter regenerates, above command mode because the palette owns plain Enter and
-		// nothing modified. Same gate as the menu row, so the key can never outreach the button.
+		// nothing modified. Same gate as the newest turn's own Retry, so the key can never
+		// outreach the button.
 		if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
 			e.preventDefault();
-			if (!isStreaming && canRegenerateLast) handleRegenerateLast();
+			if (!isStreaming && canRegenerateLast) onRegenerateLast?.();
 			return;
 		}
 		// Command mode owns the keys the palette needs and nothing else. It sits above the
@@ -1303,32 +1298,6 @@
 										</button>
 									{/if}
 								{/if}
-								<!-- Both act on the newest turn, so they stay adjacent, and they sit lowest
-								     of the action groups: the menu opens upward, so the rows nearest the
-								     trigger are the ones the pointer reaches first. -->
-								<div class="composer-menu-sep"></div>
-								<button
-									type="button"
-									class="composer-menu-item"
-									disabled={isStreaming || !canContinue}
-									title={canContinue
-										? 'Extend the last reply from where it stopped'
-										: 'The newest turn must be an AI reply'}
-									onclick={handleContinue}
-								>
-									<Icon name="feather" class="w-4 h-4" />
-									Continue last reply
-								</button>
-								<button
-									type="button"
-									class="composer-menu-item"
-									disabled={isStreaming || !canRegenerateLast}
-									title={regenerateLastHint}
-									onclick={handleRegenerateLast}
-								>
-									<Icon name="refresh" class="w-4 h-4" />
-									Regenerate last reply
-								</button>
 								<div class="composer-menu-sep"></div>
 								<button type="button" class="composer-menu-item" onclick={openPersonaDialog}>
 									<Icon name="userCheck" class="w-4 h-4" />

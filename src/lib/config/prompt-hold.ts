@@ -10,13 +10,15 @@
  * over an assembled prompt this layer ever holds.
  *
  * Glyphs are SOURCED, not chosen: each is what its action already draws elsewhere (the
- * composer's send arrow, a turn's Retry, the Continue row, and the two engines' own registry
- * icons), so a row here reads the same as the control it stands in for.
+ * composer's send arrow, a turn's Retry, a turn's Continue, and the two engines' own registry
+ * icons), so a row here reads the same as the control it stands in for. Send and Continue wear
+ * the same forward arrow because the two controls do; the names beside them are what tell the
+ * rows apart.
  */
 import { engineById, type EngineDef } from '$lib/engines/registry';
 
-/** An engine's glyph, or one of the three the non-engine gates wear. */
-export type HoldGateIcon = EngineDef['icon'] | 'arrowRight' | 'refresh' | 'feather';
+/** An engine's glyph, or one of the two the non-engine gates wear. */
+export type HoldGateIcon = EngineDef['icon'] | 'arrowRight' | 'refresh';
 
 /** What every gate declares. The list below is the only place they are written down, and the
  *  two types under it are read back off it, so there is no second list to keep in step. */
@@ -38,8 +40,8 @@ export const HOLD_GATES = [
 		icon: 'arrowRight'
 	},
 	{
-		// Both names, because the transcript's button says one and the composer's menu row
-		// says the other, and a reader looking for either has to find this switch.
+		// Both names, because the button says one on a reply and the other on a turn of the
+		// reader's own, and a reader looking for either has to find this switch.
 		id: 'regenerate',
 		name: 'Retry / Regenerate',
 		confirm: 'Regenerate',
@@ -49,7 +51,7 @@ export const HOLD_GATES = [
 		id: 'continue',
 		name: 'Continue',
 		confirm: 'Continue',
-		icon: 'feather'
+		icon: 'arrowRight'
 	},
 	{
 		id: 'spellcheck',

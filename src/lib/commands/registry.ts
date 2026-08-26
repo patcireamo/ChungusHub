@@ -124,7 +124,7 @@ export const COMMANDS: CommandDef[] = [
 	{
 		name: 'continue',
 		group: 'story',
-		icon: 'feather',
+		icon: 'arrowRight',
 		describe: 'Extend the newest reply where it stops',
 		unavailable: (ctx) => (ctx.canContinue ? null : 'The newest turn must be a reply'),
 		run: (_arg, ctx) => ctx.host.continueMessage()
@@ -448,12 +448,16 @@ export function argSatisfied(command: CommandDef, arg: string): boolean {
  * The palette already disables an unavailable row, so this path is the second guard: it is
  * what keeps a command that became unavailable between the keystroke and the Enter from
  * running anyway.
+ *
+ * **The verdict is the acceptance, never the work.** A `run` can be a whole generation
+ * (`/continue`), and a caller that waited on it would hold the composer in command mode for
+ * the length of that generation: the line still reading `/conti`, the palette still listing
+ * matches, the box locked behind a press that already landed. Both refusals are decided
+ * before any work starts, so they are still the caller's to act on; everything after them is
+ * the command's own business, and a throw there is a failure rather than a refusal and says
+ * so itself.
  */
-export async function runCommand(
-	command: CommandDef,
-	arg: string,
-	ctx: CommandContext
-): Promise<boolean> {
+export function runCommand(command: CommandDef, arg: string, ctx: CommandContext): boolean {
 	const refused = command.unavailable?.(ctx) ?? null;
 	if (refused) {
 		toastStore.warning(refused);
@@ -463,11 +467,12 @@ export async function runCommand(
 		toastStore.warning(`/${command.name} needs ${command.arg?.label ?? 'an argument'}`);
 		return false;
 	}
-	try {
-		await command.run(arg, ctx);
-	} catch (error) {
-		toastStore.failed(`run /${command.name}`, error);
-		return false;
-	}
+	void (async () => {
+		try {
+			await command.run(arg, ctx);
+		} catch (error) {
+			toastStore.failed(`run /${command.name}`, error);
+		}
+	})();
 	return true;
 }

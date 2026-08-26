@@ -11,6 +11,10 @@
 		/** Label for the regenerate button, and its accessible name: the word labels are
 		 *  display:none on narrow screens, so a fixed one would name all three states wrong. */
 		regenerateLabel?: string;
+		/** Extend this reply from where it stopped. Sits beside Retry because the two are the
+		 *  pair the hand reaches for after reading a reply: again, or more. */
+		onContinue?: () => void;
+		showContinue?: boolean;
 		/** Fork this turn into a new branch, any role: a user turn forks into a different thing
 		 *  said, a reply into a hand-written alternate you can swipe between. */
 		onBranch?: () => void;
@@ -24,6 +28,8 @@
 		onRegenerate,
 		showRegenerate = false,
 		regenerateLabel = 'Retry',
+		onContinue,
+		showContinue = false,
 		onBranch,
 		showBranch = false
 	}: Props = $props();
@@ -77,6 +83,19 @@
 		>
 			<Icon name="refresh" class="w-3.5 h-3.5" strokeWidth={1.75} />
 			<span class="action-label">{regenerateLabel}</span>
+		</button>
+	{/if}
+
+	{#if showContinue && onContinue}
+		<button
+			type="button"
+			class="action-btn"
+			onclick={onContinue}
+			aria-label="Continue this reply"
+			title="Continue: extend this reply from where it stopped"
+		>
+			<Icon name="arrowRight" class="w-3.5 h-3.5" strokeWidth={1.75} />
+			<span class="action-label">Continue</span>
 		</button>
 	{/if}
 

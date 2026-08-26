@@ -424,6 +424,17 @@
 	const showRegenerate = $derived(
 		isLast && (message.role === 'user' || (message.role === 'assistant' && message.parentId !== null))
 	);
+	// Continue extends a reply in place, so it belongs to the newest turn and nowhere else.
+	// A seeded greeting qualifies where Retry refuses one: a continuation works from the reply
+	// itself, while a re-roll needs the prompt that wrote it, and a greeting has none.
+	const showContinue = $derived(isLast && message.role === 'assistant');
+
+	function handleContinue() {
+		// The store toasts its own generation failures; only its throw-guards reach here.
+		void messageStore.continueMessage().catch((error) => {
+			toastStore.failed('continue the reply', error);
+		});
+	}
 	const messageTokens = $derived(countTokens(message.content, message.model ?? undefined));
 	// Assistant turns carry the provider's real completion token count, so show that rather
 	// than a local estimate. User turns have no per-message actual (the API only reports
@@ -665,6 +676,8 @@
 									onRegenerate={showRegenerate ? handleRegenerateClick : undefined}
 									{showRegenerate}
 									regenerateLabel={isUser ? (hasReply ? 'Regenerate' : 'Generate Reply') : 'Retry'}
+									onContinue={showContinue ? handleContinue : undefined}
+									{showContinue}
 									onBranch={handleBranchClick}
 									showBranch
 								/>
