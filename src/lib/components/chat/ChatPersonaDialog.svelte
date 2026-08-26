@@ -26,10 +26,12 @@
 		try {
 			await messageStore.setChatPersona(chatId, personaId);
 			const name = personaId
-				? personas.find((p) => p.id === personaId)?.identity.name?.trim() || 'persona'
+				? personas.find((p) => p.id === personaId)?.identity.name?.trim() || 'Unnamed persona'
 				: null;
 			toastStore.success(
-				name ? `This chat's messages are now ${name}.` : `This chat's messages show as You again.`
+				name
+					? `Your messages in this chat now show as ${name}.`
+					: `Your messages in this chat show as You again.`
 			);
 			onClose();
 		} catch (e) {
@@ -40,10 +42,14 @@
 	}
 </script>
 
-<Dialog {open} {onClose} title="Chat persona" size="md">
+<Dialog {open} {onClose} title="Relabel your messages" size="md">
+	<!-- The wording carries the whole weight here: the composer's persona button is centimetres
+	     away and also opens a persona list, so this copy has to say what only this one does.
+	     Hence the last sentence, which draws the line the other control sits on. -->
 	<p class="lede font-ui">
-		Pick who "you" are in this chat. It rebinds every user message here, handy for imported or
-		older chats that show a plain "You".
+		Every message you have sent in this chat is relabelled to the persona you pick, name and
+		portrait. Handy for imported or older chats that show a plain “You”. It changes nothing
+		outside this chat, and nothing about who you play as next.
 	</p>
 	<!-- Rebinding changes the name on the turns, not the text of the summaries already written
 	     from them: memory only invalidates a summary when a turn's own content changes. Saying
@@ -54,7 +60,7 @@
 		rebuild in the Memory panel if you want them rewritten with the new one.
 	</p>
 
-	<div class="persona-list" role="radiogroup" aria-label="Chat persona">
+	<div class="persona-list" role="radiogroup" aria-label="Persona for your messages">
 		<button
 			type="button"
 			role="radio"

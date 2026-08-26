@@ -472,7 +472,8 @@
 	// Switches the ONE global active persona (personaStore), not this chat's message
 	// attribution: from here on, new user turns are stamped with it and prompt assembly
 	// speaks as it. Past turns keep the persona they were sent with; rebinding those is
-	// the menu's "Set chat persona…" (ChatPersonaDialog), a different job.
+	// the menu's "Relabel your messages…" (ChatPersonaDialog), a different job. The two labels
+	// deliberately share no words: they sit centimetres apart and both show a persona list.
 	// Past a dozen personas a portrait+name list is mostly scrolling, so the popover
 	// flips to a face grid: same rows of pixels, roughly twice the personas in them.
 	const PERSONA_GRID_THRESHOLD = 12;
@@ -1299,9 +1300,14 @@
 									{/if}
 								{/if}
 								<div class="composer-menu-sep"></div>
-								<button type="button" class="composer-menu-item" onclick={openPersonaDialog}>
-									<Icon name="userCheck" class="w-4 h-4" />
-									Set chat persona…
+								<button
+									type="button"
+									class="composer-menu-item"
+									title="Show every message you have sent in this chat as a different persona"
+									onclick={openPersonaDialog}
+								>
+									<Icon name="tag" class="w-4 h-4" />
+									Relabel your messages…
 								</button>
 							</div>
 						{/if}
