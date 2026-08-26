@@ -25,13 +25,17 @@
 	import { workspaceFocus } from '$lib/stores/workspaceFocus.svelte';
 	import { countTokens } from '$lib/tokenizer';
 	import {
+		natureOf,
 		partitionEntries,
 		resolveBookActivation,
 		sortEntries,
-		type LorebookEntry,
-		type LorebookEntrySortField,
-		type SortDirection
+		type LorebookEntry
 	} from '$lib/lorebook/types';
+	import {
+		lorebookEntryPrefs,
+		LOREBOOK_ENTRY_NATURE_OPTIONS,
+		LOREBOOK_ENTRY_SORT_OPTIONS
+	} from '$lib/stores/lorebookEntryPrefs.svelte';
 
 	const reduce =
 		typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -133,16 +137,18 @@
 	let searchEl = $state<HTMLInputElement | null>(null);
 	let nameEl = $state<HTMLInputElement | null>(null);
 
-	// ===== search / sort =====
+	// ===== search / filter / sort =====
 
 	let search = $state('');
-	let sortField = $state<LorebookEntrySortField>('order');
-	let sortDir = $state<SortDirection>('asc');
-	let sortOpen = $state(false);
+	let filterOpen = $state(false);
 
 	let q = $derived(search.trim().toLowerCase());
+	/** The natures held out of the list. The order is not a filter and never counts as one,
+	 *  which is the same line the Library's own funnel badge draws. */
+	let hidden = $derived(lorebookEntryPrefs.hidden);
 
 	function matches(e: LorebookEntry): boolean {
+		if (hidden.includes(natureOf(e))) return false;
 		if (!q) return true;
 		return (
 			e.comment.toLowerCase().includes(q) ||
@@ -153,7 +159,9 @@
 	}
 
 	let entries = $derived(
-		selectedBook ? sortEntries(selectedBook.entries.filter(matches), sortField, sortDir) : []
+		selectedBook
+			? sortEntries(selectedBook.entries.filter(matches), lorebookEntryPrefs.sort)
+			: []
 	);
 	let total = $derived(selectedBook?.entries.length ?? 0);
 
@@ -598,7 +606,6 @@
 						</EmptyState>
 					</div>
 				{:else}
-					<!-- List controls -->
 					<div class="lb-controls">
 						<div class="brw-search">
 							<Icon name="search" class="brw-search-icon w-3.5 h-3.5" />
@@ -613,61 +620,60 @@
 						</div>
 
 						<div class="lb-controls-row">
-							<BrowsePopover bind:open={sortOpen}>
+							<BrowsePopover bind:open={filterOpen}>
 								{#snippet trigger({ toggle, open })}
 									<button
 										type="button"
 										class="brw-btn"
-										class:is-active={open}
+										class:is-active={open || hidden.length > 0}
 										onclick={toggle}
 										aria-haspopup="true"
 										aria-expanded={open}
-										aria-label="Sort entries"
-										title="Sort"
+										aria-label="Filter and sort entries"
+										title="Filter & sort"
 									>
-										<Icon name="arrowUpDown" class="w-4 h-4" />
+										<Icon name="filter" class="w-4 h-4" />
+										{#if hidden.length > 0}
+											<span class="brw-btn-badge">{hidden.length}</span>
+										{/if}
 									</button>
 								{/snippet}
 								<div class="brw-sec">
 									<div class="brw-sec-head"><span class="brw-sec-title">Sort by</span></div>
-									<div class="brw-opts">
-										<button
-											type="button"
-											class="brw-opt"
-											class:is-active={sortField === 'order'}
-											onclick={() => (sortField = 'order')}
-										>
-											Order
-										</button>
-										<button
-											type="button"
-											class="brw-opt"
-											class:is-active={sortField === 'comment'}
-											onclick={() => (sortField = 'comment')}
-										>
-											Title
-										</button>
+									<!-- One list of finished answers, not a field plus a direction: "Z → A" is the
+									     whole choice, so nothing has to be combined in the reader's head. -->
+									<div class="brw-opts" role="radiogroup" aria-label="Sort entries by">
+										{#each LOREBOOK_ENTRY_SORT_OPTIONS as option (option.id)}
+											<button
+												type="button"
+												role="radio"
+												aria-checked={lorebookEntryPrefs.sort === option.id}
+												class="brw-opt"
+												class:is-active={lorebookEntryPrefs.sort === option.id}
+												onclick={() => lorebookEntryPrefs.setSort(option.id)}
+											>
+												{option.label}
+											</button>
+										{/each}
 									</div>
 								</div>
 								<div class="brw-sec">
-									<div class="brw-sec-head"><span class="brw-sec-title">Direction</span></div>
-									<div class="brw-opts">
-										<button
-											type="button"
-											class="brw-opt"
-											class:is-active={sortDir === 'asc'}
-											onclick={() => (sortDir = 'asc')}
-										>
-											<Icon name="chevronUp" class="w-3.5 h-3.5" />Ascending
-										</button>
-										<button
-											type="button"
-											class="brw-opt"
-											class:is-active={sortDir === 'desc'}
-											onclick={() => (sortDir = 'desc')}
-										>
-											<Icon name="chevronDown" class="w-3.5 h-3.5" />Descending
-										</button>
+									<div class="brw-sec-head"><span class="brw-sec-title">Show</span></div>
+									<!-- The three natures wear the dot their rows wear, so the filter and the list
+									     name a row the same way. Independent switches rather than one choice: a
+									     reader hiding the disabled entries still wants both of the live kinds. -->
+									<div class="brw-opts brw-opts--3" role="group" aria-label="Filter by entry behavior">
+										{#each LOREBOOK_ENTRY_NATURE_OPTIONS as option (option.id)}
+											<button
+												type="button"
+												class="brw-opt lb-nature"
+												class:is-active={!hidden.includes(option.id)}
+												aria-pressed={!hidden.includes(option.id)}
+												onclick={() => lorebookEntryPrefs.toggleNature(option.id)}
+											>
+												<span class="lb-dot lb-dot-{option.id}"></span>{option.label}
+											</button>
+										{/each}
 									</div>
 								</div>
 							</BrowsePopover>
@@ -683,8 +689,6 @@
 							>
 								<Icon name="checkCircle" class="w-4 h-4" />
 							</button>
-
-							<span class="flex-1"></span>
 
 							<button type="button" class="brw-new" onclick={addEntry} title="New entry">
 								<Icon name="plus" class="w-4 h-4" />
@@ -740,16 +744,34 @@
 						</div>
 					{/if}
 
-					{#if q && entries.length === 0 && elsewhere.length === 0}
+					{#if entries.length === 0 && elsewhere.length === 0 && (q || hidden.length > 0)}
 						<div class="text-center py-12 px-6">
-							<p class="text-sm font-ui text-text-secondary">Nothing matches “{search}”.</p>
-							<button
-								type="button"
-								onclick={() => (search = '')}
-								class="mt-2 text-xs font-ui text-accent hover:underline"
-							>
-								Clear search
-							</button>
+							<!-- Names the narrowing that actually emptied the list, and offers a way out of
+							     each one that is on. A list emptied by the funnel must not read as a search
+							     that missed, or the reader clears the thing that was not in the way. -->
+							<p class="text-sm font-ui text-text-secondary">
+								{q ? `Nothing matches “${search}”.` : 'Every entry here is hidden.'}
+							</p>
+							<div class="mt-2 flex items-center justify-center gap-4">
+								{#if q}
+									<button
+										type="button"
+										onclick={() => (search = '')}
+										class="text-xs font-ui text-accent hover:underline"
+									>
+										Clear search
+									</button>
+								{/if}
+								{#if hidden.length > 0}
+									<button
+										type="button"
+										onclick={() => lorebookEntryPrefs.showAll()}
+										class="text-xs font-ui text-accent hover:underline"
+									>
+										Show all
+									</button>
+								{/if}
+							</div>
 						</div>
 					{:else}
 						<!-- Entries, unfolding in place -->
@@ -1018,8 +1040,10 @@
 
 	/* ===== the settings strip ===== */
 
+	/* Close enough to read as one stack: Activation states the rules and Test scan tries them,
+	   so the two are one subject and the space below them is where the page changes subject. */
 	.lb-strip {
-		margin-bottom: 1rem;
+		margin-bottom: 0.5rem;
 		border: 1px solid var(--color-border-subtle);
 		border-radius: var(--radius-lg);
 		background: var(--color-card-bg);
@@ -1087,33 +1111,46 @@
 		transform: rotate(180deg);
 	}
 
-	/* ===== in-list controls (search on its own row, actions below) ===== */
+	/* ===== in-list controls (one row: search takes the room, the actions end it) ===== */
 
+	/* The library toolbar's own shape. The search flexes and the actions ride at the end of the
+	   same line, so the list starts one row higher and a phone spends its height on entries. */
 	.lb-controls {
 		display: flex;
-		flex-direction: column;
-		gap: 0.375rem;
-		padding: 0 0 0.5rem;
+		align-items: center;
+		gap: 0.5rem;
+		/* Padding, not margin: it cannot collapse into the strip above, so the gap that separates
+		   the book's settings from its entries is the one written here. Several times the space
+		   between the strips themselves, which is what makes the two zones read apart. */
+		padding: 1.25rem 0 0.5rem;
 	}
 
-	/* The position context the BrowsePopover panels in this row anchor to, the same job
-	   .brw-bar does for the library toolbars. Without it the panel resolves against an
-	   ancestor further up, lands away from its trigger, and .panel-scroll clips it: the
-	   sort menu renders in full and is never visible. */
+	/* Tighter than the gap above, which is what makes the three read as one group beside the
+	   search rather than as three loose buttons. Also the position context the BrowsePopover
+	   panel anchors to, the same job .brw-bar does for the library toolbars: without it the
+	   panel resolves against an ancestor further up, lands away from its trigger, and
+	   .panel-scroll clips it. Its right edge is the group's, so the panel drops under the
+	   buttons that summoned it. */
 	.lb-controls-row {
 		position: relative;
+		flex-shrink: 0;
 		display: flex;
 		align-items: center;
 		gap: 0.375rem;
 	}
 
-	/* And left aligned, not right. BrowsePopover pins its panel to the anchor's right edge,
-	   which suits the library toolbars because their triggers sit at that end. Here Sort is the
-	   leftmost control and New is at the far end of the row, so the default would open the menu
-	   under New: visible, but a whole row away from the button that summoned it. */
+	/* The tallest thing this row opens, and it opens inside .lb-page's scroller. Capping it
+	   keeps the whole panel reachable where the viewport is short (a phone held sideways)
+	   instead of making the page taller to reach the last option.
+	   dvh: static vh over-measures under mobile browser chrome. */
 	.lb-controls-row :global(.brw-pop-panel) {
-		right: auto;
-		left: 0;
+		max-height: min(26rem, 62dvh);
+		overflow-y: auto;
+	}
+
+	/* A hidden kind still names itself, but its dot stops reading as lit. */
+	.lb-nature:not(.is-active) .lb-dot {
+		opacity: 0.4;
 	}
 
 	/* Inside the column the bulk bar reads as a banner, not a full-bleed strip. */

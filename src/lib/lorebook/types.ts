@@ -661,8 +661,20 @@ export function buildLorebookTrace(records: LorebookEntryRecord[]): LorebookTrac
 	return { records: kept, silent: records.length - kept.length };
 }
 
-export type SortDirection = 'asc' | 'desc';
-export type LorebookEntrySortField = 'order' | 'comment';
+/**
+ * How the entry list orders itself on screen. Each value is a finished answer rather than a
+ * field plus a direction: "Z → A" is the whole choice, so the reader picks once instead of
+ * combining two questions in their head. Display only, exactly as the book order is.
+ */
+export type LorebookEntrySort =
+	| 'order'
+	| 'order-desc'
+	| 'a-z'
+	| 'z-a'
+	| 'longest'
+	| 'shortest'
+	| 'most-keys'
+	| 'fewest-keys';
 
 /** Stock scan window (most recent N messages), the global setting's default. */
 export const DEFAULT_SCAN_DEPTH = 25;
@@ -755,39 +767,84 @@ export interface PartitionedEntries {
 	disabled: LorebookEntry[];
 }
 
-/** Split entries into always-active / keyword / disabled groups, preserving input order. */
-export function partitionEntries(entries: LorebookEntry[]): PartitionedEntries {
-	const alwaysActive: LorebookEntry[] = [];
-	const keyword: LorebookEntry[] = [];
-	const disabled: LorebookEntry[] = [];
-	for (const e of entries) {
-		if (e.disable) disabled.push(e);
-		else if (e.constant) alwaysActive.push(e);
-		else keyword.push(e);
-	}
-	return { alwaysActive, keyword, disabled };
+/** What an entry is, in the three words the entry row's own behavior switch uses. */
+export type LorebookEntryNature = 'always' | 'keyword' | 'off';
+
+/** The ONE reading of `constant`/`disable` as a nature: the row's switch, the book's
+ *  composition line and the list's Show filter must never disagree about what a row is. */
+export function natureOf(entry: Pick<LorebookEntry, 'constant' | 'disable'>): LorebookEntryNature {
+	return entry.disable ? 'off' : entry.constant ? 'always' : 'keyword';
 }
 
-/** Return a new array sorted by the given field/direction, tie-broken by `order` for stability. */
-export function sortEntries(
-	entries: LorebookEntry[],
-	field: LorebookEntrySortField,
-	dir: SortDirection
-): LorebookEntry[] {
-	const sign = dir === 'asc' ? 1 : -1;
-	return [...entries].sort((a, b) => {
-		let cmp = 0;
-		switch (field) {
-			case 'order':
-				cmp = a.order - b.order;
-				break;
-			case 'comment':
-				cmp = a.comment.localeCompare(b.comment, undefined, { sensitivity: 'base' });
-				break;
-		}
-		if (cmp === 0) cmp = a.order - b.order;
-		return cmp * sign;
-	});
+/** Split entries into always-active / keyword / disabled groups, preserving input order.
+ *  The same three natures `natureOf` names, bucketed: a partition that read `constant` and
+ *  `disable` itself could file a row under a kind the entry row does not show. */
+export function partitionEntries(entries: LorebookEntry[]): PartitionedEntries {
+	const buckets: Record<LorebookEntryNature, LorebookEntry[]> = {
+		always: [],
+		keyword: [],
+		off: []
+	};
+	for (const e of entries) buckets[natureOf(e)].push(e);
+	return { alwaysActive: buckets.always, keyword: buckets.keyword, disabled: buckets.off };
+}
+
+/** Exactly the fields an order reads. Declared this narrowly so the sort answers for a literal
+ *  as well as for a stored entry, which is what makes it testable without building one. */
+type SortableEntry = Pick<LorebookEntry, 'comment' | 'content' | 'key' | 'keysecondary' | 'order'>;
+
+/** Every key that can wake an entry, which is what "most keys" counts. */
+function keyCount(entry: SortableEntry): number {
+	return entry.key.length + entry.keysecondary.length;
+}
+
+/**
+ * Compare two titles at base sensitivity and numerically, so `Scene 2` sorts before `Scene 10`.
+ * Untitled entries sink in BOTH directions, as unnamed books do: a blank title is not a "Z"
+ * either, and reversing would otherwise open the list on the rows carrying the least to read.
+ */
+function compareTitles(a: SortableEntry, b: SortableEntry, sign: number): number {
+	const at = a.comment.trim();
+	const bt = b.comment.trim();
+	if (!at || !bt) return !at && !bt ? 0 : at ? -1 : 1;
+	return at.localeCompare(bt, undefined, { sensitivity: 'base', numeric: true }) * sign;
+}
+
+/**
+ * Return a new array of entries in the chosen display order.
+ *
+ * Every order tie-breaks on `order`, which is the sequence the entries actually reach the
+ * prompt in: two rows the chosen order has nothing to separate would otherwise sit in
+ * whatever sequence they happen to be stored in, and reshuffle when one of them is edited.
+ *
+ * Display only. `book.entries` is never reordered by this: the engine returns survivors in
+ * `order` sequence and the block is built from that, so sorting the stored array to tidy the
+ * list would let a view preference decide what reaches the model first.
+ */
+export function sortEntries<T extends SortableEntry>(
+	entries: T[],
+	sort: LorebookEntrySort
+): T[] {
+	const by = (cmp: (a: T, b: T) => number): T[] =>
+		[...entries].sort((a, b) => cmp(a, b) || a.order - b.order);
+	switch (sort) {
+		case 'order':
+			return by((a, b) => a.order - b.order);
+		case 'order-desc':
+			return by((a, b) => b.order - a.order);
+		case 'a-z':
+			return by((a, b) => compareTitles(a, b, 1));
+		case 'z-a':
+			return by((a, b) => compareTitles(a, b, -1));
+		case 'longest':
+			return by((a, b) => b.content.length - a.content.length);
+		case 'shortest':
+			return by((a, b) => a.content.length - b.content.length);
+		case 'most-keys':
+			return by((a, b) => keyCount(b) - keyCount(a));
+		case 'fewest-keys':
+			return by((a, b) => keyCount(a) - keyCount(b));
+	}
 }
 
 /** How a list of books orders itself on screen. Display only: no stored order moves. */

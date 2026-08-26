@@ -15,10 +15,12 @@
 		lorebookWokenBy,
 		pruneKeyRules,
 		resolveBookActivation,
+		natureOf,
 		resolveEntryRecursion,
 		ST_POSITION_NAMES,
 		TRIGGER_ALIASES,
 		withoutStoredRecursion,
+		type LorebookEntryNature,
 		type LorebookKeyRules,
 		type LorebookScanField,
 		type LorebookTrigger,
@@ -34,7 +36,7 @@
 	import KeyChipInput from './KeyChipInput.svelte';
 	import OverrideMark from '$lib/components/ui/OverrideMark.svelte';
 
-	type Nature = 'always' | 'keyword' | 'off';
+	type Nature = LorebookEntryNature;
 
 	interface Props {
 		lorebookId: string;
@@ -59,9 +61,7 @@
 
 	let titleEl = $state<HTMLInputElement | null>(null);
 
-	let nature = $derived<Nature>(
-		!entry ? 'keyword' : entry.disable ? 'off' : entry.constant ? 'always' : 'keyword'
-	);
+	let nature = $derived<Nature>(entry ? natureOf(entry) : 'keyword');
 	let contentTokens = $derived(entry ? countTokens(entry.content) : 0);
 	/** What actually applies at generation: useProbability off means the roll is skipped. */
 	let effectiveProbability = $derived(entry ? (entry.useProbability ? entry.probability : 100) : 100);
