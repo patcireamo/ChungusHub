@@ -513,9 +513,9 @@ function resolveMacro(name: string, context: MacroContext): string | undefined {
 			// Chat-memory recall, pre-rendered by the prompt builder. Empty when memory is
 			// off, so the macro simply vanishes from the prompt.
 			return context.memory ?? '';
-		// The reader's own clock and locale, because these resolve in the browser: a model
-		// told the time should be told the time where the person typing is, not where the
-		// server happens to be racked.
+		// The reader's own clock, because these resolve in the browser: a model told the time
+		// should be told the time where the person typing is, not where the server happens to
+		// be racked. Their locale is deliberately NOT followed - the formatters above say why.
 		case 'time':
 			return formatClock(context.now);
 		case 'date':
