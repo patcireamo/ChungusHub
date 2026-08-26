@@ -65,6 +65,12 @@
 	let networkEnabled = $state(false);
 	let networkError = $state('');
 
+	// Off pressed from a device that is not the host machine cuts that device off with
+	// every other one on the network the moment the port closes, and reopening takes
+	// the computer ChungusHub runs on. Asked, never assumed; an address that never
+	// loaded is asked too, since the silent direction is the lockout.
+	let networkOffOpen = $state(false);
+
 	// ===== Password lock =====
 	// Two states, one per `passwordSet`: no password yet → the setup form is the
 	// whole story; a password exists → an on/off switch plus a folded change form.
@@ -126,6 +132,17 @@
 
 	async function toggleNetwork(on: boolean): Promise<void> {
 		if (securityBusy) return;
+		// Switching on shuts nobody out, so only the other direction is asked about.
+		// Nothing moves while the question stands: the switch reads its position from
+		// `networkEnabled`, so backing out leaves it where it was with no snap-back.
+		if (!on && !isHostDevice) {
+			networkOffOpen = true;
+			return;
+		}
+		await applyNetwork(on);
+	}
+
+	async function applyNetwork(on: boolean): Promise<void> {
 		securityBusy = true;
 		networkError = '';
 		try {
@@ -138,6 +155,10 @@
 		}
 	}
 
+	async function confirmNetworkOff(): Promise<void> {
+		networkOffOpen = false;
+		await applyNetwork(false);
+	}
 
 	async function toggleAllowlist(on: boolean): Promise<void> {
 		if (securityBusy) return;
@@ -583,9 +604,19 @@
 	{/if}
 </div>
 
-<!-- Neither is marked destructive: that rung lets a reader switch the asking off, and
-	 both of these exist to stop the same lockout, which is the one question that has to
+<!-- None is marked destructive: that rung lets a reader switch the asking off, and all
+	 three of these exist to stop the same lockout, which is the one question that has to
 	 survive an impatient afternoon of deleting things. -->
+<ConfirmDialog
+	open={networkOffOpen}
+	title="Shut out the device you are on?"
+	message={`Switching this off closes the port for every device on the network at once. Turning it back on takes the computer ChungusHub runs on: flip the switch there, or set "networkAccessEnabled" to true in security.json in your data folder.`}
+	confirmLabel="Switch off anyway"
+	variant="danger"
+	onConfirm={confirmNetworkOff}
+	onCancel={() => (networkOffOpen = false)}
+/>
+
 <ConfirmDialog
 	open={lockoutOpen}
 	title="This device is not approved yet"
