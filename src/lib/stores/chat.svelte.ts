@@ -292,13 +292,14 @@ class ChatStore {
 			throw new Error(`Chat ${chatId} not found`);
 		}
 
-		const messages = await db.getMessagesByChat(chatId);
+		const { messages, rev } = await this.fetchMessages(chatId);
 		const activePath = chat.activeLeafId ? findActivePath(messages, chat.activeLeafId) : [];
 
 		this.currentChatState = {
 			chat,
 			activePath,
-			allMessages: messages
+			allMessages: messages,
+			messagesRev: rev
 		};
 
 		// Chat memory (non-blocking): load it when the chat changes, then re-sync the
@@ -306,6 +307,61 @@ class ChatStore {
 		// after swipes/branches/edits. No-op when memory is off for this chat.
 		void this.refreshMemory(chat, messages);
 		void this.refreshLiveElsewhere(chatId);
+	}
+
+	/**
+	 * The chat's rows, current as of this call: a delta against the rev the loaded state
+	 * holds, merged over it, or a full read when this chat is not the loaded one. Always a
+	 * NEW array with new objects only for the rows that changed. Callers that snapshot the
+	 * result (a pre-delete tree, the mutation-validation rule) keep exactly what they read,
+	 * because no later merge mutates it.
+	 */
+	private async fetchMessages(chatId: string): Promise<{ messages: Message[]; rev: number }> {
+		const state = this.currentChatState;
+		const loaded = state && state.chat.id === chatId ? state : null;
+		const delta = await db.getMessagesDelta(chatId, loaded ? loaded.messagesRev : null);
+		if (!delta) throw new Error(`Chat ${chatId} not found`);
+		if (delta.full) return { messages: delta.messages, rev: delta.rev };
+		// `full` is the answer wherever there is no baseline, so a non-full delta implies one.
+		const base = loaded!;
+		if (delta.upserts.length === 0 && delta.deletedIds.length === 0) {
+			return { messages: base.allMessages, rev: delta.rev };
+		}
+		const upserts = new Map(delta.upserts.map((m) => [m.id, m]));
+		const deleted = new Set(delta.deletedIds);
+		const merged: Message[] = [];
+		for (const row of base.allMessages) {
+			if (deleted.has(row.id)) continue;
+			const fresh = upserts.get(row.id);
+			merged.push(fresh ?? row);
+			if (fresh) upserts.delete(row.id);
+		}
+		// What is left arrived new since the baseline; appending matches insertion order,
+		// which is all the full read ever guaranteed (every consumer sorts or walks by id).
+		for (const row of delta.upserts) if (upserts.has(row.id)) merged.push(row);
+		return { messages: merged, rev: delta.rev };
+	}
+
+	/**
+	 * Bring the OPEN chat's rows current and return them. This is the door behind the
+	 * "long operations must re-fetch rather than trust the snapshot" rule
+	 * (architecture/chat-sessions.md coupling 4): the same freshness the old
+	 * whole-transcript read bought, at the price of what actually changed. The loaded
+	 * state adopts the result, so the transcript never renders rows older than what a
+	 * mutation just validated against.
+	 */
+	async freshMessages(chatId: string): Promise<Message[]> {
+		const { messages, rev } = await this.fetchMessages(chatId);
+		const state = this.currentChatState;
+		// Strictly newer only: two refreshes in flight resolve in either order, and the
+		// later-resolving older one must not roll the state back under the newer.
+		if (state && state.chat.id === chatId && state.messagesRev < rev) {
+			state.allMessages = messages;
+			state.messagesRev = rev;
+			// The path must never hold objects the merge replaced or dropped.
+			state.activePath = state.chat.activeLeafId ? findActivePath(messages, state.chat.activeLeafId) : [];
+		}
+		return messages;
 	}
 
 	/**

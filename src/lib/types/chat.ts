@@ -254,7 +254,17 @@ export interface ChatState {
 	chat: Chat;
 	activePath: Message[];
 	allMessages: Message[];
+	/** The message revision `allMessages` stands at, from the server's per-chat counter.
+	 *  What the next `getMessagesDelta` call hands back as `sinceRev`, so a refresh costs
+	 *  the rows that changed instead of the transcript. */
+	messagesRev: number;
 }
+
+/** What changed in a chat after the rev the client already holds, or the whole transcript
+ *  when there is no usable baseline (`sinceRev` null, or a rev this database never issued). */
+export type MessagesDelta =
+	| { rev: number; full: true; messages: Message[] }
+	| { rev: number; full: false; upserts: Message[]; deletedIds: string[] };
 
 /** The generation in flight, and the chat that owns it.
  *

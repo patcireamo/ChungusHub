@@ -451,6 +451,29 @@ const MIGRATIONS: Migration[] = [
 			entity_id TEXT
 		);
 		`
+	},
+	{
+		version: 43,
+		name: 'message_revisions',
+		sql: `
+		-- Per-chat revision counter and per-row stamp: every write to a messages row
+		-- advances the chat's counter and carries the new value, so a device holding
+		-- rev N can ask for what changed after N instead of the whole transcript.
+		ALTER TABLE chats ADD COLUMN messages_rev INTEGER NOT NULL DEFAULT 0;
+		ALTER TABLE messages ADD COLUMN rev INTEGER NOT NULL DEFAULT 0;
+		CREATE INDEX idx_messages_chat_rev ON messages(chat_id, rev);
+
+		-- Deleted message ids with the rev the delete advanced to, so a delta can say
+		-- what went away. A row is two ids and an integer, so nothing prunes these;
+		-- deleting the chat cascades them.
+		CREATE TABLE message_tombstones (
+			chat_id TEXT NOT NULL,
+			message_id TEXT NOT NULL,
+			rev INTEGER NOT NULL,
+			PRIMARY KEY (chat_id, message_id),
+			FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
+		);
+		`
 	}
 ];
 
@@ -792,6 +815,8 @@ class ServerDatabase {
 			while (queue.length) {
 				const row = queue.shift()!;
 				copied += 1;
+				// No rev stamp: the copy is a fresh chat id no device holds a rev for, so its
+				// rows rest at 0 and the first open reads them full like any other chat.
 				this.execute(
 					`INSERT INTO messages
 					 (id, chat_id, parent_id, role, content, persona_id, branch_label, thinking, attachments_json, created_at, edited_at, minor_edited_at, sprite_label,
@@ -1243,6 +1268,70 @@ class ServerDatabase {
 	getMessagesByChat(chatId: string): unknown[] {
 		const rows = this.select<Record<string, unknown>[]>('SELECT * FROM messages WHERE chat_id = ?', [chatId]);
 		return rows.map((r) => this.mapMessage(r));
+	}
+
+	/**
+	 * Advance a chat's message revision and return the value this write must carry.
+	 *
+	 * Every method that writes a messages row calls this (or `revForMessageWrite` when it
+	 * only knows the row id) and stamps the rows it touches; every delete records the value
+	 * on tombstones. That invariant is the whole delta protocol: miss it in a new writer and
+	 * every other device silently keeps the old row until something else changes the chat.
+	 * `server/messageRev.test.ts` scans this file for exactly that omission.
+	 *
+	 * Bumped before the row write, in the same transaction wherever there is one, so a
+	 * stored row's rev can never exceed its chat's counter.
+	 */
+	private bumpMessagesRev(chatId: string): number {
+		const row = this.select<{ messages_rev: number }[]>(
+			'UPDATE chats SET messages_rev = messages_rev + 1 WHERE id = ? RETURNING messages_rev',
+			[chatId]
+		)[0];
+		if (!row) throw new Error(`bumpMessagesRev: no chat ${chatId}`);
+		return row.messages_rev;
+	}
+
+	/** `bumpMessagesRev` for writers that only hold a message id. Null when the row is gone,
+	 *  which keeps the caller's UPDATE the same silent no-op it always was. */
+	private revForMessageWrite(messageId: string): number | null {
+		const row = this.select<{ chat_id: string }[]>('SELECT chat_id FROM messages WHERE id = ?', [messageId])[0];
+		return row ? this.bumpMessagesRev(row.chat_id) : null;
+	}
+
+	private recordMessageTombstones(chatId: string, messageIds: Iterable<string>, rev: number): void {
+		for (const id of messageIds) {
+			this.execute('INSERT INTO message_tombstones (chat_id, message_id, rev) VALUES (?, ?, ?)', [chatId, id, rev]);
+		}
+	}
+
+	/**
+	 * What changed in a chat after `sinceRev`: the rows to upsert, the ids to drop, and the
+	 * rev this answer stands at. `sinceRev` null asks for the whole transcript (a fresh open),
+	 * and a `sinceRev` AHEAD of the chat answers full too rather than guessing: the only way
+	 * a client gets ahead is a database swapped under it (a restore), and its cache describes
+	 * rows this database never held. Null when the chat itself is gone.
+	 */
+	getMessagesDelta(chatId: string, sinceRev: number | null): unknown {
+		return this.inTransaction(() => {
+			const chat = this.select<{ messages_rev: number }[]>(
+				'SELECT messages_rev FROM chats WHERE id = ?',
+				[chatId]
+			)[0];
+			if (!chat) return null;
+			const rev = chat.messages_rev;
+			if (sinceRev === null || sinceRev > rev) {
+				return { rev, full: true, messages: this.getMessagesByChat(chatId) };
+			}
+			const upserts = this.select<Record<string, unknown>[]>(
+				'SELECT * FROM messages WHERE chat_id = ? AND rev > ?',
+				[chatId, sinceRev]
+			).map((r) => this.mapMessage(r));
+			const deletedIds = this.select<{ message_id: string }[]>(
+				'SELECT message_id FROM message_tombstones WHERE chat_id = ? AND rev > ?',
+				[chatId, sinceRev]
+			).map((r) => r.message_id);
+			return { rev, full: false, upserts, deletedIds };
+		});
 	}
 
 	/** chatId → total message rows, in one pass. Powers the chat list's
@@ -1703,39 +1792,43 @@ class ServerDatabase {
 	}
 
 	insertMessage(message: Record<string, unknown>): void {
-		this.execute(
-			`INSERT INTO messages
-			 (id, chat_id, parent_id, role, content, persona_id, branch_label, thinking, attachments_json, created_at, edited_at, minor_edited_at, sprite_label,
-			  model, provider, tokens_prompt, tokens_completion, finish_reason, generation_ms, first_token_ms, reasoning_ms, lore_json, sibling_index)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			[
-				message.id,
-				message.chatId,
-				message.parentId,
-				message.role,
-				message.content,
-				message.personaId ?? null,
-				message.branchLabel ? JSON.stringify(message.branchLabel) : null,
-				message.thinking ?? null,
-				Array.isArray(message.attachments) && message.attachments.length
-					? JSON.stringify(message.attachments)
-					: null,
-				message.createdAt,
-				message.editedAt ?? null,
-				message.minorEditedAt ?? null,
-				message.spriteLabel ?? null,
-				message.model ?? null,
-				message.provider ?? null,
-				message.tokensPrompt ?? null,
-				message.tokensCompletion ?? null,
-				message.finishReason ?? null,
-				message.generationMs ?? null,
-				message.firstTokenMs ?? null,
-				message.reasoningMs ?? null,
-				message.lorebook ? JSON.stringify(message.lorebook) : null,
-				message.siblingIndex ?? 0
-			]
-		);
+		this.inTransaction(() => {
+			const rev = this.bumpMessagesRev(message.chatId as string);
+			this.execute(
+				`INSERT INTO messages
+				 (id, chat_id, parent_id, role, content, persona_id, branch_label, thinking, attachments_json, created_at, edited_at, minor_edited_at, sprite_label,
+				  model, provider, tokens_prompt, tokens_completion, finish_reason, generation_ms, first_token_ms, reasoning_ms, lore_json, sibling_index, rev)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				[
+					message.id,
+					message.chatId,
+					message.parentId,
+					message.role,
+					message.content,
+					message.personaId ?? null,
+					message.branchLabel ? JSON.stringify(message.branchLabel) : null,
+					message.thinking ?? null,
+					Array.isArray(message.attachments) && message.attachments.length
+						? JSON.stringify(message.attachments)
+						: null,
+					message.createdAt,
+					message.editedAt ?? null,
+					message.minorEditedAt ?? null,
+					message.spriteLabel ?? null,
+					message.model ?? null,
+					message.provider ?? null,
+					message.tokensPrompt ?? null,
+					message.tokensCompletion ?? null,
+					message.finishReason ?? null,
+					message.generationMs ?? null,
+					message.firstTokenMs ?? null,
+					message.reasoningMs ?? null,
+					message.lorebook ? JSON.stringify(message.lorebook) : null,
+					message.siblingIndex ?? 0,
+					rev
+				]
+			);
+		});
 	}
 
 	/**
@@ -1753,11 +1846,15 @@ class ServerDatabase {
 	 */
 	updateMessageContent(messageId: string, content: string, opts?: { minor?: boolean }): void {
 		const column = opts?.minor ? 'minor_edited_at' : 'edited_at';
-		this.execute(`UPDATE messages SET content = ?, ${column} = ? WHERE id = ?`, [
-			content,
-			Date.now(),
-			messageId
-		]);
+		this.inTransaction(() => {
+			const rev = this.revForMessageWrite(messageId);
+			this.execute(`UPDATE messages SET content = ?, ${column} = ?, rev = ? WHERE id = ?`, [
+				content,
+				Date.now(),
+				rev,
+				messageId
+			]);
+		});
 	}
 
 	/** Extend an assistant turn with a generated continuation: the full joined content plus
@@ -1784,33 +1881,43 @@ class ServerDatabase {
 			reasoningMs: number | null;
 		}
 	): void {
-		this.execute(
-			'UPDATE messages SET content = ?, thinking = ?, tokens_prompt = ?, tokens_completion = ?, finish_reason = ?, generation_ms = ?, reasoning_ms = ? WHERE id = ?',
-			[
-				patch.content,
-				patch.thinking,
-				patch.tokensPrompt,
-				patch.tokensCompletion,
-				patch.finishReason,
-				patch.generationMs,
-				patch.reasoningMs,
-				messageId
-			]
-		);
+		this.inTransaction(() => {
+			const rev = this.revForMessageWrite(messageId);
+			this.execute(
+				'UPDATE messages SET content = ?, thinking = ?, tokens_prompt = ?, tokens_completion = ?, finish_reason = ?, generation_ms = ?, reasoning_ms = ?, rev = ? WHERE id = ?',
+				[
+					patch.content,
+					patch.thinking,
+					patch.tokensPrompt,
+					patch.tokensCompletion,
+					patch.finishReason,
+					patch.generationMs,
+					patch.reasoningMs,
+					rev,
+					messageId
+				]
+			);
+		});
 	}
 
 	/** Re-attribute a message to a persona (or clear it with null). Independent of
 	 *  content edits, so it never bumps edited_at. The persona a message was sent with
 	 *  is normally locked at send time; this is the deliberate, after-the-fact rebind. */
 	updateMessagePersona(messageId: string, personaId: string | null): void {
-		this.execute('UPDATE messages SET persona_id = ? WHERE id = ?', [personaId ?? null, messageId]);
+		this.inTransaction(() => {
+			const rev = this.revForMessageWrite(messageId);
+			this.execute('UPDATE messages SET persona_id = ?, rev = ? WHERE id = ?', [personaId ?? null, rev, messageId]);
+		});
 	}
 
 	/** Record which sprite label the Sprites engine read an assistant turn as. Metadata like the
 	 *  branch label below: it never touches content or edited_at, so re-reading a turn is not an
 	 *  edit and the memory pipeline has nothing to invalidate. */
 	updateMessageSpriteLabel(messageId: string, label: string | null): void {
-		this.execute('UPDATE messages SET sprite_label = ? WHERE id = ?', [label ?? null, messageId]);
+		this.inTransaction(() => {
+			const rev = this.revForMessageWrite(messageId);
+			this.execute('UPDATE messages SET sprite_label = ?, rev = ? WHERE id = ?', [label ?? null, rev, messageId]);
+		});
 	}
 
 	/** Bind every user turn in a chat to a persona at once (or clear with null). Powers the
@@ -1818,19 +1925,27 @@ class ServerDatabase {
 	 *  messages have no persona show a plain "You" until re-attributed. Only user rows are
 	 *  touched; content and edited_at are left alone. */
 	setChatUserPersona(chatId: string, personaId: string | null): void {
-		this.execute("UPDATE messages SET persona_id = ? WHERE chat_id = ? AND role = 'user'", [
-			personaId ?? null,
-			chatId
-		]);
+		this.inTransaction(() => {
+			const rev = this.bumpMessagesRev(chatId);
+			this.execute("UPDATE messages SET persona_id = ?, rev = ? WHERE chat_id = ? AND role = 'user'", [
+				personaId ?? null,
+				rev,
+				chatId
+			]);
+		});
 	}
 
 	/** Name (or clear) the branch a message heads. `label` is a { name, color } object or
 	 *  null to remove it. Purely story-map metadata, never touching content or edited_at. */
 	updateMessageBranchLabel(messageId: string, label: unknown): void {
-		this.execute('UPDATE messages SET branch_label = ? WHERE id = ?', [
-			label ? JSON.stringify(label) : null,
-			messageId
-		]);
+		this.inTransaction(() => {
+			const rev = this.revForMessageWrite(messageId);
+			this.execute('UPDATE messages SET branch_label = ?, rev = ? WHERE id = ?', [
+				label ? JSON.stringify(label) : null,
+				rev,
+				messageId
+			]);
+		});
 	}
 
 	/**
@@ -1911,6 +2026,7 @@ class ServerDatabase {
 
 		const paths = this.imagePathsOfMessages([messageId]);
 		const tx = this.db.transaction(() => {
+			const rev = this.bumpMessagesRev(message.chatId);
 			// Re-parented children join the new parent's existing children with fresh sibling
 			// indexes appended after them: two merging sibling sets must never share an index.
 			const base = this.getNextSiblingIndex(message.chatId, message.parentId);
@@ -1919,12 +2035,14 @@ class ServerDatabase {
 				[messageId]
 			);
 			children.forEach((child, i) => {
-				this.execute('UPDATE messages SET parent_id = ?, sibling_index = ? WHERE id = ?', [
+				this.execute('UPDATE messages SET parent_id = ?, sibling_index = ?, rev = ? WHERE id = ?', [
 					message.parentId,
 					base + i,
+					rev,
 					child.id
 				]);
 			});
+			this.recordMessageTombstones(message.chatId, [messageId], rev);
 			this.execute('DELETE FROM messages WHERE id = ?', [messageId]);
 			// The splice re-parents the children, so the one row that vanishes from the tree is
 			// this one and the parent is where anything pointing at it lands.
@@ -1940,6 +2058,7 @@ class ServerDatabase {
 		const doomed = this.descendantIds(messageId, true);
 		const paths = this.imagePathsOfMessages(doomed);
 		const tx = this.db.transaction(() => {
+			this.recordMessageTombstones(message.chatId, doomed, this.bumpMessagesRev(message.chatId));
 			this.execute(
 				`WITH RECURSIVE descendants AS (
 					SELECT id FROM messages WHERE id = ?
@@ -1962,6 +2081,7 @@ class ServerDatabase {
 		const doomed = this.descendantIds(messageId, false);
 		const paths = this.imagePathsOfMessages(doomed);
 		const tx = this.db.transaction(() => {
+			this.recordMessageTombstones(message.chatId, doomed, this.bumpMessagesRev(message.chatId));
 			this.execute(
 				`WITH RECURSIVE descendants AS (
 					SELECT id FROM messages WHERE parent_id = ?
@@ -2314,13 +2434,17 @@ class ServerDatabase {
 		greetings: string[]
 	): void {
 		const kept = Math.min(rows.length, greetings.length);
+		// Bumped once for however many rows this rewrite touches; lazy, so a save that
+		// changes nothing advances nothing and other devices are not asked to re-read.
+		let rev: number | null = null;
 		// Rewritten in place rather than reseeded: the row ids are what the chat's pointers
 		// name, so a reader parked on the third greeting is still on the third greeting after.
 		// No `edited_at` either: the card wrote this, not the user, and that stamp is the
 		// transcript's "edited" mark and memory's staleness signal (architecture/memory.md).
 		for (let i = 0; i < kept; i++) {
 			if (rows[i].content === greetings[i]) continue;
-			this.execute('UPDATE messages SET content = ? WHERE id = ?', [greetings[i], rows[i].id]);
+			rev ??= this.bumpMessagesRev(chat.id);
+			this.execute('UPDATE messages SET content = ?, rev = ? WHERE id = ?', [greetings[i], rev, rows[i].id]);
 		}
 
 		const dropped = rows.slice(kept);
@@ -2339,6 +2463,8 @@ class ServerDatabase {
 				pointers.canonLeafId = null;
 			}
 			this.updateChat(pointers);
+			rev ??= this.bumpMessagesRev(chat.id);
+			this.recordMessageTombstones(chat.id, dropped.map((row) => row.id as string), rev);
 			for (const row of dropped) this.execute('DELETE FROM messages WHERE id = ?', [row.id]);
 		}
 
@@ -3302,7 +3428,7 @@ export const MUTATION_SCOPES: Record<string, SyncScope> = {
 
 // Every method the bridge is allowed to dispatch (reads + mutations).
 const READ_METHODS = [
-	'getAllChats', 'getChat', 'getMessagesByChat', 'getMessageCounts', 'getLastPersonaByChat',
+	'getAllChats', 'getChat', 'getMessagesByChat', 'getMessagesDelta', 'getMessageCounts', 'getLastPersonaByChat',
 	'getLastUserMessageTimes',
 	'getChatListStats', 'getChatContentGroups', 'searchChatMessages', 'getChatMemoryFootprint',
 	'getUserStats',

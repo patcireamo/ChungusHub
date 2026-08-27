@@ -5,7 +5,7 @@
  * SQL (and the single source of truth) lives on the server; this is a thin, typed proxy,
  * so nothing above it knows where the data comes from.
  */
-import type { Chat, ChatListStats, ChatMemoryFootprint, Message, BranchLabel } from '$lib/types/chat';
+import type { Chat, ChatListStats, ChatMemoryFootprint, Message, MessagesDelta, BranchLabel } from '$lib/types/chat';
 import type { CharacterVersion, LibraryEntry } from '$lib/types/library';
 import type { Lorebook } from '$lib/lorebook/types';
 import type { SteeringNote } from '$lib/types/steering';
@@ -76,6 +76,13 @@ class DatabaseService {
 
 	// ===== MESSAGES =====
 	getMessagesByChat(chatId: string): Promise<Message[]> { return this.call('getMessagesByChat', chatId); }
+	/** What changed after `sinceRev` (upserts + deleted ids), or the whole transcript when
+	 *  `sinceRev` is null or unusable. Null when the chat is gone. The open chat's every
+	 *  refresh rides this instead of `getMessagesByChat`, so an action costs the rows it
+	 *  touched rather than the story. */
+	getMessagesDelta(chatId: string, sinceRev: number | null): Promise<MessagesDelta | null> {
+		return this.call('getMessagesDelta', chatId, sinceRev);
+	}
 	getMessageCounts(): Promise<Record<string, number>> { return this.call('getMessageCounts'); }
 	getLastUserMessageTimes(): Promise<Record<string, number>> { return this.call('getLastUserMessageTimes'); }
 	getLastPersonaByChat(): Promise<Record<string, string>> { return this.call('getLastPersonaByChat'); }

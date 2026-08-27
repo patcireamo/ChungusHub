@@ -101,7 +101,7 @@ class MessageStore {
 			});
 
 			const path = state.chat.activeLeafId
-				? findActivePath(await db.getMessagesByChat(state.chat.id), state.chat.activeLeafId)
+				? findActivePath(await chatStore.freshMessages(state.chat.id), state.chat.activeLeafId)
 				: [];
 			const prompt = await this.prepare('send', {
 				chatId: state.chat.id,
@@ -338,7 +338,7 @@ class MessageStore {
 			if (action === 'this_only') {
 				// Splice: only this row goes; its children re-parent to its parent and every
 				// subtree below survives.
-				const allMessages = await db.getMessagesByChat(state.chat.id);
+				const allMessages = await chatStore.freshMessages(state.chat.id);
 				const children = allMessages
 					.filter((m) => m.parentId === messageId)
 					.sort((a, b) => a.siblingIndex - b.siblingIndex);
@@ -346,7 +346,7 @@ class MessageStore {
 
 				// Re-parent children to this message's parent, then delete just this message
 				await db.deleteMessageOnly(messageId);
-				const after = await db.getMessagesByChat(state.chat.id);
+				const after = await chatStore.freshMessages(state.chat.id);
 
 				// If we deleted the root, update to new root (first surviving parentless row)
 				if (state.chat.rootMessageId === messageId) {
@@ -407,7 +407,7 @@ class MessageStore {
 
 				// Remaining sibling branches before deletion: prefer a same-role variant
 				// for continuity, else any fork (all branches are navigable now).
-				const allMessages = await db.getMessagesByChat(state.chat.id);
+				const allMessages = await chatStore.freshMessages(state.chat.id);
 				const pool = allMessages
 					.filter((m) => m.parentId === parentId && m.id !== messageId)
 					.sort((a, b) => a.siblingIndex - b.siblingIndex);
@@ -434,7 +434,7 @@ class MessageStore {
 						const prevSibling = [...siblings].reverse().find((s) => s.siblingIndex < deletedIndex);
 						const targetSibling = nextSibling ?? prevSibling ?? siblings[0];
 
-						const messagesAfterDelete = await db.getMessagesByChat(state.chat.id);
+						const messagesAfterDelete = await chatStore.freshMessages(state.chat.id);
 						newLeafId = findDeepestLeafFromNode(messagesAfterDelete, targetSibling.id);
 
 						// Verify the sibling still exists
@@ -453,7 +453,7 @@ class MessageStore {
 
 				// If we deleted the root, find a surviving root sibling
 				if (state.chat.rootMessageId === messageId) {
-					const remaining = await db.getMessagesByChat(state.chat.id);
+					const remaining = await chatStore.freshMessages(state.chat.id);
 					const newRoot = remaining
 						.filter((m) => m.parentId === null)
 						.sort((a, b) => a.siblingIndex - b.siblingIndex)[0];
@@ -480,7 +480,7 @@ class MessageStore {
 	private async repairCanon(chatId: string, preMessages: Message[]): Promise<void> {
 		const chat = await db.getChat(chatId);
 		if (!chat?.canonLeafId) return;
-		const post = await db.getMessagesByChat(chatId);
+		const post = await chatStore.freshMessages(chatId);
 		const alive = new Set(post.map((m) => m.id));
 		if (alive.has(chat.canonLeafId)) return;
 		const byId = new Map(preMessages.map((m) => [m.id, m]));
@@ -526,7 +526,7 @@ class MessageStore {
 		if (!state) throw new Error('No active chat');
 
 		// Find the deepest leaf starting from this message
-		const messages = await db.getMessagesByChat(state.chat.id);
+		const messages = await chatStore.freshMessages(state.chat.id);
 
 		// Validate message exists (might be stale reference from UI race condition)
 		const messageExists = messages.some((m) => m.id === messageId);
@@ -563,7 +563,7 @@ class MessageStore {
 		if (!state) throw new Error('No active chat');
 
 		// Fetch fresh data to avoid stale reference issues
-		const messages = await db.getMessagesByChat(state.chat.id);
+		const messages = await chatStore.freshMessages(state.chat.id);
 		const message = messages.find((m) => m.id === messageId);
 
 		if (!message) {
@@ -631,7 +631,7 @@ class MessageStore {
 				try {
 					newId = await this.generateResponse(state.chat.id, parentId, prompt);
 					if (newId && action === 'replace') {
-						const preDelete = await db.getMessagesByChat(state.chat.id);
+						const preDelete = await chatStore.freshMessages(state.chat.id);
 						await db.deleteMessageAndDescendants(message.id);
 						await this.repairCanon(state.chat.id, preDelete);
 					}
@@ -641,7 +641,7 @@ class MessageStore {
 					// reply, since nothing has been deleted by this point.
 					if (!newId) {
 						const restoreId =
-							prevLeafId ?? findDeepestLeafFromNode(await db.getMessagesByChat(state.chat.id), parentId);
+							prevLeafId ?? findDeepestLeafFromNode(await chatStore.freshMessages(state.chat.id), parentId);
 						await db.updateChatActiveLeaf(state.chat.id, restoreId, { touchUpdatedAt: false });
 					}
 					await chatStore.refreshCurrentChat();
@@ -665,7 +665,7 @@ class MessageStore {
 				try {
 					newId = await this.generateResponse(state.chat.id, message.id, prompt);
 					if (newId && action === 'replace') {
-						const preDelete = await db.getMessagesByChat(state.chat.id);
+						const preDelete = await chatStore.freshMessages(state.chat.id);
 						// Everything under the user turn EXCEPT the reply just written for it.
 						for (const child of preDelete.filter((m) => m.parentId === message.id && m.id !== newId)) {
 							await db.deleteMessageAndDescendants(child.id);
@@ -734,7 +734,7 @@ class MessageStore {
 
 		try {
 			// Fresh rows, never the state snapshot: the standing rule for long operations.
-			const allMessages = await db.getMessagesByChat(state.chat.id);
+			const allMessages = await chatStore.freshMessages(state.chat.id);
 			const target = allMessages.find((m) => m.id === leaf.id);
 			if (!target) throw new Error('The reply to continue no longer exists.');
 
@@ -1185,7 +1185,7 @@ class MessageStore {
 		leafId: string,
 		lorebookTrigger: LorebookTrigger
 	): Promise<BuiltPrompt | null> {
-		const messages = await db.getMessagesByChat(chatId);
+		const messages = await chatStore.freshMessages(chatId);
 		return this.prepare(gate, { chatId, chatMessages: findActivePath(messages, leafId), lorebookTrigger });
 	}
 }
