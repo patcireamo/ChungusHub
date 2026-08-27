@@ -143,8 +143,10 @@
 		{/if}
 	</div>
 
-	<!-- Name + preview line -->
-	<div class="min-w-0 flex-1">
+	<!-- Name + preview line. Held to the portrait's height (h-20 above) so the name starts
+	     at the same place in every row: centred, a short preview would sink it down the row
+	     and the list would have no line to be scanned by. -->
+	<div class="min-w-0 flex-1 min-h-20">
 		<span class="flex items-center gap-1.5 min-w-0">
 			<span class="font-ui font-medium text-sm text-text-primary truncate">{name}</span>
 			{#if active}
