@@ -319,18 +319,23 @@ class ChatStore {
 	private async fetchMessages(chatId: string): Promise<{ messages: Message[]; rev: number }> {
 		const state = this.currentChatState;
 		const loaded = state && state.chat.id === chatId ? state : null;
+		// Base and rev are captured together, BEFORE the await: another refresh can land
+		// while this one is on the wire, and a delta asked "since N" merged over a base
+		// that has moved past N would mix two server moments into one array. Pinned to
+		// the pair, the result is exactly the server's state at this call's read.
+		const baseMessages = loaded ? loaded.allMessages : null;
 		const delta = await db.getMessagesDelta(chatId, loaded ? loaded.messagesRev : null);
 		if (!delta) throw new Error(`Chat ${chatId} not found`);
 		if (delta.full) return { messages: delta.messages, rev: delta.rev };
 		// `full` is the answer wherever there is no baseline, so a non-full delta implies one.
-		const base = loaded!;
+		const base = baseMessages!;
 		if (delta.upserts.length === 0 && delta.deletedIds.length === 0) {
-			return { messages: base.allMessages, rev: delta.rev };
+			return { messages: base, rev: delta.rev };
 		}
 		const upserts = new Map(delta.upserts.map((m) => [m.id, m]));
 		const deleted = new Set(delta.deletedIds);
 		const merged: Message[] = [];
-		for (const row of base.allMessages) {
+		for (const row of base) {
 			if (deleted.has(row.id)) continue;
 			const fresh = upserts.get(row.id);
 			merged.push(fresh ?? row);

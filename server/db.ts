@@ -1794,6 +1794,13 @@ class ServerDatabase {
 	insertMessage(message: Record<string, unknown>): void {
 		this.inTransaction(() => {
 			const rev = this.bumpMessagesRev(message.chatId as string);
+			// A live row may never sit shadowed by a tombstone: nothing in the app reuses a
+			// message id today, but if one ever comes back, a lingering tombstone would tell
+			// every delta reader to delete a row that exists. The row wins.
+			this.execute('DELETE FROM message_tombstones WHERE chat_id = ? AND message_id = ?', [
+				message.chatId,
+				message.id
+			]);
 			this.execute(
 				`INSERT INTO messages
 				 (id, chat_id, parent_id, role, content, persona_id, branch_label, thinking, attachments_json, created_at, edited_at, minor_edited_at, sprite_label,

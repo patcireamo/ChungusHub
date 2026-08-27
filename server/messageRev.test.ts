@@ -229,7 +229,43 @@ describe('getMessagesDelta', () => {
 	test('a message for a chat that does not exist is refused loudly', () => {
 		expect(() => addMessage(crypto.randomUUID(), null, 'assistant', 'Orphan.')).toThrow(/no chat/);
 	});
+
+	test('a re-inserted id sheds its tombstone: the live row wins', () => {
+		const { chatId, reply } = seedChain();
+		const base = delta(chatId, null)!.rev;
+		serverDb.deleteMessageAndDescendants(reply);
+		// Nothing in the app reuses an id; this is the db-layer invariant holding anyway.
+		const again = { ...seedRowShape(chatId, reply), parentId: null, siblingIndex: 5 };
+		serverDb.insertMessage(again);
+		const d = delta(chatId, base)!;
+		if (d.full) throw new Error('unreachable');
+		expect(d.deletedIds).toEqual([]);
+		expect(d.upserts.map((m) => m.id)).toEqual([reply]);
+	});
 });
+
+function seedRowShape(chatId: string, id: string) {
+	return {
+		id,
+		chatId,
+		parentId: null,
+		role: 'assistant',
+		content: 'Back again.',
+		personaId: null,
+		branchLabel: null,
+		thinking: null,
+		attachments: null,
+		createdAt: (clock += 1000),
+		editedAt: null,
+		model: null,
+		provider: null,
+		tokensPrompt: null,
+		tokensCompletion: null,
+		finishReason: null,
+		generationMs: null,
+		siblingIndex: 0
+	};
+}
 
 describe('every message writer stamps', () => {
 	// The net for the writer nobody wrote a behavioral test for: each statement that
