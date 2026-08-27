@@ -14,13 +14,17 @@ interface BrowseViewState {
 	cardSize: number;
 	sort: SortOption;
 	perPage: number;
+	/** List rows draw the entry's tags. Off by default: the strip costs the preview line
+	 *  its second row, which is a trade only the reader can make. */
+	listTags: boolean;
 }
 
 export const DEFAULTS: BrowseViewState = {
 	viewMode: 'list',
 	cardSize: 3,
 	sort: 'newest',
-	perPage: 50
+	perPage: 50,
+	listTags: false
 };
 
 const VIEW_MODES: ViewMode[] = ['grid', 'list', 'gallery'];
@@ -33,7 +37,8 @@ function normalize(raw: Partial<BrowseViewState> | null): BrowseViewState {
 	// Validate against the characters superset: personas simply never offer the extras.
 	const sort = CHARACTER_SORT_OPTIONS.some((o) => o.id === raw?.sort) ? (raw!.sort as SortOption) : DEFAULTS.sort;
 	const perPage = PER_PAGE_OPTIONS.includes(raw?.perPage as number) ? (raw!.perPage as number) : DEFAULTS.perPage;
-	return { viewMode, cardSize, sort, perPage };
+	const listTags = typeof raw?.listTags === 'boolean' ? raw.listTags : DEFAULTS.listTags;
+	return { viewMode, cardSize, sort, perPage, listTags };
 }
 
 class BrowseViewPrefs {
@@ -43,6 +48,7 @@ class BrowseViewPrefs {
 	cardSize = $state<number>(DEFAULTS.cardSize);
 	sort = $state<SortOption>(DEFAULTS.sort);
 	perPage = $state<number>(DEFAULTS.perPage);
+	listTags = $state<boolean>(DEFAULTS.listTags);
 
 	constructor(key: string) {
 		this.#key = key;
@@ -62,6 +68,7 @@ class BrowseViewPrefs {
 		this.cardSize = state.cardSize;
 		this.sort = state.sort;
 		this.perPage = state.perPage;
+		this.listTags = state.listTags;
 	}
 
 	setViewMode(mode: ViewMode): void {
@@ -84,12 +91,18 @@ class BrowseViewPrefs {
 		this.persist();
 	}
 
+	setListTags(listTags: boolean): void {
+		this.listTags = listTags;
+		this.persist();
+	}
+
 	private persist(): void {
 		writeSetting(this.#key, {
 			viewMode: this.viewMode,
 			cardSize: this.cardSize,
 			sort: this.sort,
-			perPage: this.perPage
+			perPage: this.perPage,
+			listTags: this.listTags
 		} satisfies BrowseViewState);
 	}
 }

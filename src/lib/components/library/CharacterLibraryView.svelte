@@ -12,6 +12,7 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
+	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import { holdMsForBlast } from '$lib/components/ui/HoldToConfirmButton.svelte';
 	import Dialog from '$lib/components/ui/Dialog.svelte';
@@ -52,6 +53,7 @@
 
 	// View mode (grid cards vs. detail list). Persisted via the synced settings spine.
 	let viewMode = $derived(libraryViewPrefs.viewMode);
+	let listTags = $derived(libraryViewPrefs.listTags);
 
 	function setViewMode(mode: ViewMode) {
 		libraryViewPrefs.setViewMode(mode);
@@ -818,6 +820,20 @@
 					</div>
 				</div>
 
+				{#if viewMode === 'list'}
+					<div class="brw-sec">
+						<div class="flex items-center justify-between gap-2">
+							<span class="brw-sec-title">Show Tags</span>
+							<Toggle
+								size="sm"
+								checked={listTags}
+								onchange={(v) => libraryViewPrefs.setListTags(v)}
+								label="Show tags on each row"
+							/>
+						</div>
+					</div>
+				{/if}
+
 				{#if viewMode === 'grid'}
 					<div class="brw-sec">
 						<div class="brw-sec-head">
@@ -1197,6 +1213,7 @@
 							onExport={handleExport}
 							onConvert={(id) => (convertId = id)}
 							onTagClick={toggleTag}
+							showTags={listTags}
 						/>
 					{/each}
 				</div>

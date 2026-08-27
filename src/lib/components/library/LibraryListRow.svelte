@@ -29,6 +29,8 @@
 		/** Given, a tag chip toggles that tag in the browse filter. Absent on a surface with no
 		 *  tag filter to toggle, which leaves the chips as plain labels. */
 		onTagClick?: (tag: string) => void;
+		/** The tag strip is opt-in per browse surface: it costs the preview line its second row. */
+		showTags?: boolean;
 	}
 
 	let {
@@ -45,7 +47,8 @@
 		onToggleFavorite,
 		onExport,
 		onConvert,
-		onTagClick
+		onTagClick,
+		showTags = false
 	}: Props = $props();
 
 	function handleRowClick() {
@@ -94,7 +97,7 @@
 			? entry.data.traits.description || ''
 			: entry.data.traits.creatorNotes || ''
 	);
-	let tags = $derived(entry.identity.tags ?? []);
+	let tags = $derived(showTags ? (entry.identity.tags ?? []) : []);
 	// The row's height is the portrait's, and tags cost a line the preview was using.
 	// Giving one back keeps every row the same height, tagged or not.
 	let notesClamp = $derived(tags.length > 0 ? 'line-clamp-1' : 'line-clamp-2');
