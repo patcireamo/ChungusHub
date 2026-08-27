@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import LibraryEntryMenu from './LibraryEntryMenu.svelte';
+	import TagList from './TagList.svelte';
 	import { imageService } from '$lib/services/imageService';
 	import { portraitFocusStyle } from '$lib/utils/portrait-focus';
 	import type { LibraryEntry } from '$lib/types/library';
@@ -25,6 +26,9 @@
 		onExport?: (id: string) => void;
 		/** Opens the conversion dialog from the ⋮ menu: a persona made from this character, or the reverse. */
 		onConvert?: (id: string) => void;
+		/** Given, a tag chip toggles that tag in the browse filter. Absent on a surface with no
+		 *  tag filter to toggle, which leaves the chips as plain labels. */
+		onTagClick?: (tag: string) => void;
 	}
 
 	let {
@@ -40,7 +44,8 @@
 		deleteBlockedReason,
 		onToggleFavorite,
 		onExport,
-		onConvert
+		onConvert,
+		onTagClick
 	}: Props = $props();
 
 	function handleRowClick() {
@@ -89,6 +94,10 @@
 			? entry.data.traits.description || ''
 			: entry.data.traits.creatorNotes || ''
 	);
+	let tags = $derived(entry.identity.tags ?? []);
+	// The row's height is the portrait's, and tags cost a line the preview was using.
+	// Giving one back keeps every row the same height, tagged or not.
+	let notesClamp = $derived(tags.length > 0 ? 'line-clamp-1' : 'line-clamp-2');
 
 	function stop(e: Event) {
 		e.stopPropagation();
@@ -142,7 +151,12 @@
 			{/if}
 		</span>
 		{#if notes}
-			<p class="mt-1 text-xs text-text-muted line-clamp-2 leading-relaxed">{notes}</p>
+			<p class="mt-1 text-xs text-text-muted {notesClamp} leading-relaxed">{notes}</p>
+		{/if}
+		{#if tags.length > 0}
+			<!-- While selecting, the row's job is the checkbox: a chip that filtered would
+			     move entries out from under the selection it just made. -->
+			<TagList {tags} onTagClick={selectionMode ? undefined : onTagClick} class="mt-1.5" />
 		{/if}
 	</div>
 

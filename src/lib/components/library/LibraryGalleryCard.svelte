@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import LibraryEntryMenu from './LibraryEntryMenu.svelte';
+	import TagList from './TagList.svelte';
 	import { imageService } from '$lib/services/imageService';
 	import { portraitFocusAim } from '$lib/utils/portrait-focus';
 	import type { LibraryEntry } from '$lib/types/library';
@@ -25,6 +26,9 @@
 		onExport?: (id: string) => void;
 		/** Opens the conversion dialog from the ⋮ menu: a persona made from this character, or the reverse. */
 		onConvert?: (id: string) => void;
+		/** Given, a tag chip toggles that tag in the browse filter. Absent on a surface with no
+		 *  tag filter to toggle, which leaves the chips as plain labels. */
+		onTagClick?: (tag: string) => void;
 	}
 
 	let {
@@ -40,7 +44,8 @@
 		deleteBlockedReason,
 		onToggleFavorite,
 		onExport,
-		onConvert
+		onConvert,
+		onTagClick
 	}: Props = $props();
 
 	function handleCardClick() {
@@ -180,14 +185,14 @@
 		{/if}
 
 		{#if tags.length > 0}
-			<div class="flex items-center flex-nowrap gap-1 overflow-hidden pt-0.5">
-				{#each tags.slice(0, 3) as tag}
-					<span class="shrink min-w-0 px-1.5 py-0.5 text-[10px] font-ui font-medium rounded-[var(--radius-sm)] bg-white/15 backdrop-blur-sm text-white truncate">{tag}</span>
-				{/each}
-				{#if tags.length > 3}
-					<span class="shrink-0 px-1.5 py-0.5 text-[10px] font-ui text-white/70">+{tags.length - 3}</span>
-				{/if}
-			</div>
+			<!-- While selecting, the card's job is the checkbox: a chip that filtered would
+			     move entries out from under the selection it just made. -->
+			<TagList
+				{tags}
+				tone="overlay"
+				onTagClick={selectionMode ? undefined : onTagClick}
+				class="pt-0.5"
+			/>
 		{/if}
 	</div>
 </div>
