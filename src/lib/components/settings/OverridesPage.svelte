@@ -2,7 +2,7 @@
 	/**
 	 * Settings → This chat → Overrides: what the open chat does differently from the app.
 	 *
-	 * One card per overridable setting, each asking the same three things in the same order —
+	 * One card per overridable setting, each asking the same three things in the same order:
 	 * what is in force, where it came from, and which layer should decide. Persona is the
 	 * first; Connection and Preset are the ones this shape exists to make room for. Background
 	 * and ambient effects keep their own switch on the Interface page instead, beside the
@@ -10,7 +10,7 @@
 	 * tuning is.
 	 *
 	 * **Nothing on this page picks a value.** A persona is chosen where it has always been
-	 * chosen — the composer's picker, or the Library — and this page only decides which layer
+	 * chosen (the composer's picker, or the Library), and this page only decides which layer
 	 * remembers that choice. The split is the whole design: a second picker here would be a
 	 * second place a persona can be set, and the two would disagree the first time either was
 	 * used. It is also why switching persona by hand CLEARS the override rather than writing
@@ -18,7 +18,7 @@
 	 * control that looks broken.
 	 *
 	 * Each pill therefore reads as "make this the layer that decides", and pressing one is
-	 * seeded from whatever is already in force — so the press itself never changes who you
+	 * seeded from whatever is already in force, so the press itself never changes who you
 	 * are playing as, only where that answer is written down.
 	 */
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';

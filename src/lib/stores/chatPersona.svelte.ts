@@ -100,8 +100,8 @@ class ChatPersonaStore {
 	characterName = $derived(this.boundCharacter?.identity.name?.trim() || null);
 
 	/** How many OTHER chats a change to the character's default would actually reach. Chats
-	 *  carrying their own pin are excluded because they would not feel it, which is the whole
-	 *  reason this says a number rather than "other chats". */
+	 *  carrying a pin of their own are excluded because they would not feel it, which is the
+	 *  whole reason this says a number rather than "other chats". */
 	otherChatsFollowingCharacter = $derived.by((): number => {
 		const character = this.boundCharacter;
 		if (!character) return 0;
@@ -110,10 +110,14 @@ class ChatPersonaStore {
 			(chat) =>
 				chat.id !== openId &&
 				chat.characterId === character.id &&
-				normalizeChatFeatureState(chat.featureState).persona === null
+				// RESOLVED, not merely read off the column. A chat pinning a persona that has
+				// since been deleted is following the character's default too, because that
+				// pin falls through at resolve time like any other. Counting the raw value
+				// would under-report the reach of a change in the one line whose entire job
+				// is to state it.
+				this.livePersona(normalizeChatFeatureState(chat.featureState).persona) === null
 		).length;
 	});
-
 	/** Pin whatever is in force to this chat. Seeding from the resolved value is what makes
 	 *  the press itself change nothing on screen, the same trick chatScene.adopt uses. */
 	async pinToChat(): Promise<void> {
@@ -177,8 +181,10 @@ class ChatPersonaStore {
 
 	/** Write null over a chat's pin, skipping the write when there is nothing there: a chat
 	 *  row write broadcasts the `chats` scope and every other device answers with a refetch,
-	 *  so a no-op clear must not cost one. */
-	private async clearChatPin(chatId: string): Promise<void> {
+	 *  so a no-op clear must not cost one. Read raw rather than resolved on purpose, so a pin
+	 *  left naming a deleted persona still counts as something to clear: this is the one path
+	 *  that tidies that value away, and it does it the next time the reader touches the chat's
+	 *  scope rather than in a sweep nobody asked for. */	private async clearChatPin(chatId: string): Promise<void> {
 		const chat = chatStore.chats.find((c) => c.id === chatId) ?? this.openChat;
 		if (chat && normalizeChatFeatureState(chat.featureState).persona === null) return;
 		await chatStore.updateChatFeatureState(chatId, { persona: null });
