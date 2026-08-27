@@ -7,7 +7,7 @@
 	import TransformPanel from './TransformPanel.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { presetService } from '$lib/services/presets.svelte';
-	import { personaStore } from '$lib/stores/persona.svelte';
+	import { chatPersonaStore } from '$lib/stores/chatPersona.svelte';
 	import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
@@ -246,7 +246,7 @@
 		currentPreset
 			? assemblePrompt({
 					preset: currentPreset,
-					resolvedPersona: personaStore.activeResolved,
+					resolvedPersona: chatPersonaStore.resolved,
 					resolvedCharacters: activeCharacterEntry && activeCharacterData
 						? [
 								{
@@ -257,7 +257,7 @@
 						: [],
 					lorebooks: lorebookStore.resolveBooks([
 						...(activeCharacterData?.lorebookIds ?? []),
-						...(personaStore.activeEntry?.data.lorebookIds ?? [])
+						...(chatPersonaStore.resolvedEntry?.data.lorebookIds ?? [])
 					]),
 					lorebookSettings: lorebookSettingsStore.settings,
 					controls: currentPreset.controls ?? [],
@@ -490,7 +490,7 @@
 		}))
 	);
 	let personaGrid = $derived(personaOptions.length > PERSONA_GRID_THRESHOLD);
-	let activePersona = $derived(personaStore.activeEntry);
+	let activePersona = $derived(chatPersonaStore.resolvedEntry);
 	let activePersonaThumb = $derived(imageService.thumbnailUrl(activePersona?.identity.imageUrl));
 	let activePersonaFocus = $derived(portraitFocusStyle(activePersona?.identity.portraitFocus));
 	let personaTitle = $derived(
@@ -512,10 +512,14 @@
 	// unset persona is a library-level state, not a story move.
 	function pickPersona(id: string) {
 		personaMenuOpen = false;
-		if (id === personaStore.activeId) return;
-		personaStore.setActive(id);
+		// Compared against what this chat is ACTUALLY playing as, and only a no-op while the
+		// chat is already following the app: picking the persona an override happens to have
+		// pinned still has work to do, namely standing that override down.
+		if (id === chatPersonaStore.resolvedId && chatPersonaStore.scope === 'global') return;
+		void chatPersonaStore.switchGlobal(id);
 		const name = personaOptions.find((p) => p.id === id)?.name ?? 'persona';
-		// The persona is app-wide, so say so: the switch follows you into every chat.
+		// Switching by hand is an app-wide act and clears this chat's override, so the word
+		// "everywhere" is the literal truth rather than a simplification.
 		toastStore.success(`Now playing as ${name} everywhere`);
 	}
 
@@ -594,7 +598,7 @@
 		activeLeafId: chatStore.activeChat?.activeLeafId ?? null,
 		canonLeafId: chatStore.activeChat?.canonLeafId ?? null,
 		characterEntryId: activeCharacterEntry?.id ?? null,
-		personaEntryId: personaStore.activeEntry?.id ?? null,
+		personaEntryId: chatPersonaStore.resolvedEntry?.id ?? null,
 		lastTurnId: lastTurn?.id ?? null,
 		canContinue,
 		canRegenerateLast,
@@ -1435,7 +1439,7 @@
 													type="button"
 													role="menuitem"
 													class="persona-tile"
-													class:is-active={persona.id === personaStore.activeId}
+													class:is-active={persona.id === chatPersonaStore.resolvedId}
 													title={persona.name}
 													onclick={() => pickPersona(persona.id)}
 												>
@@ -1453,7 +1457,7 @@
 									{:else}
 										<div class="max-h-56 overflow-y-auto">
 											{#each personaOptions as persona (persona.id)}
-												{@const isActive = persona.id === personaStore.activeId}
+												{@const isActive = persona.id === chatPersonaStore.resolvedId}
 												<button
 													type="button"
 													role="menuitem"

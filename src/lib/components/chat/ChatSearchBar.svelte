@@ -26,7 +26,7 @@
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { messageStore } from '$lib/stores/messages.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
-	import { personaStore } from '$lib/stores/persona.svelte';
+	import { chatPersonaStore } from '$lib/stores/chatPersona.svelte';
 	import { expandSelfRefs } from '$lib/macros';
 	import { branchColorHex } from '$lib/utils/branch-labels';
 	import {
@@ -74,7 +74,7 @@
 		characterLibraryStore.entries.find((e) => e.id === chatStore.activeChat?.characterId)?.identity
 			.name || 'Character'
 	);
-	let selfRefUser = $derived(personaStore.activeResolved?.name || 'You');
+	let selfRefUser = $derived(chatPersonaStore.resolved?.name || 'You');
 
 	let branchHits = $derived.by(() => {
 		const regex = buildSearchRegex(chatSearch.query, {

@@ -112,11 +112,14 @@ export interface ChatFeatureState {
 	impersonatePerspective: ImpersonatePerspective;
 	/** Null while this chat has never been given a scene of its own. */
 	scene: ChatScene | null;
+	/** The persona this chat plays as, winning over the bound character's default and the
+	 *  app's active one. Null while the chat follows whichever of those two decides.
+	 *  An id naming a persona that no longer exists is NOT swept: it resolves as though it
+	 *  were null, one layer down (see stores/chatPersona.svelte.ts). */
+	persona: string | null;
 }
-
 function defaultChatFeatureState(): ChatFeatureState {
-	return { steeringHistory: [], impersonatePerspective: 'first', scene: null };
-}
+	return { steeringHistory: [], impersonatePerspective: 'first', scene: null, persona: null };}
 
 export const DEFAULT_CHAT_FEATURE_STATE: ChatFeatureState = defaultChatFeatureState();
 
@@ -129,6 +132,12 @@ function normalizeImpersonatePerspective(raw: unknown): ImpersonatePerspective {
 	return raw === 'first' || raw === 'second' || raw === 'third' ? raw : 'first';
 }
 
+/** A stored persona pin is only ever an id or nothing. Whether that id still names a
+ *  persona is deliberately NOT decided here: this file is pure and store-free, and the
+ *  library it would have to ask is not. The fall-through lives at resolve time instead. */
+function normalizePersonaId(raw: unknown): string | null {
+	return typeof raw === 'string' && raw.length > 0 ? raw : null;
+}
 /** A chat with no scene of its own reads as null, which is what "follows the app's" is.
  *  A stored one is coerced through the same two normalizers the settings stores use. */
 export function normalizeChatScene(raw: unknown): ChatScene | null {
@@ -164,9 +173,9 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 	return {
 		steeringHistory: normalizeSteeringHistory(obj.steeringHistory),
 		impersonatePerspective: normalizeImpersonatePerspective(obj.impersonatePerspective),
-		scene: normalizeChatScene(obj.scene)
-	};
-}
+		scene: normalizeChatScene(obj.scene),
+		persona: normalizePersonaId(obj.persona)
+	};}
 
 /** Move `text` to the front of a steering history (deduping an exact repeat instead
  *  of adding a second copy), capped at 10 entries. Pure. Used when a one-shot note

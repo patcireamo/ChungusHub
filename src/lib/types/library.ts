@@ -79,11 +79,31 @@ export interface LibraryEntry {
 	 * version rows (parked and active) always hold real, current content.
 	 */
 	activeVersionId?: string;
+	/**
+	 * What every chat of this character opens on, for values that are otherwise app-wide.
+	 * A sibling of `data` rather than a field inside it, deliberately: only `data` is
+	 * mirrored into version rows and only `data.traits` reaches a character card, so a
+	 * default kept here is neither versioned (a fork must not inherit a stale one) nor
+	 * exported (it names ids that mean nothing on another install). Absent for personas.
+	 */
+	overrides?: LibraryEntryOverrides;
 	isFavorite: boolean;
 	createdAt: number;
 	updatedAt: number;
 }
 
+/**
+ * Per-character defaults for settings that are otherwise app-wide. Persona is the first
+ * one; Connection and Preset are what this shape exists to leave room for.
+ *
+ * Every field is an id into some other table, and nothing enforces that the id still
+ * resolves: a default naming a deleted persona is inert and falls one layer down at
+ * resolve time rather than being swept at delete time (stores/chatPersona.svelte.ts).
+ */
+export interface LibraryEntryOverrides {
+	/** The persona every chat of this character plays as, unless the chat pins its own. */
+	personaId?: string;
+}
 /**
  * One named variant of a character ("pirate", "castle guard", "calmer take", …).
  * Versions are peers, not a linear history: the user forks before changing, switches

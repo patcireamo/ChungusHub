@@ -20,7 +20,7 @@
 	import { llmService } from '$lib/services/llm/provider';
 	import { presetService } from '$lib/services/presets.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
-	import { personaStore } from '$lib/stores/persona.svelte';
+	import { chatPersonaStore } from '$lib/stores/chatPersona.svelte';
 	import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
@@ -123,7 +123,7 @@
 	// auto-lorebook all included, instead of a separate approximation that drifts.
 	let assembleInput = $derived<AssembleInput>({
 		preset: currentPreset,
-		resolvedPersona: personaStore.activeResolved,
+		resolvedPersona: chatPersonaStore.resolved,
 		resolvedCharacters: activeCharacterEntry && activeCharacterData
 			? [
 					{
@@ -134,7 +134,7 @@
 			: [],
 		lorebooks: lorebookStore.resolveBooks([
 			...(activeCharacterData?.lorebookIds ?? []),
-			...(personaStore.activeEntry?.data.lorebookIds ?? [])
+			...(chatPersonaStore.resolvedEntry?.data.lorebookIds ?? [])
 		]),
 		lorebookSettings: lorebookSettingsStore.settings,
 		controls: currentPreset?.controls ?? [],

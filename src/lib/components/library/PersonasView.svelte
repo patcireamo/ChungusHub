@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
-	import { personaStore, LAST_PERSONA_REASON } from '$lib/stores/persona.svelte';
+	import { LAST_PERSONA_REASON } from '$lib/stores/persona.svelte';
+	import { chatPersonaStore } from '$lib/stores/chatPersona.svelte';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { workspaceFocus } from '$lib/stores/workspaceFocus.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
@@ -34,7 +35,7 @@
 	// wide and centered over the chat (LibraryEditorOverlay) via uiStore.libraryEditorId.
 	// Clicking a persona makes it the active "you"; the pencil opens its editor.
 	let personas = $derived(characterLibraryStore.personas);
-	let activeId = $derived(personaStore.activeEntry?.id ?? null);
+	let activeId = $derived(chatPersonaStore.resolvedId);
 	// The app keeps at least one persona (architecture/library.md): the server refuses the
 	// last delete, so the menu item goes inert and says why rather than vanishing.
 	let deleteBlockedReason = $derived(personas.length > 1 ? undefined : LAST_PERSONA_REASON);
@@ -163,7 +164,7 @@
 	// Story flow's persona step it also completes the flow: a fresh chat for the
 	// picked character (createChat's selectChat clears the flow), Library handed back.
 	async function handleSelectEntry(id: string) {
-		personaStore.setActive(id);
+		await chatPersonaStore.switchGlobal(id);
 		const characterId = uiStore.newChatStep === 'persona' ? uiStore.newChatCharacterId : null;
 		if (!characterId) return;
 		await chatStore.createChat({ characterId });

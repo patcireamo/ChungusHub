@@ -42,7 +42,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 		expect(normalizeChatFeatureState(raw)).toEqual({
 			steeringHistory: ['earlier note'],
 			impersonatePerspective: 'third',
-			scene: null
+			scene: null,
+			persona: null
 		});
 	});
 
@@ -50,7 +51,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 		const value = {
 			steeringHistory: ['x'],
 			impersonatePerspective: 'second' as const,
-			scene: null
+			scene: null,
+			persona: null
 		};
 		expect(normalizeChatFeatureState(value)).toEqual(value);
 	});
@@ -67,7 +69,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 		expect(result).toEqual({
 			steeringHistory: ['earlier note'],
 			impersonatePerspective: 'third',
-			scene: null
+			scene: null,
+			persona: null
 		});
 		expect('steering' in result).toBe(false);
 	});
@@ -120,6 +123,52 @@ describe('normalizeChatFeatureState: scene', () => {
 		// because a half-written blob was read generously.
 		const scene = normalizeChatFeatureState({ scene: { background: {}, ambient: {} } }).scene;
 		expect(scene?.enabled).toBe(false);
+	});
+});
+
+describe('normalizeChatFeatureState: persona', () => {
+	test('a chat with no pin of its own reads as null', () => {
+		expect(normalizeChatFeatureState({}).persona).toBeNull();
+		expect(normalizeChatFeatureState({ persona: null }).persona).toBeNull();
+	});
+
+	test('anything that is not a non-empty string is not an id', () => {
+		// The blob is the same data any device may have written, so a pin is only ever
+		// accepted in the one shape that can name a persona.
+		expect(normalizeChatFeatureState({ persona: '' }).persona).toBeNull();
+		expect(normalizeChatFeatureState({ persona: 7 }).persona).toBeNull();
+		expect(normalizeChatFeatureState({ persona: { id: 'mai' } }).persona).toBeNull();
+		expect(normalizeChatFeatureState({ persona: ['mai'] }).persona).toBeNull();
+	});
+
+	test('an id is kept verbatim, whether or not it still names a persona', () => {
+		// Deliberate: this file is pure and store-free, so it cannot ask the library
+		// whether the id resolves. A dangling pin falls one layer down at RESOLVE time
+		// (stores/chatPersona.svelte.ts) rather than being scrubbed on read, which is what
+		// keeps a persona deleted on one device from silently rewriting chats on another.
+		expect(normalizeChatFeatureState({ persona: 'persona-mai' }).persona).toBe('persona-mai');
+		expect(normalizeChatFeatureState({ persona: 'deleted-long-ago' }).persona).toBe('deleted-long-ago');
+	});
+
+	test('a pin survives the trip through the column it is stored in', () => {
+		const state = normalizeChatFeatureState({
+			steeringHistory: ['a note'],
+			impersonatePerspective: 'second',
+			persona: 'persona-mai'
+		});
+		expect(normalizeChatFeatureState(JSON.stringify(state))).toEqual(state);
+		expect(normalizeChatFeatureState(JSON.stringify(state)).persona).toBe('persona-mai');
+	});
+
+	test('a blob written before pins existed reads as no pin, not as corrupt', () => {
+		// The upgrade path: every chat row already on disk carries a blob with no persona
+		// key at all, and each one has to come back as "follows the app" rather than
+		// degrading the whole feature state to its defaults.
+		const legacy = JSON.stringify({ steeringHistory: ['kept'], impersonatePerspective: 'third' });
+		const state = normalizeChatFeatureState(legacy);
+		expect(state.persona).toBeNull();
+		expect(state.steeringHistory).toEqual(['kept']);
+		expect(state.impersonatePerspective).toBe('third');
 	});
 });
 

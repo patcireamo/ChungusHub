@@ -5,6 +5,7 @@
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { personaStore, LAST_PERSONA_REASON } from '$lib/stores/persona.svelte';
+	import { chatPersonaStore } from '$lib/stores/chatPersona.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { imageService, imageRejectionReason } from '$lib/services/imageService';
 	import LibraryEditorHeader from './LibraryEditorHeader.svelte';
@@ -26,7 +27,7 @@
 	let entry = $derived(characterLibraryStore.entries.find((e) => e.id === entryId));
 	// Brand-new personas get explicit Save/Discard; confirmed ones autosave silently.
 	let isNew = $derived(!!entry && characterLibraryStore.isUnconfirmedNew(entry.id));
-	let isActive = $derived(!!entry && personaStore.activeId === entry.id);
+	let isActive = $derived(!!entry && chatPersonaStore.resolvedId === entry.id);
 	// Edits land on the entry and the store's debounce carries them out, so "saving" is
 	// exactly "a write is still waiting".
 	let saving = $derived(!!entry && characterLibraryStore.hasPendingWrite(entry.id));
@@ -142,7 +143,7 @@
 	// ---- Entry actions ----
 	function handleSetActive() {
 		if (!entry) return;
-		personaStore.setActive(entry.id);
+		void chatPersonaStore.switchGlobal(entry.id);
 	}
 
 	async function handleToggleFavorite() {

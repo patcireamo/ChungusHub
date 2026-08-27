@@ -10,7 +10,7 @@ import { promptHoldStore } from './promptHold.svelte';
 import type { HoldGate } from '$lib/config/prompt-hold';
 import { joinContinuation } from '$lib/utils/continuation';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
-import { personaStore } from './persona.svelte';
+import { chatPersonaStore } from './chatPersona.svelte';
 import { chatCastStore } from './chatCast.svelte';
 import { resolveMacroValues, substitute } from '$lib/macros';
 import { buildLiveMacroContext } from '$lib/utils/live-macro-context';
@@ -1086,7 +1086,7 @@ class MessageStore {
 				data.role === 'user'
 					? data.personaId !== undefined
 						? data.personaId
-						: personaStore.activeId
+						: chatPersonaStore.resolvedId
 					: null,
 			branchLabel: data.branchLabel ?? null,
 			thinking: data.thinking ?? null,

@@ -2291,15 +2291,20 @@ class ServerDatabase {
 	}
 
 	/** The stored payload: identity + data, plus the active version pointer when the
-	 *  entry is versioned. Unversioned entries keep the exact pre-version shape. */
+	 *  entry is versioned and the per-character overrides when it carries any. Unversioned
+	 *  entries with no overrides keep the exact pre-version shape.
+	 *
+	 *  `overrides` sits out here beside `activeVersionId` rather than inside `data` because
+	 *  `data` is what gets mirrored into the active version row below, and a per-character
+	 *  default is a property of the character, not of one variant of it. */
 	private libraryPayload(entry: Record<string, unknown>): Record<string, unknown> {
 		const payload: Record<string, unknown> = { identity: entry.identity, data: entry.data };
 		if (entry.activeVersionId) payload.activeVersionId = entry.activeVersionId;
+		if (entry.overrides) payload.overrides = entry.overrides;
 		return payload;
 	}
 
-	insertLibraryEntry(entry: Record<string, unknown>): void {
-		this.execute(
+	insertLibraryEntry(entry: Record<string, unknown>): void {		this.execute(
 			`INSERT INTO character_library (id, type, data_json, is_favorite, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?)`,
 			[entry.id, entry.type, JSON.stringify(this.libraryPayload(entry)), entry.isFavorite ? 1 : 0, entry.createdAt, entry.updatedAt]

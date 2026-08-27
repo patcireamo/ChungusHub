@@ -18,7 +18,7 @@ import type { LLMCompletionResult, LLMMessage } from '$lib/types/llm';
 import { llmService } from '$lib/services/llm/provider';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
-import { personaStore } from '$lib/stores/persona.svelte';
+import { chatPersonaStore } from '$lib/stores/chatPersona.svelte';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { resolveLorebooks } from '$lib/lorebook/engine';
@@ -417,7 +417,7 @@ class MemoryStore {
 		const chatMessages = ctx.leafId ? findActivePath(ctx.allMessages, ctx.leafId) : [];
 		const base: MacroContext = {
 			resolvedCharacters: character ? [character] : [],
-			resolvedPersona: personaStore.activeResolved,
+			resolvedPersona: chatPersonaStore.resolved,
 			chatMessages,
 			controls: presetService.getActiveEffectivePreset()?.controls ?? [],
 			customFields: presetControlsStore.values,
@@ -428,7 +428,7 @@ class MemoryStore {
 		const lore = resolveLorebooks({
 			books: lorebookStore.resolveBooks([
 				...(data?.lorebookIds ?? []),
-				...(personaStore.activeEntry?.data.lorebookIds ?? [])
+				...(chatPersonaStore.resolvedEntry?.data.lorebookIds ?? [])
 			]),
 			messages: chatMessages.map((m) => m.content),
 			fields: lorebookScanFields(base.resolvedCharacters ?? [], base.resolvedPersona),
@@ -803,7 +803,7 @@ class MemoryStore {
 			const p = characterLibraryStore.entries.find((e) => e.id === m.personaId && e.type === 'persona');
 			if (p?.identity.name?.trim()) return p.identity.name.trim();
 		}
-		return personaStore.activeResolved?.name?.trim() || 'User';
+		return chatPersonaStore.resolved?.name?.trim() || 'User';
 	}
 }
 

@@ -15,7 +15,7 @@ import { expandMacros, type MacroContext, type PromptCharacter } from '$lib/macr
 import { resolveLorebooks } from '$lib/lorebook/engine';
 import { lorebookHistory, lorebookScanFields, type LorebookTrigger } from '$lib/lorebook/types';
 import { chatStore } from '$lib/stores/chat.svelte';
-import { personaStore } from '$lib/stores/persona.svelte';
+import { chatPersonaStore } from '$lib/stores/chatPersona.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
@@ -66,7 +66,7 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 				}
 			: undefined;
 	const base: MacroContext = {
-		resolvedPersona: personaStore.activeResolved,
+		resolvedPersona: chatPersonaStore.resolved,
 		resolvedCharacters: character ? [character] : [],
 		chatMessages,
 		controls: preset?.controls ?? [],
@@ -79,7 +79,7 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 	const lore = resolveLorebooks({
 		books: lorebookStore.resolveBooks([
 			...(characterData?.lorebookIds ?? []),
-			...(personaStore.activeEntry?.data.lorebookIds ?? [])
+			...(chatPersonaStore.resolvedEntry?.data.lorebookIds ?? [])
 		]),
 		messages: chatMessages.map((m) => m.content),
 		fields: lorebookScanFields(base.resolvedCharacters ?? [], base.resolvedPersona),

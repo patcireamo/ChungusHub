@@ -7,9 +7,9 @@ import type {
 	LibraryEntryType,
 	LibraryEntryIdentity,
 	LibraryEntryData,
+	LibraryEntryOverrides,
 	LibrarySeed
-} from '$lib/types/library';
-import { createEmptyCharacter, createEmptyPersona } from '$lib/types/library';
+} from '$lib/types/library';import { createEmptyCharacter, createEmptyPersona } from '$lib/types/library';
 import type { ImportResult } from '$lib/services/sillyTavernImport';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
@@ -546,6 +546,26 @@ class CharacterLibraryStore {
 		await this.persistEntry(entry);
 	}
 
+	/**
+	 * Merge this character's per-chat-override defaults (persona today) and write.
+	 *
+	 * A field passed as undefined is REMOVED rather than stored, and an entry left holding
+	 * nothing drops the key outright, so a character that has never carried a default keeps
+	 * byte-for-byte the payload it had before this existed (server/db.ts libraryPayload only
+	 * writes the key when it is truthy). That is what keeps `overrides` invisible to every
+	 * card export and every version fork.
+	 */
+	async updateOverrides(id: string, updates: Partial<LibraryEntryOverrides>): Promise<void> {
+		const entry = this.getEntryById(id);
+		if (!entry) return;
+		const merged: LibraryEntryOverrides = { ...entry.overrides, ...updates };
+		for (const key of Object.keys(merged) as (keyof LibraryEntryOverrides)[]) {
+			if (merged[key] === undefined) delete merged[key];
+		}
+		if (Object.keys(merged).length > 0) entry.overrides = merged;
+		else delete entry.overrides;
+		await this.persistEntry(entry);
+	}
 	/** Merge changes into the entry's live data (= the active version's content; the
 	 *  server mirrors the save into the active row) and write at once. */
 	async updateData(id: string, updates: LibraryDataUpdate): Promise<void> {

@@ -21,7 +21,7 @@
 	import { copyText } from '$lib/utils/clipboard';
 	import { previewContinuation } from '$lib/utils/continuation';
 	import { expandSelfRefs } from '$lib/macros';
-	import { personaStore } from '$lib/stores/persona.svelte';
+	import { chatPersonaStore } from '$lib/stores/chatPersona.svelte';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { memoryStore } from '$lib/memory/store.svelte';
@@ -140,7 +140,7 @@
 		characterLibraryStore.entries.find((e) => e.id === chatStore.activeChat?.characterId)?.identity
 			.name || 'Character'
 	);
-	const selfRefUser = $derived(personaStore.activeResolved?.name || 'You');
+	const selfRefUser = $derived(chatPersonaStore.resolved?.name || 'You');
 
 	$effect(() => {
 		if (showDeleteMenu && deleteMenuElement) {

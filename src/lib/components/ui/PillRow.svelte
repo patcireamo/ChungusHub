@@ -5,8 +5,7 @@
 	 * rides each pill's `title` and whatever InfoTip the caller puts by the row.
 	 */
 	interface Props {
-		options: { value: string; label: string; title?: string }[];
-		current: string;
+		options: { value: string; label: string; title?: string; disabled?: boolean }[];		current: string;
 		onpick: (value: string) => void;
 		/** aria-label for the radiogroup. */
 		label: string;
@@ -24,8 +23,8 @@
 			role="radio"
 			aria-checked={o.value === current}
 			title={o.title}
-			onclick={() => onpick(o.value)}
-		>
+			disabled={o.disabled}
+			onclick={() => onpick(o.value)}		>
 			{o.label}
 		</button>
 	{/each}
@@ -65,4 +64,15 @@
 		background: color-mix(in srgb, var(--color-accent) 13%, transparent);
 		border-color: color-mix(in srgb, var(--color-accent) 33%, transparent);
 	}
-</style>
+
+	/* An option that cannot be taken here stays on screen and inert rather than dropping
+	   out: a control that vanishes takes the reason with it, and the reader is left
+	   hunting for a pill they remember. Its `title` is where that reason goes. Last, so
+	   it wins over :hover and over the active tint. */
+	.pill:disabled,
+	.pill:disabled:hover {
+		opacity: 0.45;
+		cursor: not-allowed;
+		color: var(--color-text-secondary);
+		border-color: color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
+	}</style>

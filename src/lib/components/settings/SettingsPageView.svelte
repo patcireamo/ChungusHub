@@ -3,7 +3,7 @@
 	import ConnectionsPage from './ConnectionsPage.svelte';
 	import InterfacePage from './InterfacePage.svelte';
 	import ChatPage from './ChatPage.svelte';
-	import AdvancedPage from './AdvancedPage.svelte';
+	import OverridesPage from './OverridesPage.svelte';	import AdvancedPage from './AdvancedPage.svelte';
 	import SecurityPage from './SecurityPage.svelte';
 	import EnginesPage from './EnginesPage.svelte';
 	import ImportPage from './ImportPage.svelte';
@@ -23,9 +23,10 @@
 	let { page }: Props = $props();
 </script>
 
-{#if page === 'connections'}
-	<ConnectionsPage />
-{:else if page === 'interface'}
+{#if page === 'overrides'}
+	<OverridesPage />
+{:else if page === 'connections'}
+	<ConnectionsPage />{:else if page === 'interface'}
 	<InterfacePage />
 {:else if page === 'chat'}
 	<ChatPage />
