@@ -79,10 +79,15 @@ function makeChat(characterId: string | null, personaPin: string | null): string
 	});
 	if (personaPin !== null) {
 		// The column is an opaque JSON string the server never parses, which is exactly why
-		// the pin needed no migration to live here.
+		// neither the pin nor its later reshaping needed a migration to live here.
 		serverDb.updateChat({
 			id,
-			featureState: JSON.stringify({ steeringHistory: [], impersonatePerspective: 'first', scene: null, persona: personaPin })
+			featureState: JSON.stringify({
+				steeringHistory: [],
+				impersonatePerspective: 'first',
+				scene: null,
+				persona: { follows: 'persona', id: personaPin }
+			})
 		});
 	}
 	return id;
@@ -91,7 +96,8 @@ function makeChat(characterId: string | null, personaPin: string | null): string
 function chatPin(chatId: string): string | null {
 	const chat = serverDb.getChat(chatId) as { featureState: string | null } | null;
 	if (!chat?.featureState) return null;
-	return (JSON.parse(chat.featureState) as { persona?: string }).persona ?? null;
+	const decision = (JSON.parse(chat.featureState) as { persona?: { follows?: string; id?: string } }).persona;
+	return decision?.follows === 'persona' ? (decision.id ?? null) : null;
 }
 
 function characterDefault(entryId: string): string | null {

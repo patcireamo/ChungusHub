@@ -96,6 +96,22 @@ export interface ChatScene {
 	ambient: AmbientConfig;
 }
 
+/**
+ * What a chat has decided about who plays it. The absent case, null, is the fourth reading
+ * and the important one: the chat has decided NOTHING, and inherits.
+ *
+ * Three states rather than two, because "handed back to the app's persona" and "never said
+ * anything" are different chats. The first ignores whatever default its character carries;
+ * the second is exactly the chat that default exists to fill in. Collapse them and switching
+ * persona by hand in ONE chat strips the default off every other chat of that character,
+ * which is the bug this shape exists to prevent.
+ */
+export type ChatPersona =
+	/** The app's active persona, over the top of any default the character carries. */
+	| { follows: 'app' }
+	/** This persona specifically, whatever the character or the app says. */
+	| { follows: 'persona'; id: string };
+
 /** Per-chat state for the composer's steering + impersonate features and this chat's own
  *  scene. Persisted on Chat.featureState as an opaque JSON string. Always read through
  *  normalizeChatFeatureState, never constructed by hand except via
@@ -112,14 +128,15 @@ export interface ChatFeatureState {
 	impersonatePerspective: ImpersonatePerspective;
 	/** Null while this chat has never been given a scene of its own. */
 	scene: ChatScene | null;
-	/** The persona this chat plays as, winning over the bound character's default and the
-	 *  app's active one. Null while the chat follows whichever of those two decides.
-	 *  An id naming a persona that no longer exists is NOT swept: it resolves as though it
-	 *  were null, one layer down (see stores/chatPersona.svelte.ts). */
-	persona: string | null;
+	/** What this chat has decided about who plays it, or null while it has decided nothing
+	 *  and inherits. See ChatPersona above: the third state is what keeps a persona switch
+	 *  made in this chat out of every other chat of the same character. */
+	persona: ChatPersona | null;
 }
+
 function defaultChatFeatureState(): ChatFeatureState {
-	return { steeringHistory: [], impersonatePerspective: 'first', scene: null, persona: null };}
+	return { steeringHistory: [], impersonatePerspective: 'first', scene: null, persona: null };
+}
 
 export const DEFAULT_CHAT_FEATURE_STATE: ChatFeatureState = defaultChatFeatureState();
 
@@ -132,12 +149,47 @@ function normalizeImpersonatePerspective(raw: unknown): ImpersonatePerspective {
 	return raw === 'first' || raw === 'second' || raw === 'third' ? raw : 'first';
 }
 
-/** A stored persona pin is only ever an id or nothing. Whether that id still names a
- *  persona is deliberately NOT decided here: this file is pure and store-free, and the
- *  library it would have to ask is not. The fall-through lives at resolve time instead. */
-function normalizePersonaId(raw: unknown): string | null {
-	return typeof raw === 'string' && raw.length > 0 ? raw : null;
+/**
+ * Coerce a stored persona decision.
+ *
+ * A bare string is accepted as the pin it was: this field shipped id-only before the "follows
+ * the app" state existed, so a chat written by that build keeps the persona it was given.
+ *
+ * Whether an id still names a live persona is deliberately NOT decided here. This file is
+ * pure and store-free, and the library it would have to ask is neither; the fall-through
+ * lives at resolve time instead (stores/chatPersona.svelte.ts).
+ */
+export function normalizeChatPersona(raw: unknown): ChatPersona | null {
+	if (typeof raw === 'string') return raw.length > 0 ? { follows: 'persona', id: raw } : null;
+	if (!raw || typeof raw !== 'object') return null;
+	const stored = raw as { follows?: unknown; id?: unknown };
+	if (stored.follows === 'app') return { follows: 'app' };
+	if (stored.follows === 'persona' && typeof stored.id === 'string' && stored.id.length > 0) {
+		return { follows: 'persona', id: stored.id };
+	}
+	return null;
 }
+
+/**
+ * Whether a chat holding this decision reads its character's default.
+ *
+ * A chat that has decided nothing does. One explicitly on the app's persona does not, which
+ * is the whole point of that state. One pinned to a persona does only when the pin no longer
+ * resolves, since a dead pin falls one layer down like any other.
+ *
+ * `isLive` is passed in rather than looked up so this stays pure: the Overrides page counts
+ * how far a change to a character's default actually reaches, and that answer has to be the
+ * same one resolution gives.
+ */
+export function chatDefersToCharacter(
+	persona: ChatPersona | null,
+	isLive: (id: string) => boolean
+): boolean {
+	if (persona === null) return true;
+	if (persona.follows === 'app') return false;
+	return !isLive(persona.id);
+}
+
 /** A chat with no scene of its own reads as null, which is what "follows the app's" is.
  *  A stored one is coerced through the same two normalizers the settings stores use. */
 export function normalizeChatScene(raw: unknown): ChatScene | null {
@@ -174,8 +226,9 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		steeringHistory: normalizeSteeringHistory(obj.steeringHistory),
 		impersonatePerspective: normalizeImpersonatePerspective(obj.impersonatePerspective),
 		scene: normalizeChatScene(obj.scene),
-		persona: normalizePersonaId(obj.persona)
-	};}
+		persona: normalizeChatPersona(obj.persona)
+	};
+}
 
 /** Move `text` to the front of a steering history (deduping an exact repeat instead
  *  of adding a second copy), capped at 10 entries. Pure. Used when a one-shot note

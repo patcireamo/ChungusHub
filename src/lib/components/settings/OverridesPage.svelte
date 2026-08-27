@@ -13,9 +13,11 @@
 	 * chosen (the composer's picker, or the Library), and this page only decides which layer
 	 * remembers that choice. The split is the whole design: a second picker here would be a
 	 * second place a persona can be set, and the two would disagree the first time either was
-	 * used. It is also why switching persona by hand CLEARS the override rather than writing
-	 * into it (stores/chatPersona.svelte.ts): a picker that silently loses to a pin is a
-	 * control that looks broken.
+	 * used. It is also why switching persona by hand moves THIS chat to Global rather than
+	 * writing into whatever layer is armed (stores/chatPersona.svelte.ts): a picker that
+	 * silently loses to a pin is a control that looks broken. Only the open chat moves; the
+	 * character's default survives for its other chats, and pushing a new persona to all of
+	 * them is what the Character pill is for.
 	 *
 	 * Each pill therefore reads as "make this the layer that decides", and pressing one is
 	 * seeded from whatever is already in force, so the press itself never changes who you
@@ -33,6 +35,7 @@
 	let canScopeCharacter = $derived(chatPersonaStore.canScopeCharacter);
 	let characterName = $derived(chatPersonaStore.characterName);
 	let others = $derived(chatPersonaStore.otherChatsFollowingCharacter);
+	let ignoring = $derived(chatPersonaStore.ignoringCharacterDefault);
 
 	let personaName = $derived(entry?.identity.name?.trim() || 'No persona');
 	let thumb = $derived(imageService.thumbnailUrl(entry?.identity.imageUrl));
@@ -44,6 +47,7 @@
 		if (!canScope) return 'Open a chat to give it a persona of its own.';
 		if (scope === 'chat') return 'Pinned to this chat.';
 		if (scope === 'character') return `The default for ${characterName ?? 'this character'}.`;
+		if (ignoring) return "Following the app's persona, not this character's default.";
 		return "Following the app's active persona.";
 	});
 
@@ -59,6 +63,7 @@
 				: `${others} other chats with this character follow it too.`;
 		}
 		if (scope === 'chat') return 'No other chat is affected.';
+		if (ignoring) return `${characterName ?? 'This character'} keeps its default for its other chats.`;
 		return 'Switching persona from the composer or the Library always lands back here.';
 	});
 
@@ -80,7 +85,7 @@
 		{
 			value: 'global',
 			label: 'Global',
-			title: "Drop the override: this chat follows the app's active persona again.",
+			title: "This chat follows the app's active persona, ignoring any default its character carries. No other chat changes.",
 			disabled: !canScope
 		}
 	]);

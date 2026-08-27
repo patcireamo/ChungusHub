@@ -9,7 +9,12 @@
 import { describe, expect, test } from 'bun:test';
 
 import { effectSetting } from './ambient';
-import { DEFAULT_CHAT_FEATURE_STATE, normalizeChatFeatureState, pushSteeringHistoryEntry } from './chat';
+import {
+	chatDefersToCharacter,
+	DEFAULT_CHAT_FEATURE_STATE,
+	normalizeChatFeatureState,
+	pushSteeringHistoryEntry
+} from './chat';
 
 describe('normalizeChatFeatureState: degrading to defaults', () => {
 	test('null degrades to the defaults', () => {
@@ -127,48 +132,101 @@ describe('normalizeChatFeatureState: scene', () => {
 });
 
 describe('normalizeChatFeatureState: persona', () => {
-	test('a chat with no pin of its own reads as null', () => {
+	const read = (raw: unknown) => normalizeChatFeatureState({ persona: raw }).persona;
+
+	test('a chat that has decided nothing reads as null', () => {
 		expect(normalizeChatFeatureState({}).persona).toBeNull();
-		expect(normalizeChatFeatureState({ persona: null }).persona).toBeNull();
+		expect(read(null)).toBeNull();
 	});
 
-	test('anything that is not a non-empty string is not an id', () => {
-		// The blob is the same data any device may have written, so a pin is only ever
-		// accepted in the one shape that can name a persona.
-		expect(normalizeChatFeatureState({ persona: '' }).persona).toBeNull();
-		expect(normalizeChatFeatureState({ persona: 7 }).persona).toBeNull();
-		expect(normalizeChatFeatureState({ persona: { id: 'mai' } }).persona).toBeNull();
-		expect(normalizeChatFeatureState({ persona: ['mai'] }).persona).toBeNull();
+	test('a chat can say it follows the app, which is NOT the same as saying nothing', () => {
+		// The state the whole shape exists for: it has to survive the column, because the
+		// difference between it and null is whether the character's default reaches this chat.
+		expect(read({ follows: 'app' })).toEqual({ follows: 'app' });
+	});
+
+	test('a chat can name a persona', () => {
+		expect(read({ follows: 'persona', id: 'persona-mai' })).toEqual({
+			follows: 'persona',
+			id: 'persona-mai'
+		});
+	});
+
+	test('the id-only shape this field shipped with still reads as the pin it was', () => {
+		// Written by the build before "follows the app" existed. A chat given a persona then
+		// must not lose it, and there is no migration to do that: the column is opaque.
+		expect(read('persona-mai')).toEqual({ follows: 'persona', id: 'persona-mai' });
+		expect(read('')).toBeNull();
+	});
+
+	test('anything else is no decision at all', () => {
+		// The blob is the same data any device may have written, so a decision is only ever
+		// accepted in a shape that can actually be acted on.
+		expect(read(7)).toBeNull();
+		expect(read(['persona-mai'])).toBeNull();
+		expect(read({})).toBeNull();
+		expect(read({ follows: 'nonsense' })).toBeNull();
+		expect(read({ follows: 'persona' })).toBeNull();
+		expect(read({ follows: 'persona', id: '' })).toBeNull();
+		expect(read({ follows: 'persona', id: 42 })).toBeNull();
 	});
 
 	test('an id is kept verbatim, whether or not it still names a persona', () => {
-		// Deliberate: this file is pure and store-free, so it cannot ask the library
-		// whether the id resolves. A dangling pin falls one layer down at RESOLVE time
+		// Deliberate: this file is pure and store-free, so it cannot ask the library whether
+		// the id resolves. A dangling pin falls one layer down at RESOLVE time
 		// (stores/chatPersona.svelte.ts) rather than being scrubbed on read, which is what
 		// keeps a persona deleted on one device from silently rewriting chats on another.
-		expect(normalizeChatFeatureState({ persona: 'persona-mai' }).persona).toBe('persona-mai');
-		expect(normalizeChatFeatureState({ persona: 'deleted-long-ago' }).persona).toBe('deleted-long-ago');
-	});
-
-	test('a pin survives the trip through the column it is stored in', () => {
-		const state = normalizeChatFeatureState({
-			steeringHistory: ['a note'],
-			impersonatePerspective: 'second',
-			persona: 'persona-mai'
+		expect(read({ follows: 'persona', id: 'deleted-long-ago' })).toEqual({
+			follows: 'persona',
+			id: 'deleted-long-ago'
 		});
-		expect(normalizeChatFeatureState(JSON.stringify(state))).toEqual(state);
-		expect(normalizeChatFeatureState(JSON.stringify(state)).persona).toBe('persona-mai');
 	});
 
-	test('a blob written before pins existed reads as no pin, not as corrupt', () => {
-		// The upgrade path: every chat row already on disk carries a blob with no persona
-		// key at all, and each one has to come back as "follows the app" rather than
-		// degrading the whole feature state to its defaults.
+	test('a decision survives the trip through the column it is stored in', () => {
+		for (const decision of [{ follows: 'app' }, { follows: 'persona', id: 'persona-mai' }]) {
+			const state = normalizeChatFeatureState({
+				steeringHistory: ['a note'],
+				impersonatePerspective: 'second',
+				persona: decision
+			});
+			expect(normalizeChatFeatureState(JSON.stringify(state))).toEqual(state);
+			expect(normalizeChatFeatureState(JSON.stringify(state)).persona).toEqual(decision);
+		}
+	});
+
+	test('a blob written before this field existed reads as no decision, not as corrupt', () => {
+		// Every chat row already on disk carries a blob with no persona key at all, and each
+		// has to come back as "inherits" rather than degrading the whole feature state.
 		const legacy = JSON.stringify({ steeringHistory: ['kept'], impersonatePerspective: 'third' });
 		const state = normalizeChatFeatureState(legacy);
 		expect(state.persona).toBeNull();
 		expect(state.steeringHistory).toEqual(['kept']);
 		expect(state.impersonatePerspective).toBe('third');
+	});
+});
+
+describe('chatDefersToCharacter', () => {
+	// The predicate the Overrides page counts with. It has to give the same answer resolution
+	// does, or the "how many other chats does this reach" line is a confident wrong number.
+	const live = (id: string) => id === 'persona-alive';
+
+	test('a chat that has decided nothing reads the character default', () => {
+		expect(chatDefersToCharacter(null, live)).toBe(true);
+	});
+
+	test('a chat explicitly on the app does not', () => {
+		// This is the case the three-state shape was added for: without it, this chat would be
+		// indistinguishable from one that had never chosen, and a manual persona switch in one
+		// chat would have to strip the default off the card to take effect here.
+		expect(chatDefersToCharacter({ follows: 'app' }, live)).toBe(false);
+	});
+
+	test('a chat pinned to a live persona does not', () => {
+		expect(chatDefersToCharacter({ follows: 'persona', id: 'persona-alive' }, live)).toBe(false);
+	});
+
+	test('a chat pinned to a DELETED persona does, because that pin falls through', () => {
+		expect(chatDefersToCharacter({ follows: 'persona', id: 'persona-gone' }, live)).toBe(true);
 	});
 });
 

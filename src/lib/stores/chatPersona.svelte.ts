@@ -1,49 +1,63 @@
 /**
  * Which persona the open chat plays as.
  *
- * The app still has exactly one active persona (stores/persona.svelte.ts) and that is what
- * every chat starts from. On top of it a chat may pin its own, or inherit one pinned to the
- * character it is bound to, and this store is the single place those three layers resolve:
+ * The app still has exactly one active persona (stores/persona.svelte.ts). On top of it a
+ * character may carry a default for its chats, and a chat may say something of its own, and
+ * this store is the single place those layers resolve:
  *
  *   global      personaStore.activeId
  *     beaten by
  *   character   the bound entry's overrides.personaId
  *     beaten by
- *   chat        the chat row's featureState.persona
+ *   chat        the chat row's own decision (types/chat.ts ChatPersona)
  *
  * Everything that asks "who is the user in this story" reads `resolved` / `resolvedEntry`
  * here rather than personaStore, which keeps its own job intact: it is the app-wide value.
  *
- * **Switching persona by hand stands the overrides down.** All three doors that switch the
- * active persona (the composer's picker, the Personas list, the persona editor) go through
- * `switchGlobal`, which sets the app's persona and clears the pins. Without that a pin would
- * quietly outrank the switch and the control would look broken: you pick Polka, Mai stays.
- * Overrides are therefore set from exactly one place, the Overrides settings page.
+ * **A chat's decision has three states, and the third is load-bearing.** A chat may name a
+ * persona, may say "the app's, whatever this character defaults to", or may have said nothing
+ * at all and inherit. Without that middle state, handing ONE chat back to the app would have
+ * to be done by stripping the default off the character, which reaches every other chat of
+ * that card. That was the shape this store shipped with, and it was wrong.
+ *
+ * **Switching persona by hand detaches the open chat, and nothing else.** All three manual
+ * doors (the composer's picker, the Personas list, the persona editor) go through
+ * `switchGlobal`: it writes the app-wide value and moves THIS chat to "the app's", so the
+ * switch takes effect where the reader made it. A pin left standing would outrank the pick and
+ * the picker would read as broken. The character's default is not touched, so its other chats
+ * keep it; pushing a new persona to all of them is what the Character pill is for.
  *
  * Keyed on the chat that is ON SCREEN rather than the one being navigated to, for the same
  * reason chatScene is: `activeChatId` is claimed at the click and the rows land a couple of
  * hundred milliseconds later, so keying on it would relabel the outgoing story's turns with
  * the incoming chat's persona for that gap.
  *
- * A pin naming a persona that no longer exists resolves one layer down instead of being
- * swept at delete time. Lazy costs no writes and cannot miss a chat, and the case is nearly
- * unreachable anyway: the library keeps at least one persona and a delete hands the role to
- * a survivor server-side (architecture/library.md).
+ * A pin naming a persona that no longer exists resolves one layer down instead of being swept
+ * at delete time. Lazy costs no writes, cannot miss a chat, and cannot turn a delete on one
+ * device into a silent rewrite of another device's chats and cards. It is nearly unreachable
+ * anyway behind the persona floor, which keeps one persona alive and hands the role to a
+ * survivor (architecture/library.md). Pinned by `server/overrideLifetime.test.ts`.
  */
 
 import { chatStore } from '$lib/stores/chat.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 import { personaStore } from '$lib/stores/persona.svelte';
-import { normalizeChatFeatureState } from '$lib/types/chat';
+import { chatDefersToCharacter, normalizeChatFeatureState, type ChatPersona } from '$lib/types/chat';
 import type { LibraryEntry } from '$lib/types/library';
-import { toastStore } from '$lib/stores/toast.svelte';
 import type { PromptCharacter } from '$lib/macros';
 
-/** Which layer decided the persona currently in force. */export type PersonaScope = 'global' | 'character' | 'chat';
+/** Which layer decided the persona currently in force. */
+export type PersonaScope = 'global' | 'character' | 'chat';
 
 class ChatPersonaStore {
 	/** The chat on screen. See the note at the top on why this is not `activeChatId`. */
 	private openChat = $derived(chatStore.currentChatState?.chat ?? null);
+
+	/** What the open chat has said about its own persona, or null while it has said nothing. */
+	private decision = $derived.by((): ChatPersona | null => {
+		const chat = this.openChat;
+		return chat ? normalizeChatFeatureState(chat.featureState).persona : null;
+	});
 
 	/** The character the open chat is bound to. Null for an unbound chat, which is what
 	 *  makes the Character layer unavailable rather than merely empty. */
@@ -60,24 +74,37 @@ class ChatPersonaStore {
 		return characterLibraryStore.entries.find((e) => e.id === id && e.type === 'persona') ?? null;
 	}
 
-	/** This chat's own pin, if it still names a persona. */
+	/** The persona this chat named, if it named one and that one still exists. */
 	chatPin = $derived.by((): LibraryEntry | null => {
-		const chat = this.openChat;
-		if (!chat) return null;
-		return this.livePersona(normalizeChatFeatureState(chat.featureState).persona);
+		const decision = this.decision;
+		return decision?.follows === 'persona' ? this.livePersona(decision.id) : null;
 	});
+
+	/** Whether this chat has explicitly opted out of its character's default. */
+	private detached = $derived(this.decision?.follows === 'app');
 
 	/** The bound character's default, if it still names a persona. */
 	characterPin = $derived.by((): LibraryEntry | null =>
 		this.livePersona(this.boundCharacter?.overrides?.personaId)
 	);
 
-	/** Which layer is actually deciding, which is also which pill reads as on. */
-	scope = $derived<PersonaScope>(this.chatPin ? 'chat' : this.characterPin ? 'character' : 'global');
+	/** Which layer is actually deciding, which is also which pill reads as on. A chat that
+	 *  opted out and a chat with no default to inherit both read as global: what separates
+	 *  them only decides what a LATER character default would do to this chat, and a pill
+	 *  claiming otherwise would be describing bookkeeping rather than the story. */
+	scope = $derived.by((): PersonaScope => {
+		if (this.chatPin) return 'chat';
+		if (this.detached) return 'global';
+		return this.characterPin ? 'character' : 'global';
+	});
 
 	/** The persona in force for the open chat. Null only where the app has no persona at all
 	 *  (the first-run case), exactly as personaStore.activeEntry is null there. */
-	resolvedEntry = $derived(this.chatPin ?? this.characterPin ?? personaStore.activeEntry);
+	resolvedEntry = $derived.by((): LibraryEntry | null => {
+		if (this.chatPin) return this.chatPin;
+		if (this.detached) return personaStore.activeEntry;
+		return this.characterPin ?? personaStore.activeEntry;
+	});
 
 	/** Resolved for prompt assembly. A drop-in for personaStore.activeResolved, which is what
 	 *  lets the generation path pick this up without threading a chat id through it. */
@@ -99,95 +126,83 @@ class ChatPersonaStore {
 	/** The bound character's name, for the pill's own line. */
 	characterName = $derived(this.boundCharacter?.identity.name?.trim() || null);
 
-	/** How many OTHER chats a change to the character's default would actually reach. Chats
-	 *  carrying a pin of their own are excluded because they would not feel it, which is the
-	 *  whole reason this says a number rather than "other chats". */
+	/** Whether this chat follows the app while its character carries a default it could have
+	 *  inherited. The one case where "Global" needs a second sentence: the reader can see a
+	 *  default on the card and would otherwise have no idea why this chat ignores it. */
+	ignoringCharacterDefault = $derived(this.detached && this.characterPin !== null);
+
+	/** How many OTHER chats a change to the character's default would actually reach: the ones
+	 *  that READ through the character layer, which is not the same as the ones that stored
+	 *  nothing (see chatDefersToCharacter). A number is only worth saying if it is the number
+	 *  resolution would give. */
 	otherChatsFollowingCharacter = $derived.by((): number => {
 		const character = this.boundCharacter;
 		if (!character) return 0;
 		const openId = this.openChat?.id ?? null;
+		const isLive = (id: string) => this.livePersona(id) !== null;
 		return chatStore.chats.filter(
 			(chat) =>
 				chat.id !== openId &&
 				chat.characterId === character.id &&
-				// RESOLVED, not merely read off the column. A chat pinning a persona that has
-				// since been deleted is following the character's default too, because that
-				// pin falls through at resolve time like any other. Counting the raw value
-				// would under-report the reach of a change in the one line whose entire job
-				// is to state it.
-				this.livePersona(normalizeChatFeatureState(chat.featureState).persona) === null
+				chatDefersToCharacter(normalizeChatFeatureState(chat.featureState).persona, isLive)
 		).length;
 	});
+
 	/** Pin whatever is in force to this chat. Seeding from the resolved value is what makes
 	 *  the press itself change nothing on screen, the same trick chatScene.adopt uses. */
 	async pinToChat(): Promise<void> {
-		const chat = this.openChat;
 		const id = this.resolvedId;
-		if (!chat || !id) return;
-		await chatStore.updateChatFeatureState(chat.id, { persona: id });
+		if (!this.openChat || !id) return;
+		await this.write({ follows: 'persona', id });
 	}
 
-	/** Pin whatever is in force to the bound character, and drop this chat's own pin on the
-	 *  way: the chat pin outranks the one just written, so leaving it would highlight a layer
-	 *  the chat is not actually reading from. */
+	/** Pin whatever is in force to the bound character, and hand this chat back to inheriting
+	 *  so the layer just written is the one deciding. Null rather than "the app's": the chat
+	 *  has to READ the default it just set, and a detached chat would ignore it. */
 	async pinToCharacter(): Promise<void> {
-		const chat = this.openChat;
 		const character = this.boundCharacter;
 		const id = this.resolvedId;
-		if (!chat || !character || !id) return;
+		if (!this.openChat || !character || !id) return;
 		await characterLibraryStore.updateOverrides(character.id, { personaId: id });
-		await this.clearChatPin(chat.id);
+		await this.write(null);
 	}
 
-	/** Hand the chat back to the app's active persona. Both pins go, because either one left
-	 *  standing still outranks it and the pill would be claiming something untrue. */
-	async resetToGlobal(): Promise<LibraryEntry | null> {
-		return this.clearPins();
+	/** Hand THIS chat to the app's active persona and leave everything else alone. The
+	 *  character keeps its default, so its other chats keep theirs, and the explicit state is
+	 *  what stops this chat quietly re-inheriting that default on the next read. */
+	async resetToGlobal(): Promise<void> {
+		if (!this.openChat) return;
+		await this.write({ follows: 'app' });
 	}
 
 	/**
-	 * Switch the app's active persona, and stand down anything that would outrank it.
+	 * Switch the app's active persona, and make the switch stick in the chat it was made from.
 	 *
 	 * The one door for every manual switch (composer picker, Personas list, persona editor).
 	 * The two bootstrap calls, first run and the first persona ever created, deliberately stay
-	 * on personaStore.setActive: there is nothing to clear then, and routing them here would
-	 * make creating a persona reach into a character card.
+	 * on personaStore.setActive: there is nothing to detach then, and routing them here would
+	 * have creating a persona rewrite a chat row.
 	 *
-	 * Clearing the CHARACTER's default reaches that card's other chats, not just this one, so
-	 * it is announced here rather than by each caller: three doors that each had to remember
-	 * would eventually be two that do and one that does not. The chat pin is silent, since it
-	 * only ever affects the story already on screen.
+	 * Only the open chat moves. Every other chat of the same character keeps what it had,
+	 * which is the whole difference between this and the version that cleared the card.
 	 */
 	async switchGlobal(id: string): Promise<void> {
 		personaStore.setActive(id);
-		const cleared = await this.clearPins();
-		if (cleared) {
-			const name = cleared.identity.name?.trim() || 'that character';
-			toastStore.info(`${name} no longer has a default persona.`);
-		}
-	}
-	/** Drop every pin the open chat resolves through. Returns the character whose default was
-	 *  cleared, or null when there was none. */
-	private async clearPins(): Promise<LibraryEntry | null> {
-		const chat = this.openChat;
-		const character = this.boundCharacter;
-		const clearedCharacter = character?.overrides?.personaId ? character : null;
-		if (clearedCharacter) {
-			await characterLibraryStore.updateOverrides(clearedCharacter.id, { personaId: undefined });
-		}
-		if (chat) await this.clearChatPin(chat.id);
-		return clearedCharacter;
+		// Nothing to record when the chat already reads the app's persona and nothing could
+		// outrank it, and skipping that write matters: a chat row write broadcasts the `chats`
+		// scope, which every other device answers with a refetch.
+		if (this.detached) return;
+		if (this.decision === null && this.characterPin === null) return;
+		await this.resetToGlobal();
 	}
 
-	/** Write null over a chat's pin, skipping the write when there is nothing there: a chat
-	 *  row write broadcasts the `chats` scope and every other device answers with a refetch,
-	 *  so a no-op clear must not cost one. Read raw rather than resolved on purpose, so a pin
-	 *  left naming a deleted persona still counts as something to clear: this is the one path
-	 *  that tidies that value away, and it does it the next time the reader touches the chat's
-	 *  scope rather than in a sweep nobody asked for. */	private async clearChatPin(chatId: string): Promise<void> {
-		const chat = chatStore.chats.find((c) => c.id === chatId) ?? this.openChat;
-		if (chat && normalizeChatFeatureState(chat.featureState).persona === null) return;
-		await chatStore.updateChatFeatureState(chatId, { persona: null });
+	/** The one writer of a chat's persona decision. */
+	private async write(next: ChatPersona | null): Promise<void> {
+		const chat = this.openChat;
+		// Every caller gates on an open chat, so its absence here is a bug in one of them
+		// rather than a state worth absorbing.
+		if (!chat) throw new Error('No chat is open, so there is no persona decision to write');
+		await chatStore.updateChatFeatureState(chat.id, { persona: next });
 	}
 }
 
