@@ -1178,7 +1178,6 @@
 							onToggleFavorite={handleToggleFavorite}
 							onExport={handleExport}
 							onConvert={(id) => (convertId = id)}
-							onTagClick={toggleTag}
 						/>
 					{/each}
 				</div>

@@ -26,9 +26,6 @@
 		onExport?: (id: string) => void;
 		/** Opens the conversion dialog from the ⋮ menu: a persona made from this character, or the reverse. */
 		onConvert?: (id: string) => void;
-		/** Given, a tag chip toggles that tag in the browse filter. Absent on a surface with no
-		 *  tag filter to toggle, which leaves the chips as plain labels. */
-		onTagClick?: (tag: string) => void;
 	}
 
 	let {
@@ -44,8 +41,7 @@
 		deleteBlockedReason,
 		onToggleFavorite,
 		onExport,
-		onConvert,
-		onTagClick
+		onConvert
 	}: Props = $props();
 
 	function handleCardClick() {
@@ -185,14 +181,7 @@
 		{/if}
 
 		{#if tags.length > 0}
-			<!-- While selecting, the card's job is the checkbox: a chip that filtered would
-			     move entries out from under the selection it just made. -->
-			<TagList
-				{tags}
-				tone="overlay"
-				onTagClick={selectionMode ? undefined : onTagClick}
-				class="pt-0.5"
-			/>
+			<TagList {tags} tone="overlay" class="pt-0.5" />
 		{/if}
 	</div>
 </div>

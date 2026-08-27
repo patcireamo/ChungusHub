@@ -24,10 +24,10 @@
 				? 'bg-white/15 backdrop-blur-sm text-white'
 				: 'bg-bg-tertiary text-text-secondary')
 	);
-	// A chip is 21px tall, which is a poor target for a thumb, so the button's box grows
-	// past the chip and the negative margin hands the height back to the row.
+	// The strip clips horizontally, so a press target cannot be grown past the chip:
+	// whatever the button adds vertically is cut off top and bottom.
 	let pressClass = $derived(
-		'-my-1 py-1 cursor-pointer transition-colors ' +
+		'cursor-pointer transition-colors ' +
 			(overlay ? 'hover:bg-white/30' : 'hover:bg-border hover:text-text-primary')
 	);
 	let badgeClass = $derived(
