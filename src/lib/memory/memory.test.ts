@@ -26,7 +26,13 @@ import {
 } from './branching';
 import { describeMemoryImpact } from './impact-copy';
 import { buildRecall } from './recall';
-import { resolveConfig, DEFAULT_MEMORY_CONFIG } from './config';
+import {
+	resolveConfig,
+	sanitizeMemoryDefaults,
+	memorySliderMax,
+	MEMORY_CONFIG_FIELDS,
+	DEFAULT_MEMORY_CONFIG
+} from './config';
 import { DEFAULT_EXTRACT_TEMPLATE, DEFAULT_PROMOTE_TEMPLATE, longestRepeatedRun, sceneLengthInstruction } from './prompts';
 import type {
 	BatchResult,
@@ -238,6 +244,57 @@ describe('config', () => {
 		expect(sceneLengthInstruction(12)).toBe('4 to 8 sentences');
 		// A tiny batch still gets a floor: one sentence cannot carry a scene.
 		expect(sceneLengthInstruction(2)).toBe('3 to 5 sentences');
+	});
+});
+
+describe('app-wide defaults: what a chat is handed when memory is switched on', () => {
+	test('a value still on the shipped default is not stored', () => {
+		// "Never set" and "set to the shipped number" have to be one state, because that is
+		// what lets enabling write no override at all for a reader who never opened the page.
+		expect(sanitizeMemoryDefaults({ batchSize: DEFAULT_MEMORY_CONFIG.batchSize })).toEqual({});
+		expect(sanitizeMemoryDefaults(null)).toEqual({});
+		expect(sanitizeMemoryDefaults({})).toEqual({});
+	});
+
+	test('only real, in-range numbers on known keys survive', () => {
+		expect(sanitizeMemoryDefaults({ batchSize: 999 })).toEqual({ batchSize: 60 }); // clamped
+		expect(sanitizeMemoryDefaults({ verbatimTail: 0 })).toEqual({ verbatimTail: 1 });
+		expect(sanitizeMemoryDefaults({ batchSize: '8' })).toEqual({});
+		expect(sanitizeMemoryDefaults({ batchSize: NaN })).toEqual({});
+		expect(sanitizeMemoryDefaults({ nonsense: 4 })).toEqual({});
+	});
+
+	test('a stored default resolves exactly as the same per-chat override would', () => {
+		// The whole seeding path is a copy from one to the other, so the two must agree.
+		const defaults = sanitizeMemoryDefaults({ batchSize: 12, verbatimTail: 24 });
+		expect(resolveConfig(defaults)).toEqual({
+			...DEFAULT_MEMORY_CONFIG,
+			batchSize: 12,
+			verbatimTail: 24
+		});
+	});
+
+	test('the shared slider list covers every tunable, within its clamp', () => {
+		// One list drives the chat panel and the defaults card; a field missing here is a
+		// tunable that silently cannot be set on either surface.
+		expect(MEMORY_CONFIG_FIELDS.map((f) => f.key).sort()).toEqual(
+			(Object.keys(DEFAULT_MEMORY_CONFIG) as (keyof typeof DEFAULT_MEMORY_CONFIG)[]).sort()
+		);
+		for (const f of MEMORY_CONFIG_FIELDS) {
+			// With maxPerLayer given headroom, because promoteCount is bounded by that as well as
+			// by its own clamp, and narrowing it live against the value on screen is exactly what
+			// memorySliderMax is for. This checks each field against its OWN ceiling.
+			const clamped = resolveConfig({ maxPerLayer: 60, [f.key]: f.max });
+			expect(clamped[f.key]).toBe(f.max); // a slider must not offer what the clamp refuses
+		}
+	});
+
+	test('the merge slider stops where maxPerLayer does', () => {
+		// promoteCount above maxPerLayer is clamped away by resolveConfig, so a slider that
+		// still offered it would have a silently dead top half.
+		expect(memorySliderMax('promoteCount', 5)).toBe(5);
+		expect(memorySliderMax('promoteCount', 40)).toBe(20); // its own max still wins
+		expect(memorySliderMax('batchSize', 5)).toBe(40); // unaffected by maxPerLayer
 	});
 });
 

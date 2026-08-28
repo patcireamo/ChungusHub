@@ -91,3 +91,58 @@ export function resolveConfig(override?: Partial<MemoryConfig> | null): MemoryCo
 	if (out.promoteCount > out.maxPerLayer) out.promoteCount = out.maxPerLayer;
 	return out;
 }
+
+/**
+ * The five tunables as the two setting surfaces render them: the per-chat panel and the
+ * app-wide defaults on the Engines page. One list, because two hand-kept copies of the same
+ * five sliders part on the first change to either, and these labels are the same knowledge
+ * as `BOUNDS` above written for the reader rather than the clamp.
+ *
+ * `max` here is deliberately narrower than the `BOUNDS` ceiling for most fields: the clamp
+ * exists to make any stored number safe, the slider to make a useful range easy to land on.
+ */
+export const MEMORY_CONFIG_FIELDS: {
+	key: keyof MemoryConfig;
+	label: string;
+	min: number;
+	max: number;
+	help: string;
+}[] = [
+	{ key: 'verbatimTail', label: 'Keep verbatim', min: 1, max: 60, help: 'Most-recent messages always shown to the model word-for-word, never folded.' },
+	{ key: 'batchSize', label: 'Messages per summary', min: 2, max: 40, help: 'How many turns each episode summary covers. One model pass per batch.' },
+	{ key: 'maxPerLayer', label: 'Summaries per layer', min: 3, max: 40, help: 'Before the oldest are merged into a tighter layer above.' },
+	{ key: 'promoteCount', label: 'Merged at a time', min: 2, max: 20, help: 'How many old summaries merge into one on compaction.' },
+	{ key: 'maxLayers', label: 'Compaction layers', min: 1, max: 6, help: 'Depth of the summary ladder. The top layer compacts in place.' }
+];
+
+/** promoteCount can never exceed maxPerLayer (resolveConfig clamps it), and a slider whose
+ *  top half is silently ignored is worse than one that stops where the limit does. Takes the
+ *  maxPerLayer currently ON SCREEN, which during a drag is the draft, not the stored value. */
+export function memorySliderMax(key: keyof MemoryConfig, shownMaxPerLayer: number): number {
+	const field = MEMORY_CONFIG_FIELDS.find((f) => f.key === key);
+	const max = field ? field.max : BOUNDS[key].max;
+	return key === 'promoteCount' ? Math.min(max, shownMaxPerLayer) : max;
+}
+
+/**
+ * Clean a set of app-wide defaults down to what is worth storing: known keys, finite
+ * numbers, clamped exactly as a per-chat override is, and with anything still equal to the
+ * shipped default dropped.
+ *
+ * Dropping the equal ones is what keeps "no defaults set" and "defaults set to the shipped
+ * numbers" the same state. A reader who never opens the Engines page therefore stores an
+ * empty object here, and enabling memory on a chat writes no override at all, exactly as it
+ * did before app-wide defaults existed.
+ */
+export function sanitizeMemoryDefaults(raw: unknown): Partial<MemoryConfig> {
+	const out: Partial<MemoryConfig> = {};
+	if (!raw || typeof raw !== 'object') return out;
+	const src = raw as Partial<Record<keyof MemoryConfig, unknown>>;
+	for (const key of Object.keys(BOUNDS) as (keyof MemoryConfig)[]) {
+		const v = src[key];
+		if (typeof v !== 'number') continue;
+		const clamped = clampField(key, v);
+		if (clamped !== DEFAULT_MEMORY_CONFIG[key]) out[key] = clamped;
+	}
+	return out;
+}

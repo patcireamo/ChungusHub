@@ -6,7 +6,8 @@
 	 * read-only truth about which connection this engine is routed to, with a
 	 * link to the Connections page where routing lives), and Prompts (the
 	 * registry-declared templates, edited inline). Steering adds one card of its
-	 * own: the placement its notes inherit; see the comment on that card.
+	 * own: the placement its notes inherit; see the comment on that card. Chat
+	 * Memory adds the tunables a chat is given when memory is switched on for it.
 	 *
 	 * Prompt edits auto-save on a short debounce and flush on unmount, the same
 	 * live-write contract as every other settings surface; there is no Save
@@ -31,6 +32,13 @@
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import type { CallTarget } from '$lib/types/llm';
 	import { toggleRow } from '$lib/actions/toggleRow';
+	import { rangeReset } from '$lib/actions/rangeReset';
+	import {
+		DEFAULT_MEMORY_CONFIG,
+		MEMORY_CONFIG_FIELDS,
+		memorySliderMax
+	} from '$lib/memory/config';
+	import type { MemoryConfig } from '$lib/memory/types';
 	import { copyText } from '$lib/utils/clipboard';
 
 	/** The host list keys this component on the id, so it remounts per engine. */
@@ -117,6 +125,38 @@
 		if (copyTimer) clearTimeout(copyTimer);
 		copyTimer = setTimeout(() => (copied = null), 1300);
 	}
+
+	// ===== Chat Memory defaults =====
+	// The same commit-on-RELEASE contract the chat's own Memory panel uses, and for the same
+	// reason: these persist through the synced settings spine, so writing per drag tick would
+	// fire one write and one cross-device broadcast per pixel.
+	let memDraft = $state<Partial<Record<keyof MemoryConfig, number>>>({});
+
+	function memShown(key: keyof MemoryConfig): number {
+		return memDraft[key] ?? featurePromptsStore.memoryDefaults[key] ?? DEFAULT_MEMORY_CONFIG[key];
+	}
+
+	/** Against the DRAFT maxPerLayer, so dragging that slider narrows this one as it moves. */
+	function memMax(key: keyof MemoryConfig): number {
+		return memorySliderMax(key, memShown('maxPerLayer'));
+	}
+
+	function memDrag(key: keyof MemoryConfig, value: number): void {
+		memDraft = { ...memDraft, [key]: value };
+	}
+
+	function memCommit(key: keyof MemoryConfig, value: number): void {
+		memDraft = { ...memDraft, [key]: undefined };
+		featurePromptsStore.setMemoryDefault(key, value);
+	}
+
+	// A slider commits on release, so a drag ended by leaving the page never reached onchange
+	// and the value was simply lost. Same flush-on-unmount as the prompt fields above.
+	onDestroy(() => {
+		for (const [key, value] of Object.entries(memDraft)) {
+			if (typeof value === 'number') memCommit(key as keyof MemoryConfig, value);
+		}
+	});
 
 	/** Rows follow the template's own length, so a one-line wrapper gets a small box
 	 *  and a long memory template opens fully. Deliberately the `rows` attribute and
@@ -214,6 +254,52 @@
 			</div>
 		</section>
 
+	{/if}
+
+	<!-- Chat Memory's own card: the tunables a chat is handed when memory is first switched on
+	     for it. Copied into the chat at that moment, so this never reaches a chat that already
+	     has memory: its layer caps are load-bearing for summaries already stacked against them,
+	     and moving one under a running story would silently owe merges nobody asked for. The
+	     chat's own Memory panel is where those are changed. -->
+	{#if engine.id === 'memory'}
+		<section class="card">
+			<div class="card-head">
+				<span class="card-title">Starting defaults</span>
+			</div>
+			<div class="card-body">
+				{#each MEMORY_CONFIG_FIELDS as f (f.key)}
+					<div class="slider-block">
+						<div class="slider-top">
+							<span class="slider-label-wrap">
+								<label for="mem-default-{f.key}" class="slider-label">{f.label}</label>
+								<InfoTip text={f.help} />
+							</span>
+							<span class="slider-value">{memShown(f.key)}</span>
+						</div>
+						<input
+							id="mem-default-{f.key}"
+							type="range"
+							class="slider"
+							min={f.min}
+							max={memMax(f.key)}
+							step="1"
+							value={memShown(f.key)}
+							oninput={(e) => memDrag(f.key, Number(e.currentTarget.value))}
+							onchange={(e) => memCommit(f.key, Number(e.currentTarget.value))}
+							use:rangeReset={{
+								defaultValue: DEFAULT_MEMORY_CONFIG[f.key],
+								apply: (v) => memCommit(f.key, v)
+							}}
+						/>
+					</div>
+				{/each}
+				<p class="placement-note">
+					Copied into a chat when memory is switched on for it. Double-click a slider to put it
+					back to the shipped default. Chats that already have memory keep the numbers they were
+					enabled under; change those in the chat's own Memory panel.
+				</p>
+			</div>
+		</section>
 	{/if}
 
 	<!-- Sprites' own card: a reply is read once, and these are the only two things that
@@ -356,7 +442,7 @@
 		color: var(--color-text-primary);
 	}
 
-	/* ===== Default placement (Steering only) ===== */
+	/* ===== Default placement (Steering), Memory defaults ===== */
 
 	/* Labeled sub-group inside a card, the ChatPage recipe. */
 	.sub-block {

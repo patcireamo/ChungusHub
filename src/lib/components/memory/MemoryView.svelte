@@ -14,7 +14,7 @@
 		chatPersonaClaim,
 		chatPresetClaim
 	} from '$lib/utils/chat-setup';
-	import { DEFAULT_MEMORY_CONFIG } from '$lib/memory/config';
+	import { DEFAULT_MEMORY_CONFIG, MEMORY_CONFIG_FIELDS, memorySliderMax } from '$lib/memory/config';
 	import { countTokens } from '$lib/tokenizer';
 	import { rangeReset } from '$lib/actions/rangeReset';
 	import type { MemoryConfig } from '$lib/memory/types';
@@ -218,13 +218,8 @@
 	// verbatimTail bottoms out at 1, not 0: at 0 the boundary can reach the turn being
 	// answered, and {{chatHistory}} filters archived ids, so that turn would drop out of
 	// its own prompt, leaving a summary to speak for it (src/lib/memory/config.ts).
-	const SLIDERS: { key: keyof MemoryConfig; label: string; min: number; max: number; help: string }[] = [
-		{ key: 'verbatimTail', label: 'Keep verbatim', min: 1, max: 60, help: 'Most-recent messages always shown to the model word-for-word, never folded.' },
-		{ key: 'batchSize', label: 'Messages per summary', min: 2, max: 40, help: 'How many turns each episode summary covers. One model pass per batch.' },
-		{ key: 'maxPerLayer', label: 'Summaries per layer', min: 3, max: 40, help: 'Before the oldest are merged into a tighter layer above.' },
-		{ key: 'promoteCount', label: 'Merged at a time', min: 2, max: 20, help: 'How many old summaries merge into one on compaction.' },
-		{ key: 'maxLayers', label: 'Compaction layers', min: 1, max: 6, help: 'Depth of the summary ladder. The top layer compacts in place.' }
-	];
+	// The five sliders come from config.ts, shared with the app-wide defaults on the Engines
+	// page: two hand-kept copies of the same rows part on the first change to either.
 	let showSettings = $state(false);
 
 	// Sliders read from `draft` while dragging and from the store otherwise, and commit on
@@ -249,10 +244,9 @@
 		await memoryStore.updateConfig(chat.id, { [key]: value } as Partial<MemoryConfig>);
 	}
 
-	/** promoteCount can never exceed maxPerLayer (resolveConfig clamps it), and a slider whose
-	 *  top half is silently ignored is worse than one that stops where the limit does. */
-	function sliderMax(s: { key: keyof MemoryConfig; max: number }): number {
-		return s.key === 'promoteCount' ? Math.min(s.max, shown('maxPerLayer')) : s.max;
+	/** Against the DRAFT maxPerLayer, so dragging that slider narrows this one as it moves. */
+	function sliderMax(key: keyof MemoryConfig): number {
+		return memorySliderMax(key, shown('maxPerLayer'));
 	}
 
 	// A slider commits on release, so a drag ended by closing the panel (Escape, a chat
@@ -503,7 +497,7 @@
 				</button>
 				{#if showSettings}
 					<div class="memory-settings">
-						{#each SLIDERS as s (s.key)}
+						{#each MEMORY_CONFIG_FIELDS as s (s.key)}
 							<div class="memory-setting">
 								<div class="memory-setting-head">
 									<span class="memory-setting-label">
@@ -516,7 +510,7 @@
 									id="mem-{s.key}"
 									type="range"
 									min={s.min}
-									max={sliderMax(s)}
+									max={sliderMax(s.key)}
 									step="1"
 									value={shown(s.key)}
 									oninput={(e) => drag(s.key, Number((e.currentTarget as HTMLInputElement).value))}

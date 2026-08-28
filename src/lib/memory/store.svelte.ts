@@ -149,6 +149,13 @@ const llm: LlmFn = async (messages, signal) => {
 	return result.content;
 };
 
+/** A chat's own override, or null when it has none. An empty object is "none": the server row
+ *  can hold one, and treating it as a real override would both hide the app-wide defaults from
+ *  the pre-enable preview and stop enabling from seeding them. */
+function own(override: Partial<MemoryConfig> | null): Partial<MemoryConfig> | null {
+	return override && Object.keys(override).length > 0 ? override : null;
+}
+
 class MemoryStore {
 	activeChatId = $state<string | null>(null);
 	loaded = $state(false);
@@ -172,7 +179,19 @@ class MemoryStore {
 
 	private abort: AbortController | null = null;
 
-	config = $derived<MemoryConfig>(resolveConfig(this.configOverride));
+	/**
+	 * The tunables in force for the chat on screen.
+	 *
+	 * A chat that has memory ON reads its own stored override and nothing else, so the
+	 * app-wide defaults can never move the numbers under a story already summarised against
+	 * them (`featurePrompts.memoryDefaults`). A chat that does not yet have it on has no
+	 * numbers of its own, so it previews the defaults enabling is about to copy in. That is
+	 * also what makes the enable confirm quote the call count it will actually spend, rather
+	 * than one priced on a batch size the chat is never going to run.
+	 */
+	config = $derived<MemoryConfig>(
+		resolveConfig(this.enabled ? this.configOverride : (own(this.configOverride) ?? featurePromptsStore.memoryDefaults))
+	);
 
 	/** Whether the active preset actually injects {{memory}}. Recall reaches the model
 	 *  only through that macro, so without it nothing is archived, nothing is recalled and
@@ -754,9 +773,23 @@ class MemoryStore {
 		// point of usefulness would otherwise fold real turns behind summaries of nothing.
 		// Throws: the caller has to surface it, or enabling silently does nothing at all.
 		assertTemplates(featurePromptsStore.promptFor('memoryExtract'), featurePromptsStore.promptFor('memoryPromote'));
-		await memoryDb.setState(ctx.chatId, { enabled: true });
+		// The app-wide defaults are copied in HERE and only here, which is what makes them
+		// defaults rather than a live layer. Read fresh rather than off `configOverride`: a
+		// chat switched off and back on already has numbers of its own, and seeding over them
+		// would throw away tuning the reader did on this very chat.
+		const stored = await memoryDb.getState(ctx.chatId);
+		const patch: { enabled: true; config?: Partial<MemoryConfig> } = { enabled: true };
+		// Nothing is seeded when the chat already has numbers, and nothing when the defaults are
+		// untouched, in which case this writes exactly what it wrote before app-wide defaults
+		// existed: the switch, and no override.
+		const seed = featurePromptsStore.memoryDefaults;
+		if (!own(stored?.config ?? null) && Object.keys(seed).length > 0) patch.config = { ...seed };
+		await memoryDb.setState(ctx.chatId, patch);
 		// The user can switch chats through that round trip.
 		if (ctx.chatId !== this.activeChatId) return;
+		// Seeded numbers first, so nothing derived from `config` can observe the chat as enabled
+		// while it still reads as having no override of its own.
+		if (patch.config) this.configOverride = { ...patch.config };
 		this.enabled = true;
 		await this.build(ctx);
 	}

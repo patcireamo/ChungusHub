@@ -10,6 +10,8 @@
  */
 import { readSetting, writeSetting, registerSettingsReload } from '$lib/services/syncedSetting';
 import { DEFAULT_EXTRACT_TEMPLATE, DEFAULT_PROMOTE_TEMPLATE } from '$lib/memory/prompts';
+import { sanitizeMemoryDefaults } from '$lib/memory/config';
+import type { MemoryConfig } from '$lib/memory/types';
 import { clampSteeringDepth, STEERING_ROLES, type SteeringDefaults, type SteeringRole } from '$lib/types/steering';
 
 const SETTINGS_KEY = 'featurePrompts';
@@ -97,6 +99,17 @@ interface FeaturePromptsState {
 	 *  `depth`/`role` are tri-state, `null` = inherit; see types/steering.ts). */
 	steeringDefaultDepth: number;
 	steeringDefaultRole: SteeringRole;
+	/**
+	 * The memory tunables a chat is given when memory is first switched on for it, holding
+	 * only the fields moved off the shipped default (the `overrides` idiom above).
+	 *
+	 * Copied into the chat at that moment and never read again, so this is a starting point
+	 * and not a live layer: a chat already running keeps the numbers it was enabled under,
+	 * whatever happens here afterwards. That is the whole reason it is copied rather than
+	 * resolved through: the layer caps are load-bearing for stored summaries, and lowering
+	 * one here would otherwise silently owe merges on every chat that never touched it.
+	 */
+	memoryDefaults: Partial<MemoryConfig>;
 }
 
 function normalize(raw: Partial<FeaturePromptsState> | null): FeaturePromptsState {
@@ -113,7 +126,8 @@ function normalize(raw: Partial<FeaturePromptsState> | null): FeaturePromptsStat
 		steeringDefaultDepth: clampSteeringDepth(raw?.steeringDefaultDepth ?? 0),
 		steeringDefaultRole: STEERING_ROLES.includes(raw?.steeringDefaultRole as SteeringRole)
 			? (raw?.steeringDefaultRole as SteeringRole)
-			: 'system'
+			: 'system',
+		memoryDefaults: sanitizeMemoryDefaults(raw?.memoryDefaults)
 	};
 }
 
@@ -129,7 +143,8 @@ class FeaturePromptsStore {
 		spritesRereadOnEdit: false,
 		spritesRereadOnContinue: false,
 		steeringDefaultDepth: 0,
-		steeringDefaultRole: 'system'
+		steeringDefaultRole: 'system',
+		memoryDefaults: {}
 	});
 	loaded = $state(false);
 
@@ -153,6 +168,12 @@ class FeaturePromptsStore {
 
 	get openingSceneEnabled(): boolean {
 		return this.state.openingSceneEnabled;
+	}
+
+	/** The tunables the next chat to switch memory on is given. Only the fields moved off the
+	 *  shipped default are present; `resolveConfig` fills the rest. */
+	get memoryDefaults(): Partial<MemoryConfig> {
+		return this.state.memoryDefaults;
 	}
 
 	get steeringEnabled(): boolean {
@@ -214,6 +235,15 @@ class FeaturePromptsStore {
 
 	setMemoryEnabled(value: boolean): void {
 		this.state = { ...this.state, memoryEnabled: value };
+		this.persist();
+	}
+
+	/** Move one memory default, or drop it when it lands back on the shipped number, which
+	 *  is what the double-click reset on its slider does and what keeps an untouched set
+	 *  stored as `{}`. */
+	setMemoryDefault(key: keyof MemoryConfig, value: number): void {
+		const memoryDefaults = sanitizeMemoryDefaults({ ...this.state.memoryDefaults, [key]: value });
+		this.state = { ...this.state, memoryDefaults };
 		this.persist();
 	}
 
