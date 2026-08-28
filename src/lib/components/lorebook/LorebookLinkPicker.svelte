@@ -24,6 +24,9 @@
 
 	let books = $derived(lorebookStore.books);
 	let selectedSet = $derived(new Set(selected));
+	// What is actually linked, not what the id list says: a deleted book leaves its id behind
+	// (architecture/lorebook.md), and a foot counting those reads as a link to a book on screen.
+	let linkedCount = $derived(lorebookStore.resolveBooks(selected).length);
 
 	// Linked books first, then the shared display order (Lorebooks pane → switcher → Sort)
 	// within each group. The split is captured once at mount so a toggle restyles the row
@@ -123,7 +126,7 @@
 
 	<div class="lbp-foot">
 		<span class="lbp-foot-count">
-			{selected.length ? `${selected.length} of ${books.length} linked` : 'Nothing linked yet'}
+			{linkedCount ? `${linkedCount} of ${books.length} linked` : 'Nothing linked yet'}
 		</span>
 		<button type="button" class="lbp-foot-manage" onclick={openManager}>
 			Manage

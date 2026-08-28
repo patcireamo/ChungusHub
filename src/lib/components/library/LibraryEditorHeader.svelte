@@ -9,6 +9,7 @@
 	import type { Snippet } from 'svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import LorebookLinkPicker from '$lib/components/lorebook/LorebookLinkPicker.svelte';
+	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { CONVERT_ACTION } from '$lib/utils/entry-conversion';
 	import type { LibraryEntryType } from '$lib/types/library';
@@ -76,7 +77,10 @@
 	let lorebookRef = $state<HTMLDivElement | null>(null);
 	let menuRef = $state<HTMLDivElement | null>(null);
 
-	let lorebookCount = $derived(lorebookIds.length);
+	// Deleting a book leaves its id on the entry (architecture/lorebook.md), so the count
+	// resolves like every other reader. Counting the raw ids makes a link to a book that is
+	// gone read as a live one, and the shelf's remaining book gets the blame.
+	let lorebookCount = $derived(lorebookStore.resolveBooks(lorebookIds).length);
 
 	$effect(() => {
 		if (!lorebookOpen && !menuOpen) return;

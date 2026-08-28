@@ -2677,8 +2677,9 @@ class ServerDatabase {
 	deleteLorebook(id: string): void {
 		// Just drop the book. A character/persona may keep this id in data.lorebookIds, but
 		// every reader resolves links against existing books (prompt-builder, the store's
-		// resolveBooks, the assistant, the link picker) and skips ids with no book, so a dangling
-		// id is inert, and it's dropped the next time the entry is saved. We deliberately do NOT
+		// resolveBooks, the assistant, the link picker and both link counts) and skips ids with
+		// no book, so a dangling id is inert, and it's dropped the next time that entry's links
+		// are edited; an ordinary save carries it, since it sends data whole. We deliberately do NOT
 		// rewrite character_library here: that cross-table write under the 'lorebooks' sync
 		// scope would leave other devices' library caches stale and resurrect the id on a later
 		// save. Read-time filtering is the single, consistent source of truth.
