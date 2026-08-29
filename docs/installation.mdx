@@ -83,16 +83,17 @@ what it wrote before that upgrade is still in your snapshots.
 
 ## Settings file
 
-The port, the interface and both folder locations are read from `chungushub.config.json`, which
-ChungusHub writes beside the executable on its first run (beside the repository when you run from
-source):
+Everything ChungusHub has to know before it can answer anything is read from
+`chungushub.config.json`, which it writes beside the executable on its first run (beside the
+repository when you run from source):
 
 ```json
 {
   "port": 4242,
   "host": "0.0.0.0",
   "dataDir": "user-data",
-  "backupDir": "../backups"
+  "backupDir": "../backups",
+  "openBrowser": true
 }
 ```
 
@@ -101,20 +102,13 @@ relative one is read from the file's own folder, except `backupDir`, which is re
 folder, so snapshots stay beside the data when you move it. A value it cannot read stops the
 launch and names the line to fix, rather than starting somewhere nobody chose.
 
-## Environment variables
+`openBrowser` is what a downloaded build does as it starts. Set it to `false` and it serves
+without throwing a tab up, which is what a machine you are not sitting at wants. A copy run from
+source opens nothing either way.
 
-Set one and it wins over the file, which wins over the defaults above. Useful for a launcher
-script or a one-off run; anything permanent belongs in the file.
-
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `CHUNGUS_PORT` | `4242` | Port the server listens on |
-| `CHUNGUS_HOST` | `0.0.0.0` | Interface to bind once Network Access is on. Loopback either way while it is off |
-| `CHUNGUS_DATA_DIR` | `user-data`, located as above | Where the database and uploads live. Set this to pin it somewhere fixed |
-| `CHUNGUS_ALLOWLIST` | empty | Comma-separated IPs allowed to connect |
-| `CHUNGUS_NO_OPEN` | off | Set to `1` to stop the portable build opening a browser |
-| `CHUNGUS_BACKUP_DIR` | `backups` beside the data dir | Where snapshots are stored |
-| `CHUNGUS_SKIP_UPGRADE_BACKUP` | off | Set to `1` to skip the snapshot taken before a database upgrade |
+**A version that adds a setting adds its line to the file you already have**, leaving every value
+in it as you wrote it, so there is never anything to copy across by hand. It says on screen which
+line it added.
 
 <Note>
   A fresh install listens on this computer only: the port is opened on loopback and

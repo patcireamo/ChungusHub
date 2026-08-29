@@ -130,7 +130,9 @@ The port and both folder locations live in chungushub.config.json, written
 beside the executable the first time you run it. Change "port" there if
 something else on this machine already answers on ${DEFAULT_PORT}, or point
 "dataDir" at a folder of your own to keep one workspace while the app itself
-is replaced or moved. Changes apply the next time ChungusHub starts.
+is replaced or moved. Set "openBrowser" to false and it serves without
+opening one, which is what a machine you are not sitting at wants. Changes
+apply the next time ChungusHub starts.
 ${firstLaunch}
 To reach the app from your phone or another computer:
 

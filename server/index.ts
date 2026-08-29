@@ -7,7 +7,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { join, normalize } from 'node:path';
 import type { ServerWebSocket } from 'bun';
-import { CLIENT_DIR, CONFIG_ISSUES, CONFIG_PATH, DATA_DIR, DEFAULT_BACKGROUNDS_DIR, HOST, IS_COMPILED, PORT, SECURITY_PATH, ensureConfigFile, ensureDirs, type ImageCategory } from './config';
+import { CLIENT_DIR, CONFIG_ISSUES, CONFIG_NOTICES, CONFIG_OVERRIDES, CONFIG_PATH, DATA_DIR, DEFAULT_BACKGROUNDS_DIR, HOST, IS_COMPILED, OPEN_BROWSER, PORT, SECURITY_PATH, ensureConfigFile, ensureDirs, type ImageCategory } from './config';
 import { claimDataDir, type RunningInstance } from './instance-lock';
 import {
 	allowIp,
@@ -2102,6 +2102,12 @@ console.log('');
 console.log('  ChungusHub server running');
 console.log(`  → http://localhost:${server.port}`);
 console.log(`  → data:  ${DATA_DIR}`);
+// Last thing on screen rather than scrolled past at the top: an unused line in the settings file
+// and an environment variable quietly winning over one are both read here or nowhere.
+if (CONFIG_NOTICES.length > 0 || CONFIG_OVERRIDES.length > 0) {
+	console.log('');
+	for (const line of [...CONFIG_NOTICES, ...CONFIG_OVERRIDES]) console.log(`  ${line}`);
+}
 console.log('');
 if (!security.isNetworkAccessEnabled()) {
 	console.log(`  Access: this machine only. The port is open on ${server.hostname} alone.`);
@@ -2118,8 +2124,9 @@ if (!security.isNetworkAccessEnabled()) {
 if (security.isPasswordEnabled()) console.log('  Password lock: on (localhost is exempt).');
 
 // Portable build: pop the UI in the default browser so double-clicking the
-// executable feels like launching an app. CHUNGUS_NO_OPEN=1 suppresses it.
-if (IS_COMPILED && !process.env.CHUNGUS_NO_OPEN) {
+// executable feels like launching an app. "openBrowser": false turns it off,
+// which is what a machine nobody is sitting at wants.
+if (IS_COMPILED && OPEN_BROWSER) {
 	const url = `http://localhost:${server.port}`;
 	const cmd =
 		process.platform === 'win32'

@@ -2,7 +2,7 @@
  * Server configuration and filesystem paths.
  * Everything lives under a single data directory so the whole install is portable.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { ensurePrivacyMarkers } from './privacy-notice';
 
@@ -46,9 +46,32 @@ const DEFAULT_HOST = '0.0.0.0';
 const DEFAULT_DATA_DIR = 'user-data';
 /** Relative to the DATA dir, so a data folder moved somewhere else keeps its snapshots beside it. */
 const DEFAULT_BACKUP_DIR = '../backups';
-const CONFIG_KEYS = ['//', 'port', 'host', 'dataDir', 'backupDir'];
 
+/** Every setting the file holds and what a fresh install gets, in the order it is written. One
+ *  list, so the first write, the backfill and the unknown-key check can never disagree about
+ *  what a complete file looks like. */
+const CONFIG_DEFAULTS: Record<string, unknown> = {
+	'//': 'ChungusHub process settings, read once at startup: restart to apply, and an environment variable wins over anything here. Relative paths: dataDir from this file, backupDir from the data folder.',
+	port: DEFAULT_PORT,
+	host: DEFAULT_HOST,
+	dataDir: DEFAULT_DATA_DIR,
+	backupDir: DEFAULT_BACKUP_DIR,
+	openBrowser: true
+};
+/** A note is not a setting, so it is never backfilled: a reader who deleted one keeps it deleted. */
+const SETTING_KEYS = Object.keys(CONFIG_DEFAULTS).filter((key) => !key.startsWith('//'));
+
+/** A value this process cannot read, which stops the boot: it would otherwise substitute a
+ *  default for it, and the two it decides are where the data lives and who can reach it. */
 export const CONFIG_ISSUES: string[] = [];
+/** Printed at boot and nothing more. Nothing is being substituted for a key this build does not
+ *  know, so refusing to start on one would wall off going back to an older ChungusHub after a
+ *  newer one added a setting to the file, which is a move the app allows everywhere else. */
+export const CONFIG_NOTICES: string[] = [];
+/** Environment variables winning over a value the file also states, named on the boot banner.
+ *  An edited line that silently does nothing is the one failure a second settings surface can
+ *  still cause, and these are deliberately absent from the docs. */
+export const CONFIG_OVERRIDES: string[] = [];
 
 function readConfigFile(): Record<string, unknown> {
 	if (!existsSync(CONFIG_PATH)) return {};
@@ -65,13 +88,13 @@ function readConfigFile(): Record<string, unknown> {
 	}
 	const file = parsed as Record<string, unknown>;
 	// A misspelled key that silently does nothing is the whole reason this file exists to be
-	// hand-edited, so it is named rather than ignored. Anything starting with `//` is a note:
-	// the shipped file teaches that spelling with its own first line, so a reader adding a
-	// second one must not be met with an app that refuses to start.
+	// hand-edited, so it is named rather than ignored, on screen and not by refusing to start
+	// (see CONFIG_NOTICES). Anything beginning with `//` is a note: the shipped file teaches
+	// that spelling with its own first line, so a second one is not a typo.
 	for (const key of Object.keys(file)) {
 		if (key.startsWith('//')) continue;
-		if (!CONFIG_KEYS.includes(key)) {
-			CONFIG_ISSUES.push(`"${key}" in ${CONFIG_PATH} is not a setting. Known keys: ${CONFIG_KEYS.slice(1).join(', ')}.`);
+		if (!SETTING_KEYS.includes(key)) {
+			CONFIG_NOTICES.push(`"${key}" in ${CONFIG_PATH} is not a setting. Known keys: ${SETTING_KEYS.join(', ')}.`);
 		}
 	}
 	return file;
@@ -90,9 +113,23 @@ function fileText(key: 'host' | 'dataDir' | 'backupDir'): string | null {
 	return value.trim();
 }
 
+/** Strictly a boolean rather than anything truthy, for the same reason `readPort` refuses a value
+ *  that merely converts to a number: `"false"` is a string, and every string is true. Someone who
+ *  wrote it meaning off would get a browser on every launch and no line saying why. */
+function fileBool(key: 'openBrowser'): boolean | null {
+	const value = FILE[key];
+	if (value === undefined) return null;
+	if (typeof value !== 'boolean') {
+		CONFIG_ISSUES.push(`"${key}" in ${CONFIG_PATH} must be true or false.`);
+		return null;
+	}
+	return value;
+}
+
 const FILE_HOST = fileText('host');
 const FILE_DATA_DIR = fileText('dataDir');
 const FILE_BACKUP_DIR = fileText('backupDir');
+const FILE_OPEN_BROWSER = fileBool('openBrowser');
 
 function readPort(): number {
 	const fromEnv = process.env.CHUNGUS_PORT;
@@ -117,26 +154,63 @@ function readPort(): number {
 	return port;
 }
 
-/** Write the file on a first run, so the settings are visible to someone who has only a
- *  folder and a text editor. Defaults only, never the values this launch resolved: an
- *  environment variable outranks the file anyway, and baking one in would hand the next
- *  launch a path that was never meant to outlive the shell that set it. */
-export function ensureConfigFile(): void {
-	if (existsSync(CONFIG_PATH)) return;
-	const contents: Record<string, unknown> = {
-		'//': 'ChungusHub process settings, read once at startup: restart to apply, and an environment variable wins over anything here. Relative paths: dataDir from this file, backupDir from the data folder.',
-		port: DEFAULT_PORT,
-		host: DEFAULT_HOST,
-		dataDir: DEFAULT_DATA_DIR,
-		backupDir: DEFAULT_BACKUP_DIR
-	};
+/** Write-then-rename, same reason as security.json and allowlist.json, and a stronger one: this
+ *  is the file that says where the data lives, so a torn one stops the next boot with that line
+ *  gone. Returns what went wrong, or null. */
+function writeConfig(path: string, contents: Record<string, unknown>): string | null {
+	const temp = `${path}.tmp`;
 	try {
-		writeFileSync(CONFIG_PATH, `${JSON.stringify(contents, null, 2)}\n`);
+		writeFileSync(temp, `${JSON.stringify(contents, null, 2)}\n`);
+		renameSync(temp, path);
+		return null;
 	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
+}
+
+/**
+ * Bring the settings file up to date with the settings this build has. A first run writes the
+ * whole file, so they are visible to someone who has only a folder and a text editor. A file
+ * already there keeps every value in it and gains only the lines it lacks, so a setting added in
+ * a later version reaches an install that already exists rather than being one the reader has to
+ * hear about somewhere and type in.
+ *
+ * Three rules make that safe to run over a file somebody has edited:
+ *  - A file it cannot read is left byte for byte alone. Rebuilding one from defaults would drop
+ *    the line naming where the data lives, and the boot has already refused to start on it.
+ *  - A missing setting is written with its DEFAULT, never with the value this launch resolved: an
+ *    environment variable outranks the file anyway, and baking one in would hand the next launch
+ *    a path that was never meant to outlive the shell that set it.
+ *  - Nothing missing means nothing written, so the file is touched once per new setting.
+ *
+ * What is there is edited rather than rebuilt from a template, so notes, key order and a
+ * misspelled key all survive; the boot still names the typo. Only the indentation is normalised.
+ */
+export function ensureConfigFile(path = CONFIG_PATH): void {
+	if (!existsSync(path)) {
+		const failure = writeConfig(path, CONFIG_DEFAULTS);
 		// Not fatal, and deliberately not silent: with no file the defaults above are exactly
 		// what is running, so the launch is sound and only the way to change it is missing.
-		console.log(`  Could not write ${CONFIG_PATH}, so the defaults are in force: ${error instanceof Error ? error.message : String(error)}`);
+		if (failure) console.log(`  Could not write ${path}, so the defaults are in force: ${failure}`);
+		return;
 	}
+	let held: unknown;
+	try {
+		held = JSON.parse(readFileSync(path, 'utf8'));
+	} catch {
+		return;
+	}
+	if (!held || typeof held !== 'object' || Array.isArray(held)) return;
+	const settings = held as Record<string, unknown>;
+	const missing = SETTING_KEYS.filter((key) => !Object.hasOwn(settings, key));
+	if (missing.length === 0) return;
+	for (const key of missing) settings[key] = CONFIG_DEFAULTS[key];
+	const failure = writeConfig(path, settings);
+	console.log(
+		failure
+			? `  Could not add ${missing.join(', ')} to ${path}: ${failure}`
+			: `  Added ${missing.join(', ')} to ${path}.`
+	);
 }
 
 // Data directory: env override, else the file, else ./user-data under the base dir. Central,
@@ -215,6 +289,24 @@ export const DEFAULT_BACKGROUNDS_DIR = resolve(join(BASE_DIR, 'defaults', 'backg
 // ComfyUI 8188, Stable Diffusion 7860, Ollama 11434. A collision costs a first launch.
 export const PORT = readPort();
 export const HOST = process.env.CHUNGUS_HOST ?? FILE_HOST ?? DEFAULT_HOST;
+
+// Whether a launch throws the UI up in the default browser. Only the portable build reads it,
+// where the executable IS somebody's whole launch; a machine nobody is sitting at wants it off.
+export const OPEN_BROWSER = process.env.CHUNGUS_NO_OPEN ? false : (FILE_OPEN_BROWSER ?? true);
+
+// Only when the file states the key too: an override of something it never mentions confuses
+// nobody, while a line somebody edited and watched do nothing is exactly what this is for.
+for (const [variable, key] of [
+	['CHUNGUS_PORT', 'port'],
+	['CHUNGUS_HOST', 'host'],
+	['CHUNGUS_DATA_DIR', 'dataDir'],
+	['CHUNGUS_BACKUP_DIR', 'backupDir'],
+	['CHUNGUS_NO_OPEN', 'openBrowser']
+] as const) {
+	if (process.env[variable] && FILE[key] !== undefined) {
+		CONFIG_OVERRIDES.push(`${variable} is set, so "${key}" in ${CONFIG_PATH} is ignored.`);
+	}
+}
 
 // IPs seeded as always-allowed via env (comma-separated). Never written to the
 // allowlist file, handy for dev or scripted setups.
