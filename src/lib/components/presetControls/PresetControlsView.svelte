@@ -22,6 +22,7 @@
 	import PresetManager from '$lib/components/presets/PresetManager.svelte';
 	import CustomControlField from './CustomControlField.svelte';
 	import { presetService } from '$lib/services/presets.svelte';
+	import { chatPresetStore } from '$lib/stores/chatPreset.svelte';
 	import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 	import { imageService } from '$lib/services/imageService';
 	import { uiStore } from '$lib/stores/ui.svelte';
@@ -39,7 +40,7 @@
 	// Derived straight from the service's reactive maps, so the page tracks live:
 	// switching the active preset, editing controls in the builder while this
 	// overlay is open, sync reloads, with no snapshot to go stale.
-	let activePreset = $derived(presetService.getActiveEffectivePreset());
+	let activePreset = $derived(chatPresetStore.resolvedPreset);
 	let activeControls = $derived(activePreset?.controls ?? []);
 	let meta = $derived(activePreset?.meta);
 	let coverUrl = $derived(meta?.cover ? imageService.thumbnailUrl(meta.cover) : null);
@@ -347,16 +348,18 @@
 	// Selection rides an inline switcher here so the header reads like the other overlays;
 	// PresetManager (in the header's trailing slot) still owns every lifecycle action.
 	let allPresets = $derived(presetService.getAllPresets());
-	let activeId = $derived(presetService.getActivePresetId() ?? '');
+	let activeId = $derived(chatPresetStore.resolvedId ?? '');
 
 	let presetMenuOpen = $state(false);
 	let presetMenuRef = $state<HTMLDivElement | null>(null);
 
 	async function pickPreset(presetId: string): Promise<void> {
 		presetMenuOpen = false;
-		if (!presetId || presetId === activeId) return;
+		// See PresetManager.selectPreset: picking what an override already names is not a
+		// no-op, because the override still has to be stood down.
+		if (!presetId || (presetId === activeId && chatPresetStore.scope === 'global')) return;
 		try {
-			await presetService.activatePreset(presetId);
+			await chatPresetStore.switchGlobal(presetId);
 		} catch (err) {
 			toastStore.failed('switch the preset', err);
 		}

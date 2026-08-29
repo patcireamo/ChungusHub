@@ -19,6 +19,7 @@
 	import PresetManager from '$lib/components/presets/PresetManager.svelte';
 	import { llmService } from '$lib/services/llm/provider';
 	import { presetService } from '$lib/services/presets.svelte';
+	import { chatPresetStore } from '$lib/stores/chatPreset.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { chatPersonaStore } from '$lib/stores/chatPersona.svelte';
 	import { presetControlsStore } from '$lib/stores/presetControls.svelte';
@@ -216,7 +217,7 @@
 
 	// The active preset can change outside the builder too (sync from another device,
 	// the service's first-boot seeding). Reload the editor whenever it does.
-	let externalPresetId = $derived(presetService.getActivePresetId());
+	let externalPresetId = $derived(chatPresetStore.resolvedId);
 	let externalContentVersion = $derived(presetService.getContentVersion());
 
 	$effect(() => {

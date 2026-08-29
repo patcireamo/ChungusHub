@@ -93,17 +93,27 @@ export interface LibraryEntry {
 }
 
 /**
- * Per-character defaults for settings that are otherwise app-wide. Persona is the first
- * one; Connection and Preset are what this shape exists to leave room for.
+ * Per-character defaults for settings that are otherwise app-wide: what every chat of this
+ * character opens on, unless that chat says something of its own.
  *
  * Every field is an id into some other table, and nothing enforces that the id still
- * resolves: a default naming a deleted persona is inert and falls one layer down at
- * resolve time rather than being swept at delete time (stores/chatPersona.svelte.ts).
+ * resolves: a default naming a deleted persona, connection or preset is inert and falls one
+ * layer down at resolve time rather than being swept at delete time (types/chat.ts
+ * resolveOverrideId). An entry holding no fields at all drops the key outright, so a card
+ * that has never carried a default stores byte-for-byte what it stored before any of this
+ * existed (server/db.ts libraryPayload).
  */
 export interface LibraryEntryOverrides {
 	/** The persona every chat of this character plays as, unless the chat pins its own. */
 	personaId?: string;
+	/** The connection every chat of this character sends its story turns on. Only the
+	 *  `primary` routing point: the assistant and the calling engines keep the app-wide
+	 *  assignments, which are about which machinery runs where rather than about this story. */
+	connectionId?: string;
+	/** The prompt preset every chat of this character is assembled with. */
+	presetId?: string;
 }
+
 /**
  * One named variant of a character ("pirate", "castle guard", "calmer take", …).
  * Versions are peers, not a linear history: the user forks before changing, switches

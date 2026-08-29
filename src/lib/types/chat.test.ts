@@ -13,7 +13,10 @@ import {
 	chatDefersToCharacter,
 	DEFAULT_CHAT_FEATURE_STATE,
 	normalizeChatFeatureState,
-	pushSteeringHistoryEntry
+	pushSteeringHistoryEntry,
+	resolveOverrideId,
+	resolveOverrideScope,
+	type AnyChatOverride
 } from './chat';
 
 describe('normalizeChatFeatureState: degrading to defaults', () => {
@@ -48,7 +51,9 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			steeringHistory: ['earlier note'],
 			impersonatePerspective: 'third',
 			scene: null,
-			persona: null
+			persona: null,
+			connection: null,
+			preset: null
 		});
 	});
 
@@ -57,7 +62,9 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			steeringHistory: ['x'],
 			impersonatePerspective: 'second' as const,
 			scene: null,
-			persona: null
+			persona: null,
+			connection: null,
+			preset: null
 		};
 		expect(normalizeChatFeatureState(value)).toEqual(value);
 	});
@@ -75,7 +82,9 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			steeringHistory: ['earlier note'],
 			impersonatePerspective: 'third',
 			scene: null,
-			persona: null
+			persona: null,
+			connection: null,
+			preset: null
 		});
 		expect('steering' in result).toBe(false);
 	});
@@ -282,5 +291,155 @@ describe('pushSteeringHistoryEntry', () => {
 		expect(result).toHaveLength(10);
 		expect(result[0]).toBe('new entry');
 		expect(result[result.length - 1]).toBe('entry 8');
+	});
+});
+
+describe('normalizeChatFeatureState: connection and preset', () => {
+	const readConnection = (raw: unknown) => normalizeChatFeatureState({ connection: raw }).connection;
+	const readPreset = (raw: unknown) => normalizeChatFeatureState({ preset: raw }).preset;
+
+	test('both carry the same three states persona does', () => {
+		expect(readConnection(null)).toBeNull();
+		expect(readConnection({ follows: 'app' })).toEqual({ follows: 'app' });
+		expect(readConnection({ follows: 'connection', id: 'conn-1' })).toEqual({
+			follows: 'connection',
+			id: 'conn-1'
+		});
+		expect(readPreset(null)).toBeNull();
+		expect(readPreset({ follows: 'app' })).toEqual({ follows: 'app' });
+		expect(readPreset({ follows: 'preset', id: 'preset-1' })).toEqual({
+			follows: 'preset',
+			id: 'preset-1'
+		});
+	});
+
+	test('a decision stored under the wrong key reads as no decision, not as a pin', () => {
+		// `follows` is checked against the key being read, so a blob whose keys got crossed
+		// falls back to inheriting rather than pinning an id into the wrong table. The three
+		// live side by side in one column, so this is the mistake that column invites.
+		expect(readConnection({ follows: 'preset', id: 'preset-1' })).toBeNull();
+		expect(readPreset({ follows: 'connection', id: 'conn-1' })).toBeNull();
+		expect(normalizeChatFeatureState({ persona: { follows: 'preset', id: 'x' } }).persona).toBeNull();
+	});
+
+	test('the bare-string shape is persona-only', () => {
+		// Persona shipped id-only once and has to keep reading that. Neither of these ever
+		// did, so a bare string here is a corrupt value rather than an old one.
+		expect(normalizeChatFeatureState({ persona: 'persona-mai' }).persona).toEqual({
+			follows: 'persona',
+			id: 'persona-mai'
+		});
+		expect(readConnection('conn-1')).toBeNull();
+		expect(readPreset('preset-1')).toBeNull();
+	});
+
+	test('a blob written before either field existed reads as no decision', () => {
+		// Every chat row on disk from the persona-only build carries exactly this shape.
+		const legacy = JSON.stringify({
+			steeringHistory: [],
+			impersonatePerspective: 'first',
+			persona: { follows: 'app' }
+		});
+		const state = normalizeChatFeatureState(legacy);
+		expect(state.connection).toBeNull();
+		expect(state.preset).toBeNull();
+		expect(state.persona).toEqual({ follows: 'app' });
+	});
+
+	test('the three are independent: one decision never disturbs another', () => {
+		const state = normalizeChatFeatureState({
+			persona: { follows: 'persona', id: 'persona-mai' },
+			connection: { follows: 'app' },
+			preset: { follows: 'preset', id: 'preset-1' }
+		});
+		expect(state.persona).toEqual({ follows: 'persona', id: 'persona-mai' });
+		expect(state.connection).toEqual({ follows: 'app' });
+		expect(state.preset).toEqual({ follows: 'preset', id: 'preset-1' });
+		// And all three survive the column they share.
+		expect(normalizeChatFeatureState(JSON.stringify(state))).toEqual(state);
+	});
+});
+
+describe('resolveOverrideId / resolveOverrideScope', () => {
+	// The one layering rule, run by BOTH the reactive stores (stores/chatOverride.svelte.ts)
+	// and the generation path (utils/prompt-builder.ts). It is tested here rather than through
+	// a store on purpose: it is the shared half, and a store test would only prove that one of
+	// the two callers agrees with itself. That gap is what let an override change the
+	// composer's token meter while the prompt on the wire kept the app-wide value.
+	const live = (id: string) => id === 'chat-pin' || id === 'card-default' || id === 'app-value';
+
+	const both = (
+		decision: AnyChatOverride | null,
+		characterDefault: string | null,
+		globalId: string | null
+	) => ({
+		id: resolveOverrideId(decision, characterDefault, globalId, live),
+		scope: resolveOverrideScope(decision, characterDefault, live)
+	});
+
+	test('a chat that has decided nothing takes the character default, then the app', () => {
+		expect(both(null, 'card-default', 'app-value')).toEqual({
+			id: 'card-default',
+			scope: 'character'
+		});
+		expect(both(null, null, 'app-value')).toEqual({ id: 'app-value', scope: 'global' });
+	});
+
+	test("a chat's own pin beats both layers under it", () => {
+		expect(both({ follows: 'persona', id: 'chat-pin' }, 'card-default', 'app-value')).toEqual({
+			id: 'chat-pin',
+			scope: 'chat'
+		});
+	});
+
+	test('following the app beats the character default, which is why that state exists', () => {
+		// Two states could not carry this: without it, handing ONE chat back to the app would
+		// mean stripping the default off the card and reaching every other chat of it.
+		expect(both({ follows: 'app' }, 'card-default', 'app-value')).toEqual({
+			id: 'app-value',
+			scope: 'global'
+		});
+	});
+
+	test('a pin naming something deleted falls one layer down, exactly like saying nothing', () => {
+		// Lazy rather than swept at delete time: a sweep would let a delete on one device
+		// silently rewrite chats and cards on every other one.
+		expect(both({ follows: 'persona', id: 'gone' }, 'card-default', 'app-value')).toEqual({
+			id: 'card-default',
+			scope: 'character'
+		});
+		expect(both({ follows: 'persona', id: 'gone' }, null, 'app-value')).toEqual({
+			id: 'app-value',
+			scope: 'global'
+		});
+	});
+
+	test('a character default naming something deleted falls through too', () => {
+		expect(both(null, 'gone', 'app-value')).toEqual({ id: 'app-value', scope: 'global' });
+	});
+
+	test('nothing anywhere resolves to null rather than throwing', () => {
+		// The first-run case: no persona in the library at all, and every caller is written to
+		// take null for it.
+		expect(both(null, null, null)).toEqual({ id: null, scope: 'global' });
+	});
+
+	test('the scope always names the layer the id actually came from', () => {
+		// The pills read off the scope and the value reads off the id, so any disagreement
+		// between the two lights up the wrong pill beside the right value.
+		const decisions: (AnyChatOverride | null)[] = [
+			null,
+			{ follows: 'app' },
+			{ follows: 'persona', id: 'chat-pin' },
+			{ follows: 'persona', id: 'gone' }
+		];
+		for (const decision of decisions) {
+			for (const card of [null, 'card-default', 'gone']) {
+				const { id, scope } = both(decision, card, 'app-value');
+				if (scope === 'chat') expect(id).toBe('chat-pin');
+				else if (scope === 'character') expect(id).toBe('card-default');
+				else expect(id).toBe('app-value');
+			}
+		}
 	});
 });

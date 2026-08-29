@@ -34,6 +34,7 @@ import {
 	resolveParamPolicy
 } from '$lib/config/sampling';
 import { connectionStore } from '$lib/stores/connections.svelte';
+import { chatConnectionStore, STORY_ROUTING_POINT } from '$lib/stores/chatConnection.svelte';
 import { db } from '$lib/services/database';
 import { apiGet, apiSend, llmComplete } from '$lib/services/transport';
 import { tokenCalibration } from '$lib/tokenizer';
@@ -113,21 +114,41 @@ class LLMService {
 
 	// ===== Target resolution =====
 
+	/**
+	 * The connection serving a call target, with the open chat's own choice applied.
+	 *
+	 * Every resolution below runs through here, which is the whole reason it exists: the
+	 * model named in the composer, the context budget the assembler trims to and the request
+	 * that actually goes out all ask this one question, so they cannot answer it differently.
+	 *
+	 * Only `primary` can be overridden; see stores/chatConnection.svelte.ts for why the
+	 * assistant and the calling engines are deliberately left on the app-wide map. A chat
+	 * that has said nothing, or that names a connection which no longer exists, has already
+	 * fallen back to that map by the time this reads it.
+	 */
+	private connectionFor(target: CallTarget): Connection | undefined {
+		if (target === STORY_ROUTING_POINT) {
+			const own = chatConnectionStore.resolvedConnection;
+			if (own) return own;
+		}
+		return connectionStore.connectionFor(target);
+	}
+
 	providerFor(target: CallTarget): ProviderName | undefined {
-		return connectionStore.connectionFor(target)?.provider;
+		return this.connectionFor(target)?.provider;
 	}
 
 	modelFor(target: CallTarget): string {
-		return connectionStore.connectionFor(target)?.model ?? '';
+		return this.connectionFor(target)?.model ?? '';
 	}
 
 	connectionIdFor(target: CallTarget): string | undefined {
-		return connectionStore.connectionFor(target)?.id;
+		return this.connectionFor(target)?.id;
 	}
 
 	/** The connection's OpenRouter routing for a call target (openrouter only; null otherwise). */
 	routingFor(target: CallTarget): RoutingConfig | null {
-		const conn = connectionStore.connectionFor(target);
+		const conn = this.connectionFor(target);
 		if (!conn || conn.provider !== 'openrouter') return null;
 		return conn.routing;
 	}
@@ -141,12 +162,12 @@ class LLMService {
 	 *  Defaults to primary, the chat send; Opening Scene and Continue pass their own
 	 *  engine target so their assigned connection's prompt shape actually applies. */
 	getPromptPostProcessing(target: CallTarget = 'primary'): PromptPostProcessingMode {
-		return connectionStore.connectionFor(target)?.postProcessing ?? 'merge';
+		return this.connectionFor(target)?.postProcessing ?? 'merge';
 	}
 
 	/** User-turn placeholder a target's connection inserts under strict post-processing. */
 	getPromptPlaceholder(target: CallTarget = 'primary'): string {
-		return connectionStore.connectionFor(target)?.promptPlaceholder ?? '';
+		return this.connectionFor(target)?.promptPlaceholder ?? '';
 	}
 
 	/**
@@ -155,7 +176,7 @@ class LLMService {
 	 * calibration ratio so it lands in the base-estimate space the assembler counts in.
 	 */
 	getPromptTokenBudget(target: CallTarget = 'primary'): number {
-		const conn = connectionStore.connectionFor(target);
+		const conn = this.connectionFor(target);
 		if (!conn) return 0;
 		const real = computePromptBudget(conn.contextSize, conn.generation.maxTokens);
 		const ratio = tokenCalibration.ratioFor(conn.model);
@@ -270,7 +291,7 @@ class LLMService {
 	 * because its tool loop rides its own WebSocket channel.
 	 */
 	async resolveConnectionParams(target: CallTarget): Promise<Record<string, string | number>> {
-		const conn = connectionStore.connectionFor(target);
+		const conn = this.connectionFor(target);
 		if (!conn) throw new Error(`No connection resolved for the ${targetLabel(target)}`);
 		await this.ensureModelsLoaded(conn.id, conn.provider);
 		return this.getGenerationParams(conn, conn.model);
@@ -278,7 +299,7 @@ class LLMService {
 
 	/** Reasoning/verbosity/media tuning for a target's connection, filtered to provider support. */
 	getGenerationTuning(target: CallTarget): GenerationTuning | undefined {
-		const conn = connectionStore.connectionFor(target);
+		const conn = this.connectionFor(target);
 		if (!conn) return undefined;
 		const meta = this.meta[conn.provider];
 		return buildGenerationTuning(
@@ -294,7 +315,7 @@ class LLMService {
 
 	/** Whether attached images may ride a target's generation (connection toggle + provider media policy + model modality). */
 	sendsImages(target: CallTarget = 'primary', model?: string): boolean {
-		const conn = connectionStore.connectionFor(target);
+		const conn = this.connectionFor(target);
 		if (!conn || !conn.generation.sendImages) return false;
 		const meta = this.meta[conn.provider];
 		return imagesEnabled(meta?.media ?? null, this.getCachedModel(model ?? conn.model, conn.id));
@@ -310,7 +331,7 @@ class LLMService {
 		target: CallTarget,
 		options: Omit<LLMCompletionOptions, 'model'> & { model?: string; source?: string }
 	): Promise<LLMCompletionResult> {
-		const conn = connectionStore.connectionFor(target);
+		const conn = this.connectionFor(target);
 		if (!conn) throw new Error(`No connection resolved for the ${targetLabel(target)}`);
 		const provider = conn.provider;
 		const model = options.model ?? conn.model;

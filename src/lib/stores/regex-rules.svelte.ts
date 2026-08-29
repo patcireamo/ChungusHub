@@ -1,5 +1,6 @@
 import { readSetting, writeSetting, registerSettingsReload } from '$lib/services/syncedSetting';
 import { presetService } from '$lib/services/presets.svelte';
+import { chatPresetStore } from '$lib/stores/chatPreset.svelte';
 import { DebouncedWriter } from '$lib/utils/debounced-write';
 import {
 	applyRegexRules,
@@ -52,7 +53,7 @@ class RegexRulesStore {
 	/** The rules the active preset ships with, switched-off ones included: what the Regex
 	 *  page lists as the preset's own group. */
 	get carried(): RegexRule[] {
-		return presetService.getActiveEffectivePreset()?.regexRules ?? [];
+		return chatPresetStore.resolvedPreset?.regexRules ?? [];
 	}
 
 	/** Whether one carried rule runs: the reader's switch where they set one, the author's

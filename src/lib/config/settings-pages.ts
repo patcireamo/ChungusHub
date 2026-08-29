@@ -19,7 +19,11 @@ import { connectionStore } from '$lib/stores/connections.svelte';
 import { ENGINES } from '$lib/engines/registry';
 import { backupStore } from '$lib/stores/backups.svelte';
 import { advancedSettingsStore } from '$lib/stores/advanced-settings.svelte';
-import { chatPersonaStore } from '$lib/stores/chatPersona.svelte';import { APP_VERSION } from '$lib/version';
+import { chatPersonaStore } from '$lib/stores/chatPersona.svelte';
+import { chatConnectionStore } from '$lib/stores/chatConnection.svelte';
+import { chatPresetStore } from '$lib/stores/chatPreset.svelte';
+import type { OverrideScope } from '$lib/types/chat';
+import { APP_VERSION } from '$lib/version';
 
 /**
  * The assistant's deep-link tab ids. No icon rail carries them, so they exist purely
@@ -42,7 +46,8 @@ export type SettingsPage =
 	// This chat
 	| 'overrides'
 	// Connection
-	| 'connections'	// Appearance
+	| 'connections'
+	// Appearance
 	| 'interface'
 	| 'chat'
 	// App
@@ -117,15 +122,24 @@ function backupsSummary(): string {
 }
 
 /**
- * What the open chat is doing differently, or that it is doing nothing differently. Reads the
- * resolution store rather than the chat row, so a pin naming a persona that has since been
- * deleted summarises as the layer that actually decides rather than the one written down.
+ * What the open chat is doing differently, or that it is doing nothing differently.
+ *
+ * Reads the resolution stores rather than the chat row, so a pin naming something that has
+ * since been deleted summarises as the layer that actually decides rather than the one
+ * written down. One override is named, because the name is the useful part; more than one and
+ * the count is, because three names do not fit on a settings row.
  */
 function overridesSummary(): string {
-	const scope = chatPersonaStore.scope;
-	if (scope === 'global') return 'Following the app';
-	const name = chatPersonaStore.resolvedEntry?.identity.name?.trim() || 'a persona';
-	return scope === 'chat' ? `${name} · this chat` : `${name} · character`;
+	const overridden: { label: string; scope: OverrideScope }[] = [
+		{ label: 'Persona', scope: chatPersonaStore.scope },
+		{ label: 'Connection', scope: chatConnectionStore.scope },
+		{ label: 'Prompt', scope: chatPresetStore.scope }
+	].filter((row) => row.scope !== 'global');
+
+	if (overridden.length === 0) return 'Following the app';
+	if (overridden.length > 1) return `${overridden.length} overridden`;
+	const only = overridden[0];
+	return `${only.label} · ${only.scope === 'chat' ? 'this chat' : 'character'}`;
 }
 
 export const SETTINGS_GROUPS: SettingsGroup[] = [
@@ -134,7 +148,8 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		rows: [{ page: 'overrides', label: 'Overrides', icon: 'sliders', preview: overridesSummary }]
 	},
 	{
-		label: 'Connection',		rows: [{ page: 'connections', label: 'Connections', icon: 'radar', preview: connectionsSummary }]
+		label: 'Connection',
+		rows: [{ page: 'connections', label: 'Connections', icon: 'radar', preview: connectionsSummary }]
 	},
 	{
 		label: 'App',
@@ -178,7 +193,10 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 /** Which page hosts each assistant deep-link `data-setting` anchor. */
 export const ANCHOR_PAGES: Record<string, SettingsPage> = {
 	// This chat
-	'override-persona': 'overrides',	// Connection (all live inside the Connections page / its editor)
+	'override-persona': 'overrides',
+	'override-connection': 'overrides',
+	'override-preset': 'overrides',
+	// Connection (all live inside the Connections page / its editor)
 	connections: 'connections',
 	'model-routing': 'connections',
 	provider: 'connections',

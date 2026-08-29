@@ -20,6 +20,7 @@
 		type TraitKey
 	} from '$lib/types/library';
 	import { presetService } from '$lib/services/presets.svelte';
+	import { chatPresetStore } from '$lib/stores/chatPreset.svelte';
 	import Select from '$lib/components/ui/Select.svelte';
 	import { spriteSortPref, SPRITE_SORT_OPTIONS } from '$lib/stores/spriteSort.svelte';
 	import type { SpriteSort } from '$lib/utils/sprites';
@@ -108,7 +109,7 @@
 	// of macro names the active preset actually uses (enabled items only), recomputed
 	// reactively as the preset or its draft changes.
 	let referencedMacros = $derived.by(() => {
-		const preset = presetService.getActiveEffectivePreset();
+		const preset = chatPresetStore.resolvedPreset;
 		const names = new Set<string>();
 		for (const item of preset?.items ?? []) {
 			if (item.enabled) for (const macro of extractMacroNames(item.content)) names.add(macro);

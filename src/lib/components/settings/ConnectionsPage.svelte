@@ -21,6 +21,7 @@
 	import ConnectionEditor from './ConnectionEditor.svelte';
 	import { tick } from 'svelte';
 	import { connectionStore, ASSIGNMENT_IDS } from '$lib/stores/connections.svelte';
+	import { chatConnectionStore, STORY_ROUTING_POINT } from '$lib/stores/chatConnection.svelte';
 	import { llmService } from '$lib/services/llm/provider';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { type Connection, type ProviderName } from '$lib/types/llm';
@@ -83,6 +84,31 @@
 		return `${c.name} · ${modelShort(c.model)}`;
 	}
 
+	/**
+	 * The Primary row shows what the OPEN CHAT actually rides, not the raw map entry, and
+	 * choosing there writes the app's value and hands that chat back to it
+	 * (stores/chatConnection.svelte.ts switchGlobal).
+	 *
+	 * Showing the raw entry instead would break the control in exactly the case it is needed:
+	 * a chat pinned to B while the app is on A renders "A", so choosing A fires no change
+	 * event at all and the pin never stands down. Every other row is app-wide with nothing
+	 * able to outrank it, so those still write straight to the map.
+	 */
+	let storyConnectionId = $derived(
+		chatConnectionStore.resolvedId ?? connectionStore.assignmentFor(STORY_ROUTING_POINT)
+	);
+	let storyOverridden = $derived(
+		chatConnectionStore.canScope && chatConnectionStore.scope !== 'global'
+	);
+
+	function pickRoute(point: string, connectionId: string): void {
+		if (point !== STORY_ROUTING_POINT) {
+			connectionStore.setAssignment(point, connectionId);
+			return;
+		}
+		void chatConnectionStore.switchGlobal(connectionId);
+	}
+
 	function openEditor(id: string): void {
 		uiStore.settingsConnectionId = id;
 	}
@@ -116,20 +142,30 @@
 </script>
 
 {#snippet routeRow(point: RoutePoint, key: boolean)}
+	{@const story = point.id === STORY_ROUTING_POINT}
 	<div class="route-row" class:is-key={key}>
 		<Icon name={point.icon} class="w-4 h-4 route-icon" strokeWidth={1.75} />
 		<span class="route-label">{point.label}</span>
 		<Select
 			variant="compact"
 			class="pill-select"
-			value={connectionStore.assignmentFor(point.id)}
-			onchange={(e) => connectionStore.setAssignment(point.id, (e.currentTarget as HTMLSelectElement).value)}
+			value={story ? storyConnectionId : connectionStore.assignmentFor(point.id)}
+			onchange={(e) => pickRoute(point.id, (e.currentTarget as HTMLSelectElement).value)}
 		>
 			{#each connections as c (c.id)}
 				<option value={c.id}>{optionLabel(c)}</option>
 			{/each}
 		</Select>
 	</div>
+	{#if story && storyOverridden}
+		<p class="route-note font-ui">
+			The open chat is on this connection because {chatConnectionStore.scope === 'chat'
+				? 'it was pinned to the chat'
+				: `it is ${chatConnectionStore.characterName ?? 'the character'}'s default`}. Choosing
+			here sets the app's connection and hands this chat back to it. Settings → This chat →
+			Overrides is where that is decided.
+		</p>
+	{/if}
 {/snippet}
 
 {#if editorId}
@@ -266,6 +302,15 @@
 		align-items: center;
 		flex-wrap: wrap;
 		gap: 0.3rem 0.5rem;
+	}
+
+	/* Sits under the Primary row rather than beside it: it explains why that row reads as it
+	   does, and a row already wrapping at narrow widths has nowhere to put a sentence. */
+	.route-note {
+		margin: -0.1rem 0 0.15rem;
+		font-size: 0.68rem;
+		line-height: 1.4;
+		color: var(--color-text-muted);
 	}
 
 	.route-row :global(.route-icon) {

@@ -6,6 +6,7 @@
 	import { holdMsForBlast } from '$lib/components/ui/HoldToConfirmButton.svelte';
 	import BrowsePopover from '$lib/components/library/BrowsePopover.svelte';
 	import { presetService } from '$lib/services/presets.svelte';
+	import { chatPresetStore } from '$lib/stores/chatPreset.svelte';
 	import { triggerDownload } from '$lib/services/libraryExport';
 	import { exportPresetCard, readPresetFromPng } from '$lib/services/presetCard';
 	import { imageService } from '$lib/services/imageService';
@@ -42,7 +43,7 @@
 	let busy = $state(false);
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let allPresets = $derived(presetService.getAllPresets());
-	let activeId = $derived(presetService.getActivePresetId() ?? '');
+	let activeId = $derived(chatPresetStore.resolvedId ?? '');
 	let activePreset = $derived(activeId ? presetService.getEffective(activeId) : null);
 
 	type PromptState = {
@@ -115,9 +116,12 @@
 		void action();
 	}
 
+	// Compared against what the open chat is ACTUALLY assembled with, and only a no-op while
+	// that chat is already following the app: picking the preset an override happens to name
+	// still has work to do, namely standing that override down.
 	async function selectPreset(presetId: string): Promise<void> {
-		if (!presetId || presetId === activeId) return;
-		await run('switch the preset', () => presetService.activatePreset(presetId));
+		if (!presetId || (presetId === activeId && chatPresetStore.scope === 'global')) return;
+		await run('switch the preset', () => chatPresetStore.switchGlobal(presetId));
 	}
 
 	async function createPreset(): Promise<void> {
@@ -125,7 +129,7 @@
 		if (!name?.trim() || rejectTakenName(name)) return;
 		await run(`create "${name.trim()}"`, async () => {
 			const preset = await presetService.createPreset(name.trim());
-			await presetService.activatePreset(preset.id);
+			await chatPresetStore.switchGlobal(preset.id);
 		});
 	}
 
@@ -141,7 +145,7 @@
 		if (!name?.trim() || rejectTakenName(name)) return;
 		await run(`duplicate "${source.name}"`, async () => {
 			const preset = await presetService.duplicatePreset(source.id, name.trim());
-			await presetService.activatePreset(preset.id);
+			await chatPresetStore.switchGlobal(preset.id);
 		});
 	}
 
@@ -208,7 +212,7 @@
 			} else {
 				preset = await presetService.importPresetJson(await file.text());
 			}
-			await presetService.activatePreset(preset.id);
+			await chatPresetStore.switchGlobal(preset.id);
 			toastStore.success(`Imported "${preset.name}"`);
 		});
 	}

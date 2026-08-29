@@ -7,6 +7,7 @@
 	import TransformPanel from './TransformPanel.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { presetService } from '$lib/services/presets.svelte';
+	import { chatPresetStore } from '$lib/stores/chatPreset.svelte';
 	import { chatPersonaStore } from '$lib/stores/chatPersona.svelte';
 	import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
@@ -119,7 +120,7 @@
 	}
 
 	// Active preset (read-only here; switching lives in the Prompt Builder)
-	let currentPresetId = $derived(presetService.getActivePresetId());
+	let currentPresetId = $derived(chatPresetStore.resolvedId);
 	let currentPreset = $derived(currentPresetId ? presetService.getEffective(currentPresetId) : null);
 
 	// The token breakdown popup opens on hover/focus-within via CSS (.token-anchor), with no

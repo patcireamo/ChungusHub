@@ -15,6 +15,7 @@
 	import { autoResize } from '$lib/actions/autoResize';
 	import { BLOB_MACRO } from '$lib/types/library';
 	import { presetService } from '$lib/services/presets.svelte';
+	import { chatPresetStore } from '$lib/stores/chatPreset.svelte';
 	import { extractMacroNames } from '$lib/macros';
 
 	interface Props {
@@ -50,7 +51,7 @@
 	// "Not sent to AI" mirrors the character editor: the description reaches the AI
 	// only when the active preset places the {{persona}} macro somewhere.
 	let personaSent = $derived.by(() => {
-		const preset = presetService.getActiveEffectivePreset();
+		const preset = chatPresetStore.resolvedPreset;
 		for (const item of preset?.items ?? []) {
 			if (item.enabled && extractMacroNames(item.content).includes(BLOB_MACRO.persona)) {
 				return true;

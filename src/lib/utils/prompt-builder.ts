@@ -9,6 +9,7 @@
 
 import type { CallTarget, LLMMessage } from '$lib/types/llm';
 import type { Message } from '$lib/types/chat';
+import { normalizeChatFeatureState, resolveOverrideId } from '$lib/types/chat';
 import { activeSteeringNotes, resolveSteeringForPrompt, steeringTargetForChat } from '$lib/types/steering';
 import type { PromptPreset } from '$lib/types/database';
 import type { LibraryEntry } from '$lib/types/library';
@@ -75,12 +76,10 @@ export interface BuiltPrompt {
 export async function buildPromptMessages(context: PromptBuildContext): Promise<BuiltPrompt> {
 	const { chatId, chatMessages, target = 'primary' } = context;
 
-	// Load active preset: the effective copy (unsaved draft if there is one).
 	await presetService.initialize();
-	const preset: PromptPreset | null = presetService.getActiveEffectivePreset();
 
-	// Resolve the chat's bound character, the global persona, and that character's
-	// lorebook + the global preset-control values for macro expansion.
+	// Resolve the chat's bound character, the persona and preset THIS chat resolves to, and
+	// that character's lorebook + the global preset-control values for macro expansion.
 	const chat = chatId ? await db.getChat(chatId) : null;
 	const libraryEntries = chat ? await db.getAllLibraryEntries() : [];
 	let character = chat?.characterId
@@ -100,10 +99,42 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 		}
 		character = { ...character, data: version.data };
 	}
-	const activePersonaId = (await db.getSetting(ACTIVE_PERSONA_KEY)) || null;
-	const personaEntry = activePersonaId
-		? libraryEntries.find((entry) => entry.id === activePersonaId && entry.type === 'persona') ?? null
+	// Persona and preset are app-wide values a chat or its character may override, and this
+	// is the send: it has to resolve them for the chat it was HANDED rather than the one on
+	// screen, so it runs the pure rule (types/chat.ts) over this row instead of reading a
+	// store. That is the whole reason resolveOverrideId is pure. Reading the app-wide values
+	// straight through here is what made an override change the composer's token meter and
+	// leave the prompt on the wire untouched.
+	//
+	// Connection is the third and is NOT resolved here: it reaches assembly through
+	// llmService, which applies the open chat's choice to the `primary` target at one
+	// chokepoint (services/llm/provider.ts). Every caller of this function generates for the
+	// chat on screen, so the two agree; threading a chat id through every LLM call site to
+	// close the gap formally would reach far past what a chat override is.
+	const decisions = normalizeChatFeatureState(chat?.featureState);
+	const isLivePersona = (id: string) =>
+		libraryEntries.some((entry) => entry.id === id && entry.type === 'persona');
+	const personaId = resolveOverrideId(
+		decisions.persona,
+		character?.overrides?.personaId,
+		(await db.getSetting(ACTIVE_PERSONA_KEY)) || null,
+		isLivePersona
+	);
+	const personaEntry = personaId
+		? libraryEntries.find((entry) => entry.id === personaId && entry.type === 'persona') ?? null
 		: null;
+
+	const presetId = resolveOverrideId(
+		decisions.preset,
+		character?.overrides?.presetId,
+		presetService.getActivePresetId(),
+		(id) => presetService.getEffective(id) !== null
+	);
+	// The effective copy, so an unsaved Prompt Builder draft is what generates, exactly as it
+	// already was for the app-wide preset. The trailing fallback is that getter's own
+	// first-preset boot case, kept rather than dropped.
+	const preset: PromptPreset | null =
+		(presetId ? presetService.getEffective(presetId) : null) ?? presetService.getActiveEffectivePreset();
 
 	// Active lorebooks = those linked by the bound character + the active persona, resolved IN
 	// LINK ORDER (deduped). The two reactive token meters run the same resolver over the

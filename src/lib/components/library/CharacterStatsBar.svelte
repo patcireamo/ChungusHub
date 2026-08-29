@@ -13,6 +13,7 @@
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { personaStore } from '$lib/stores/persona.svelte';
 	import { presetService } from '$lib/services/presets.svelte';
+	import { chatPresetStore } from '$lib/stores/chatPreset.svelte';
 	import { llmService } from '$lib/services/llm/provider';
 	import { db } from '$lib/services/database';
 	import { countTokens } from '$lib/tokenizer/count';
@@ -75,7 +76,7 @@
 	);
 
 	let promptTokens = $derived.by(() => {
-		const preset = presetService.getActiveEffectivePreset();
+		const preset = chatPresetStore.resolvedPreset;
 		if (!preset) return 0;
 		// How many ENABLED items place each card macro. Counted, not deduped: a preset that
 		// places one twice really does send that text twice.

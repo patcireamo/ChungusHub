@@ -97,20 +97,47 @@ export interface ChatScene {
 }
 
 /**
- * What a chat has decided about who plays it. The absent case, null, is the fourth reading
- * and the important one: the chat has decided NOTHING, and inherits.
+ * What a chat has decided about one setting that is otherwise app-wide. The absent case,
+ * null, is the fourth reading and the important one: the chat has decided NOTHING, and
+ * inherits.
  *
- * Three states rather than two, because "handed back to the app's persona" and "never said
- * anything" are different chats. The first ignores whatever default its character carries;
- * the second is exactly the chat that default exists to fill in. Collapse them and switching
- * persona by hand in ONE chat strips the default off every other chat of that character,
- * which is the bug this shape exists to prevent.
+ * Three states rather than two, because "handed back to the app's" and "never said anything"
+ * are different chats. The first ignores whatever default its character carries; the second
+ * is exactly the chat that default exists to fill in. Collapse them and switching the value
+ * by hand in ONE chat strips the default off every other chat of that character, which is
+ * the bug this shape exists to prevent.
+ *
+ * `Kind` names what is pinned, so a blob written for one setting can never be misread as
+ * another's: the discriminant is stored, not inferred from which key it was found under.
  */
-export type ChatPersona =
-	/** The app's active persona, over the top of any default the character carries. */
+export type ChatOverride<Kind extends OverrideKind> =
+	/** The app's active value, over the top of any default the character carries. */
 	| { follows: 'app' }
-	/** This persona specifically, whatever the character or the app says. */
-	| { follows: 'persona'; id: string };
+	/** This one specifically, whatever the character or the app says. */
+	| { follows: Kind; id: string };
+
+/**
+ * The settings a chat can override. One closed set rather than a free string, and not only
+ * for tidiness: `follows` is a discriminant, and a discriminant of type `string` swallows
+ * `'app'` and stops narrowing the union at all.
+ *
+ * Each member names the key it occupies in ChatFeatureState AND its own `follows` value, so
+ * the two can never drift apart.
+ */
+export type OverrideKind = 'persona' | 'connection' | 'preset';
+
+/** Any one of them, for the code that layers all three by the same rule. */
+export type AnyChatOverride = ChatOverride<OverrideKind>;
+
+/** Who plays this chat. */
+export type ChatPersona = ChatOverride<'persona'>;
+/** Which connection serves this chat's story turns: the `primary` routing point alone. */
+export type ChatConnection = ChatOverride<'connection'>;
+/** Which prompt preset shapes this chat's prompts. */
+export type ChatPromptPreset = ChatOverride<'preset'>;
+
+/** Which layer decided the value currently in force. */
+export type OverrideScope = 'global' | 'character' | 'chat';
 
 /** Per-chat state for the composer's steering + impersonate features and this chat's own
  *  scene. Persisted on Chat.featureState as an opaque JSON string. Always read through
@@ -129,13 +156,25 @@ export interface ChatFeatureState {
 	/** Null while this chat has never been given a scene of its own. */
 	scene: ChatScene | null;
 	/** What this chat has decided about who plays it, or null while it has decided nothing
-	 *  and inherits. See ChatPersona above: the third state is what keeps a persona switch
+	 *  and inherits. See ChatOverride above: the third state is what keeps a persona switch
 	 *  made in this chat out of every other chat of the same character. */
 	persona: ChatPersona | null;
+	/** Which connection this chat's story turns ride, on the same three-state rule. Only the
+	 *  `primary` routing point: the assistant and the engines keep their own assignments. */
+	connection: ChatConnection | null;
+	/** Which prompt preset shapes this chat's prompts, on the same three-state rule. */
+	preset: ChatPromptPreset | null;
 }
 
 function defaultChatFeatureState(): ChatFeatureState {
-	return { steeringHistory: [], impersonatePerspective: 'first', scene: null, persona: null };
+	return {
+		steeringHistory: [],
+		impersonatePerspective: 'first',
+		scene: null,
+		persona: null,
+		connection: null,
+		preset: null
+	};
 }
 
 export const DEFAULT_CHAT_FEATURE_STATE: ChatFeatureState = defaultChatFeatureState();
@@ -150,31 +189,102 @@ function normalizeImpersonatePerspective(raw: unknown): ImpersonatePerspective {
 }
 
 /**
- * Coerce a stored persona decision.
+ * Coerce one stored override decision, for the setting named by `kind`.
  *
- * A bare string is accepted as the pin it was: this field shipped id-only before the "follows
- * the app" state existed, so a chat written by that build keeps the persona it was given.
+ * The stored `follows` has to match the kind being asked for, so a blob whose keys got
+ * crossed reads as "decided nothing" rather than as a pin into the wrong table.
  *
- * Whether an id still names a live persona is deliberately NOT decided here. This file is
- * pure and store-free, and the library it would have to ask is neither; the fall-through
- * lives at resolve time instead (stores/chatPersona.svelte.ts).
+ * Whether an id still names something live is deliberately NOT decided here. This file is
+ * pure and store-free, and the tables it would have to ask are neither; the fall-through
+ * lives at resolve time instead ({@link resolveOverrideId}).
  */
-export function normalizeChatPersona(raw: unknown): ChatPersona | null {
-	if (typeof raw === 'string') return raw.length > 0 ? { follows: 'persona', id: raw } : null;
+function normalizeChatOverride<Kind extends OverrideKind>(
+	raw: unknown,
+	kind: Kind
+): ChatOverride<Kind> | null {
 	if (!raw || typeof raw !== 'object') return null;
 	const stored = raw as { follows?: unknown; id?: unknown };
 	if (stored.follows === 'app') return { follows: 'app' };
-	if (stored.follows === 'persona' && typeof stored.id === 'string' && stored.id.length > 0) {
-		return { follows: 'persona', id: stored.id };
+	if (stored.follows === kind && typeof stored.id === 'string' && stored.id.length > 0) {
+		return { follows: kind, id: stored.id };
 	}
 	return null;
 }
 
 /**
+ * Coerce a stored persona decision.
+ *
+ * A bare string is accepted as the pin it was: this field shipped id-only before the "follows
+ * the app" state existed, so a chat written by that build keeps the persona it was given.
+ * Persona alone carries that compatibility; connection and preset never shipped id-only.
+ */
+export function normalizeChatPersona(raw: unknown): ChatPersona | null {
+	if (typeof raw === 'string') return raw.length > 0 ? { follows: 'persona', id: raw } : null;
+	return normalizeChatOverride(raw, 'persona');
+}
+
+/** Coerce a stored connection decision. */
+export function normalizeChatConnection(raw: unknown): ChatConnection | null {
+	return normalizeChatOverride(raw, 'connection');
+}
+
+/** Coerce a stored prompt-preset decision. */
+export function normalizeChatPromptPreset(raw: unknown): ChatPromptPreset | null {
+	return normalizeChatOverride(raw, 'preset');
+}
+
+/**
+ * The layering rule, written once for every overridable setting: the chat's own live pin,
+ * else the character's live default, else the app's value.
+ *
+ * Pure and store-free on purpose, and that is the whole reason it lives here rather than
+ * inside the reactive store. The store answers for the chat ON SCREEN; the generation path
+ * answers for the chat row it was handed, from the database, with no store in reach. Two
+ * callers running one function is what stops the composer's token meter pricing a different
+ * answer than the send actually uses, which is exactly what happened while persona resolved
+ * in the store alone and `utils/prompt-builder.ts` kept reading the app-wide value.
+ *
+ * A pin naming something that no longer exists falls one layer down exactly like a chat that
+ * never said anything, which is why `isLive` is asked rather than assumed.
+ */
+export function resolveOverrideId(
+	decision: AnyChatOverride | null,
+	characterDefaultId: string | null | undefined,
+	globalId: string | null,
+	isLive: (id: string) => boolean
+): string | null {
+	if (decision !== null) {
+		if (decision.follows === 'app') return globalId;
+		if (isLive(decision.id)) return decision.id;
+	}
+	if (characterDefaultId && isLive(characterDefaultId)) return characterDefaultId;
+	return globalId;
+}
+
+/**
+ * Which layer {@link resolveOverrideId} answered from, which is also which pill reads as on.
+ *
+ * A chat that opted out and a chat with no default to inherit both read as global: what
+ * separates them decides only what a LATER character default does to this chat, and a pill
+ * claiming otherwise would be describing bookkeeping rather than the story.
+ */
+export function resolveOverrideScope(
+	decision: AnyChatOverride | null,
+	characterDefaultId: string | null | undefined,
+	isLive: (id: string) => boolean
+): OverrideScope {
+	if (decision !== null) {
+		if (decision.follows === 'app') return 'global';
+		if (isLive(decision.id)) return 'chat';
+	}
+	return characterDefaultId && isLive(characterDefaultId) ? 'character' : 'global';
+}
+
+/**
  * Whether a chat holding this decision reads its character's default.
  *
- * A chat that has decided nothing does. One explicitly on the app's persona does not, which
- * is the whole point of that state. One pinned to a persona does only when the pin no longer
+ * A chat that has decided nothing does. One explicitly on the app's value does not, which is
+ * the whole point of that state. One carrying a pin does only when the pin no longer
  * resolves, since a dead pin falls one layer down like any other.
  *
  * `isLive` is passed in rather than looked up so this stays pure: the Overrides page counts
@@ -182,12 +292,12 @@ export function normalizeChatPersona(raw: unknown): ChatPersona | null {
  * same one resolution gives.
  */
 export function chatDefersToCharacter(
-	persona: ChatPersona | null,
+	decision: AnyChatOverride | null,
 	isLive: (id: string) => boolean
 ): boolean {
-	if (persona === null) return true;
-	if (persona.follows === 'app') return false;
-	return !isLive(persona.id);
+	if (decision === null) return true;
+	if (decision.follows === 'app') return false;
+	return !isLive(decision.id);
 }
 
 /** A chat with no scene of its own reads as null, which is what "follows the app's" is.
@@ -226,7 +336,9 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		steeringHistory: normalizeSteeringHistory(obj.steeringHistory),
 		impersonatePerspective: normalizeImpersonatePerspective(obj.impersonatePerspective),
 		scene: normalizeChatScene(obj.scene),
-		persona: normalizeChatPersona(obj.persona)
+		persona: normalizeChatPersona(obj.persona),
+		connection: normalizeChatConnection(obj.connection),
+		preset: normalizeChatPromptPreset(obj.preset)
 	};
 }
 

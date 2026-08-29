@@ -1,6 +1,10 @@
 /**
  * Per-character override defaults (`LibraryEntry.overrides`), against the REAL server database.
  *
+ * Three defaults share the one key: `personaId`, `connectionId` and `presetId`. They are one
+ * object rather than three because they have one lifetime and one storage rule, and every
+ * claim below holds for each of them.
+ *
  * `overrides` is stored as a third top-level key in `character_library.data_json`, beside
  * `identity` and `data` (see `libraryPayload`). That placement is the whole design and it is
  * what these tests hold:
@@ -50,13 +54,16 @@ type Entry = {
 	identity: { name: string };
 	data: { traits: { description: string } };
 	activeVersionId?: string;
-	overrides?: { personaId?: string };
+	overrides?: Overrides;
 	isFavorite: boolean;
 	createdAt: number;
 	updatedAt: number;
 };
 
-function makeCharacter(name: string, overrides?: { personaId?: string }): Entry {
+/** All three per-character defaults, which share one key and one set of rules. */
+type Overrides = { personaId?: string; connectionId?: string; presetId?: string };
+
+function makeCharacter(name: string, overrides?: Overrides): Entry {
 	const id = crypto.randomUUID();
 	const entry: Entry = {
 		id,
@@ -125,6 +132,54 @@ describe('per-character overrides: storage', () => {
 		// silently rewrite character cards on another.
 		const entry = makeCharacter('Dangling', { personaId: 'persona-that-never-existed' });
 		expect(read(entry.id).overrides).toEqual({ personaId: 'persona-that-never-existed' });
+	});
+});
+
+describe('per-character overrides: all three defaults share the one key', () => {
+	test('a card can carry persona, connection and preset defaults at once', () => {
+		const entry = makeCharacter('Full house', {
+			personaId: 'persona-mai',
+			connectionId: 'conn-local',
+			presetId: 'preset-standard'
+		});
+		expect(read(entry.id).overrides).toEqual({
+			personaId: 'persona-mai',
+			connectionId: 'conn-local',
+			presetId: 'preset-standard'
+		});
+	});
+
+	test('one default is removed without disturbing the others', () => {
+		// The client merges and drops undefined keys (characterLibrary's updateOverrides), so
+		// what reaches the column is the surviving subset. Clearing one must not take the
+		// object with it while another still holds something.
+		const entry = makeCharacter('Partial', { personaId: 'persona-mai', presetId: 'preset-standard' });
+		serverDb.updateLibraryEntry({ ...entry, overrides: { presetId: 'preset-standard' } });
+		expect(read(entry.id).overrides).toEqual({ presetId: 'preset-standard' });
+		expect('overrides' in storedPayload(entry.id)).toBe(true);
+	});
+
+	test('the key goes only once the LAST default does', () => {
+		const entry = makeCharacter('Emptying', { connectionId: 'conn-local' });
+		serverDb.updateLibraryEntry({ ...entry, overrides: undefined });
+		expect(read(entry.id).overrides).toBeUndefined();
+		expect('overrides' in storedPayload(entry.id)).toBe(false);
+	});
+
+	test('none of the three is validated on the way in', () => {
+		// Same rule as the persona case above, for the same reason: a connection or preset
+		// deleted on one device must not silently rewrite character cards on another. All
+		// three fall one layer down at resolve time instead (types/chat.ts resolveOverrideId).
+		const entry = makeCharacter('All dangling', {
+			personaId: 'gone-persona',
+			connectionId: 'gone-connection',
+			presetId: 'gone-preset'
+		});
+		expect(read(entry.id).overrides).toEqual({
+			personaId: 'gone-persona',
+			connectionId: 'gone-connection',
+			presetId: 'gone-preset'
+		});
 	});
 });
 

@@ -10,6 +10,7 @@
 	import { dragHandleZone, dragHandle, type DndEvent } from 'svelte-dnd-action';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 	import { presetService } from '$lib/services/presets.svelte';
+	import { chatPresetStore } from '$lib/stores/chatPreset.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import {
@@ -38,7 +39,7 @@
 	// count reads switches, exactly like the own list's above it; a rule that is on but
 	// broken or inert says so on its own row rather than being quietly subtracted here.
 	let carried = $derived(regexRulesStore.carried);
-	let carriedFrom = $derived(presetService.getActiveEffectivePreset()?.name ?? 'the active preset');
+	let carriedFrom = $derived(chatPresetStore.resolvedPreset?.name ?? 'the active preset');
 	let carriedActive = $derived(carried.filter((r) => regexRulesStore.carriedEnabled(r)).length);
 
 	// One rule's editor open at a time, so the tab reads as a list, not a wall of forms. The

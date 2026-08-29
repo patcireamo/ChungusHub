@@ -24,6 +24,7 @@ import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { resolveLorebooks } from '$lib/lorebook/engine';
 import { lorebookHistory, lorebookScanFields } from '$lib/lorebook/types';
 import { presetService } from '$lib/services/presets.svelte';
+import { chatPresetStore } from '$lib/stores/chatPreset.svelte';
 import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
 import { findActivePath } from '$lib/utils/message-tree';
@@ -164,7 +165,7 @@ class MemoryStore {
 	 *  nothing is extracted, the same condition prompt assembly uses to decide whether to
 	 *  filter {{chatHistory}}, so the panel, the ghosts and the prompt never disagree. */
 	macroPlaced = $derived.by(() => {
-		const p = presetService.getActiveEffectivePreset();
+		const p = chatPresetStore.resolvedPreset;
 		return !!p?.items?.some((it) => it.enabled && it.content.includes('{{memory}}'));
 	});
 
@@ -419,7 +420,7 @@ class MemoryStore {
 			resolvedCharacters: character ? [character] : [],
 			resolvedPersona: chatPersonaStore.resolved,
 			chatMessages,
-			controls: presetService.getActiveEffectivePreset()?.controls ?? [],
+			controls: chatPresetStore.resolvedPreset?.controls ?? [],
 			customFields: presetControlsStore.values,
 			memory: this.recall
 		};
