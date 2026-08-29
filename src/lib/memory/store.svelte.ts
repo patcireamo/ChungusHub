@@ -163,11 +163,18 @@ class MemoryStore {
 	/** Whether the active preset actually injects {{memory}}. Recall reaches the model
 	 *  only through that macro, so without it nothing is archived, nothing is recalled and
 	 *  nothing is extracted, the same condition prompt assembly uses to decide whether to
-	 *  filter {{chatHistory}}, so the panel, the ghosts and the prompt never disagree. */
-	macroPlaced = $derived.by(() => {
+	 *  filter {{chatHistory}}, so the panel, the ghosts and the prompt never disagree.
+	 *
+	 *  A getter rather than a `$derived`, because a `$derived` class field is evaluated while
+	 *  the instance is being built and this store is constructed at module load. The preset it
+	 *  asks for is the OPEN CHAT's (stores/chatPreset.svelte.ts), and the chat store may still
+	 *  be mid-evaluation at that moment, in the import cycle this store already sits in. There
+	 *  is no memoisation to lose: the only reader that repeats is `active` below, which is a
+	 *  `$derived` and so caches this for its own dependents. */
+	get macroPlaced(): boolean {
 		const p = chatPresetStore.resolvedPreset;
 		return !!p?.items?.some((it) => it.enabled && it.content.includes('{{memory}}'));
-	});
+	}
 
 	/** The engine does anything only when this chat's own switch, the app-wide Chat Memory
 	 *  switch (Settings → Engines) and the preset's {{memory}} placement all hold. Turning

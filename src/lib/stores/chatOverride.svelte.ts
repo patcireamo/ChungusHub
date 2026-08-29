@@ -142,6 +142,13 @@ export interface ChatOverrideLayer extends OverrideSurface {
  * What is given up is memoisation, so a caller that reads one of these inside a loop should
  * hoist it into a local `$derived` first, as the composer's persona menu does.
  *
+ * **The rule this puts on callers**: another module-level singleton must not read these from
+ * a `$derived` CLASS FIELD. Svelte evaluates one of those while the instance is being built,
+ * which is the same too-early moment all over again, and a derived whose first run throws is
+ * left holding no dependencies at all and never recomputes. `memory`'s `macroPlaced` is a
+ * plain getter for exactly that reason. Reading them from a method, a function, or a
+ * component is always fine.
+ *
  * **A factory rather than a class** because a config assigned in a constructor BODY arrives
  * after every field initialiser has run. A parameter is bound before the first line of the
  * body, so there is no ordering left to get wrong.
