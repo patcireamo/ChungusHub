@@ -40,6 +40,9 @@ class ChatStore {
 	private liveRecheck: ReturnType<typeof setInterval> | null = null;
 	/** A sync hint that arrived mid-stream, replayed once the stream ends. */
 	private missedSyncWhileStreaming = false;
+	/** Claimed by every transcript load, so an answer coming back after a newer load has
+	 *  already published can tell that it describes an older moment. See `overtaken`. */
+	private loadTicket = 0;
 
 	activeChat = $derived(this.chats.find((c) => c.id === this.activeChatId) ?? null);
 	sortedChats = $derived([...this.chats].sort((a, b) => b.updatedAt - a.updatedAt));
@@ -286,13 +289,38 @@ class ChatStore {
 		}
 	}
 
+	/**
+	 * Has this load been overtaken while it was on the wire? Three ways, and none of them
+	 * covers another, because the halves they watch move independently:
+	 *
+	 * - the reader left (another chat, `goHome`, a chat deleted under a sync);
+	 * - a newer load published first. Two are routinely in flight, since a mutation awaits
+	 *   its own refresh while the replay `endStream` fires runs unawaited beside it, and the
+	 *   one that resolves last is not the one that read last;
+	 * - `freshMessages` adopted newer rows. It claims no ticket, so only the rev sees it.
+	 *
+	 * Publishing anyway is not a stale frame the next refresh corrects: a deleted turn comes
+	 * back, an edit reverts, and the branch being read moves. The rev alone cannot hold this,
+	 * because a swipe moves `active_leaf_id` and no message row at all, so two loads around
+	 * one come back at the same rev and the older still wins. Pinned by
+	 * [`transcript-refresh.test.ts`](./transcript-refresh.test.ts).
+	 */
+	private overtaken(ticket: number, chatId: string, rev: number): boolean {
+		if (chatId !== this.activeChatId || ticket !== this.loadTicket) return true;
+		const state = this.currentChatState;
+		return !!state && state.chat.id === chatId && rev < state.messagesRev;
+	}
+
 	async loadChatState(chatId: string): Promise<void> {
+		const ticket = ++this.loadTicket;
 		const chat = await db.getChat(chatId);
 		if (!chat) {
 			throw new Error(`Chat ${chatId} not found`);
 		}
 
 		const { messages, rev } = await this.fetchMessages(chatId);
+		if (this.overtaken(ticket, chatId, rev)) return;
+
 		const activePath = chat.activeLeafId ? findActivePath(messages, chat.activeLeafId) : [];
 
 		this.currentChatState = {

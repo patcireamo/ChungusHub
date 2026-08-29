@@ -568,6 +568,32 @@ describe('shared UI recipes (architecture/ui-shell-settings.md)', () => {
 	});
 });
 
+describe('transcript refresh order (architecture/chat-sessions.md #4)', () => {
+	// Two reads of the open transcript overlap constantly, since a mutation awaits its own
+	// refresh while the sync replay `endStream` fires runs unawaited beside it. The one that
+	// resolves last is not the one that read last, and the older publishing over the newer
+	// puts a deleted turn back, reverts an edit and moves the branch being read. `overtaken`
+	// is what stands the older one down. A second publisher that skips it brings the whole
+	// class back, so the loaded transcript is written in exactly one place. The behaviour
+	// itself is pinned by src/lib/stores/transcript-refresh.test.ts.
+	test('one guarded publisher writes the loaded transcript', () => {
+		const source = read('src', 'lib', 'stores', 'chat.svelte.ts');
+		// Each assignment with enough of what follows to tell a whole state (carries the rows)
+		// from the patches that spread the current one and the clears that write null.
+		const assignments = scan(
+			source,
+			/(this\.currentChatState = [\s\S]{0,240})/g,
+			'currentChatState assignments'
+		);
+		expect(assignments.filter((a) => a.includes('allMessages'))).toHaveLength(1);
+
+		const load = block(source, /\tasync loadChatState\(chatId: string\)[\s\S]*?\n\t\}/, 'loadChatState');
+		expect(load).toContain('allMessages: messages');
+		expect(load.indexOf('this.overtaken(')).toBeGreaterThan(-1);
+		expect(load.indexOf('this.overtaken(')).toBeLessThan(load.indexOf('this.currentChatState = {'));
+	});
+});
+
 describe('transcript window (architecture/chat-sessions.md #14)', () => {
 	// The transcript renders a WINDOW of the branch, so a turn the reader has not loaded back
 	// has no row in the document. A surface that points at a turn by resolving `msg-<id>`
