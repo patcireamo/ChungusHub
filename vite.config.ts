@@ -3,7 +3,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, type Plugin } from 'vite';
 import { normalizeIp } from './server/access';
-import { ALLOWLIST_ENV, ALLOWLIST_PATH, PORT, SECURITY_PATH } from './server/config';
+import { ALLOWLIST_ENV, ALLOWLIST_PATH, OPEN_BROWSER, PORT, SECURITY_PATH } from './server/config';
 
 // Read from the server's own config, so the proxy cannot drift off the port it serves.
 const BACKEND = `http://localhost:${PORT}`;
@@ -194,6 +194,11 @@ export default defineConfig({
 	server: {
 		port: 1420,
 		strictPort: true,
+		// The settings file's `openBrowser`, honoured here rather than by the Bun server: in dev
+		// the app somebody looks at is this port (hot reload, no build step), and Vite opens it
+		// once it is actually listening. The Bun half runs under `--watch` and deliberately opens
+		// nothing (server/index.ts), so a launcher start is one tab at the right address.
+		open: OPEN_BROWSER,
 		// Always bound to the LAN so a phone can load the live, hot-reloading app at
 		// http://<this-PC-ip>:1420 (no build step). Who actually gets served is
 		// allowlistGate()'s business: the network-access switch and the IP allowlist

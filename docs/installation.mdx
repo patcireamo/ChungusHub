@@ -102,9 +102,10 @@ relative one is read from the file's own folder, except `backupDir`, which is re
 folder, so snapshots stay beside the data when you move it. A value it cannot read stops the
 launch and names the line to fix, rather than starting somewhere nobody chose.
 
-`openBrowser` is what a downloaded build does as it starts. Set it to `false` and it serves
-without throwing a tab up, which is what a machine you are not sitting at wants. A copy run from
-source opens nothing either way.
+`openBrowser` decides whether starting ChungusHub throws a tab up. Set it to `false` and it just
+serves, which is what a machine you are not sitting at wants. Run from source it opens the
+hot-reloading app on port 1420 instead, and only the once, however often the server behind it
+restarts while you work.
 
 **A version that adds a setting adds its line to the file you already have**, leaving every value
 in it as you wrote it, so there is never anything to copy across by hand. It says on screen which

@@ -2123,10 +2123,15 @@ if (!security.isNetworkAccessEnabled()) {
 }
 if (security.isPasswordEnabled()) console.log('  Password lock: on (localhost is exempt).');
 
-// Portable build: pop the UI in the default browser so double-clicking the
-// executable feels like launching an app. "openBrowser": false turns it off,
-// which is what a machine nobody is sitting at wants.
-if (IS_COMPILED && OPEN_BROWSER) {
+// Pop the UI in the default browser, so a launch that IS somebody's whole launch feels like
+// opening an app: the portable executable, and `bun run start` from source. "openBrowser": false
+// turns it off, which is what a machine nobody is sitting at wants.
+//
+// Never under `bun --watch`, which is half of two-process dev: this file re-runs on every save,
+// so it would be a tab per keystroke, and the app being worked on is Vite's port rather than
+// this one. `vite.config.ts` reads the same setting and opens that instead.
+const WATCHED = process.execArgv.some((flag) => flag === '--watch' || flag === '--hot');
+if (OPEN_BROWSER && !WATCHED) {
 	const url = `http://localhost:${server.port}`;
 	const cmd =
 		process.platform === 'win32'
