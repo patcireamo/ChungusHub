@@ -11,10 +11,13 @@
  * and `$derived` are shimmed to identity BEFORE the store module loads, exactly as
  * new-chat-flow.test.ts does. Ordering is under test; reactivity is not.
  */
-import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterAll, mock } from 'bun:test';
 
-(globalThis as unknown as { $state: <T>(v?: T) => T | undefined }).$state = (v) => v;
-(globalThis as unknown as { $derived: <T>(v?: T) => T | undefined }).$derived = (v) => v;
+const identity = <T>(value?: T): T | undefined => value;
+(globalThis as unknown as { $state: unknown }).$state = Object.assign(identity, { raw: identity });
+(globalThis as unknown as { $derived: unknown }).$derived = Object.assign(identity, {
+	by: <T>(fn: () => T): T => fn()
+});
 
 type Delta =
 	| { rev: number; full: true; messages: unknown[] }
@@ -29,24 +32,44 @@ const CHAT = { id: 'chat-1', title: 'Overlap', activeLeafId: 'reply', rootMessag
  *  which changes this row and no message row at all. */
 let serverChat = { ...CHAT };
 
+/**
+ * Bun's module registry is process-wide and one run loads every test file into it, so a stub
+ * left behind here is served to every file that loads after this one, in whatever order the
+ * platform happens to walk the directory. Each mock is therefore a SPREAD of the real module,
+ * so nothing an importer expects can go missing, and every one is put back in `afterAll`.
+ * Only the three the load path actually reaches are stubbed; the rest of the store's imports
+ * are left real, since none of them runs at import and none is called from here.
+ *
+ * The restore is registered BEFORE the first stub goes in, so a throw anywhere in the setup
+ * below cannot leave one standing.
+ */
+const realDatabase = { ...(await import('$lib/services/database')) };
+const realTransport = { ...(await import('$lib/services/transport')) };
+const realMemory = { ...(await import('$lib/memory/store.svelte')) };
+
+afterAll(() => {
+	mock.module('$lib/services/database', () => realDatabase);
+	mock.module('$lib/services/transport', () => realTransport);
+	mock.module('$lib/memory/store.svelte', () => realMemory);
+});
+
 mock.module('$lib/services/database', () => ({
+	...realDatabase,
 	db: {
 		getChat: async () => ({ ...serverChat }),
 		getMessagesDelta: () => new Promise<Delta>((resolve) => owed.push({ resolve })),
 		getAllChats: async () => [{ ...serverChat }]
 	}
 }));
-mock.module('$lib/services/transport', () => ({ llmStatus: async () => [], stopGeneration: () => {} }));
+mock.module('$lib/services/transport', () => ({
+	...realTransport,
+	llmStatus: async () => [],
+	stopGeneration: () => {}
+}));
 mock.module('$lib/memory/store.svelte', () => ({
+	...realMemory,
 	memoryStore: { activeChatId: null, loadForChat: async () => {}, syncForPath: async () => {}, clear: () => {} }
 }));
-mock.module('$lib/stores/chatCast.svelte', () => ({ chatCastStore: { load: async () => {}, setForChat: () => {} } }));
-mock.module('$lib/lorebook/store.svelte', () => ({ lorebookStore: { flush: async () => {} } }));
-mock.module('$lib/stores/characterLibrary.svelte', () => ({ characterLibraryStore: { entries: [] } }));
-mock.module('$lib/stores/toast.svelte', () => ({
-	toastStore: { info: () => {}, warning: () => {}, failed: () => {} }
-}));
-mock.module('$lib/stores/ui.svelte', () => ({ uiStore: { openWelcome: () => {} } }));
 
 const { chatStore } = await import('./chat.svelte');
 

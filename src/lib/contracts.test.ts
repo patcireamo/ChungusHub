@@ -568,6 +568,45 @@ describe('shared UI recipes (architecture/ui-shell-settings.md)', () => {
 	});
 });
 
+describe('test isolation (architecture/testing.md)', () => {
+	// bun's module registry is process-wide and one run loads every test file into it, so a
+	// stub left standing is served to every file that loads after it, in whatever order the
+	// platform walks the tree. It then fails on one OS and not the other, and it fails inside
+	// the file that INHERITED the stub rather than the one that left it, which is the worst
+	// shape a test failure can take. Every stub is therefore put back by the file that
+	// installed it, so each specifier reaches `mock.module` at least twice.
+	test('every module stub is restored by the file that installed it', () => {
+		const offenders: string[] = [];
+		let checked = 0;
+		const walk = (dir: string): void => {
+			for (const entry of readdirSync(dir, { withFileTypes: true })) {
+				const full = join(dir, entry.name);
+				if (entry.isDirectory()) {
+					walk(full);
+					continue;
+				}
+				// This file names the idiom in order to scan for it, and stubs nothing itself.
+				if (!entry.name.endsWith('.test.ts') || entry.name === 'contracts.test.ts') continue;
+				const source = readFileSync(full, 'utf8');
+				if (!source.includes('mock.module(')) continue;
+				checked += 1;
+				const rel = full.replaceAll('\\', '/');
+				const name = rel.slice(rel.lastIndexOf('/') + 1);
+				const stubbed = [...source.matchAll(/mock\.module\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]);
+				for (const specifier of new Set(stubbed)) {
+					if (stubbed.filter((s) => s === specifier).length < 2) {
+						offenders.push(`${name}: ${specifier} is stubbed and never put back`);
+					}
+				}
+				if (!/afterAll\(/.test(source)) offenders.push(`${name}: stubs modules with no afterAll to restore them`);
+			}
+		};
+		for (const root of ['src', 'server']) walk(join(ROOT, root));
+		expect(checked, 'found no file stubbing a module, so the scan is stale').toBeGreaterThan(0);
+		expect(offenders).toEqual([]);
+	});
+});
+
 describe('transcript refresh order (architecture/chat-sessions.md #4)', () => {
 	// Two reads of the open transcript overlap constantly, since a mutation awaits its own
 	// refresh while the sync replay `endStream` fires runs unawaited beside it. The one that
