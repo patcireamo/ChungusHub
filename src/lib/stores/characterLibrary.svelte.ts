@@ -9,7 +9,8 @@ import type {
 	LibraryEntryData,
 	LibraryEntryOverrides,
 	LibrarySeed
-} from '$lib/types/library';import { createEmptyCharacter, createEmptyPersona } from '$lib/types/library';
+} from '$lib/types/library';
+import { createEmptyCharacter, createEmptyPersona } from '$lib/types/library';
 import type { ImportResult } from '$lib/services/sillyTavernImport';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
@@ -566,6 +567,7 @@ class CharacterLibraryStore {
 		else delete entry.overrides;
 		await this.persistEntry(entry);
 	}
+
 	/** Merge changes into the entry's live data (= the active version's content; the
 	 *  server mirrors the save into the active row) and write at once. */
 	async updateData(id: string, updates: LibraryDataUpdate): Promise<void> {

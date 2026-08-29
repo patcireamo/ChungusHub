@@ -5,7 +5,8 @@
 	 * rides each pill's `title` and whatever InfoTip the caller puts by the row.
 	 */
 	interface Props {
-		options: { value: string; label: string; title?: string; disabled?: boolean }[];		current: string;
+		options: { value: string; label: string; title?: string; disabled?: boolean }[];
+		current: string;
 		onpick: (value: string) => void;
 		/** aria-label for the radiogroup. */
 		label: string;
@@ -24,7 +25,8 @@
 			aria-checked={o.value === current}
 			title={o.title}
 			disabled={o.disabled}
-			onclick={() => onpick(o.value)}		>
+			onclick={() => onpick(o.value)}
+		>
 			{o.label}
 		</button>
 	{/each}
@@ -75,4 +77,5 @@
 		cursor: not-allowed;
 		color: var(--color-text-secondary);
 		border-color: color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
-	}</style>
+	}
+</style>

@@ -2304,7 +2304,8 @@ class ServerDatabase {
 		return payload;
 	}
 
-	insertLibraryEntry(entry: Record<string, unknown>): void {		this.execute(
+	insertLibraryEntry(entry: Record<string, unknown>): void {
+		this.execute(
 			`INSERT INTO character_library (id, type, data_json, is_favorite, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?)`,
 			[entry.id, entry.type, JSON.stringify(this.libraryPayload(entry)), entry.isFavorite ? 1 : 0, entry.createdAt, entry.updatedAt]
