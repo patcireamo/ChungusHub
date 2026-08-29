@@ -492,6 +492,9 @@
 	);
 	let personaGrid = $derived(personaOptions.length > PERSONA_GRID_THRESHOLD);
 	let activePersona = $derived(chatPersonaStore.resolvedEntry);
+	// Hoisted because the persona menu compares it once per tile: the store resolves on every
+	// read rather than memoising (stores/chatOverride.svelte.ts), so the loop reads a local.
+	let activePersonaId = $derived(chatPersonaStore.resolvedId);
 	let activePersonaThumb = $derived(imageService.thumbnailUrl(activePersona?.identity.imageUrl));
 	let activePersonaFocus = $derived(portraitFocusStyle(activePersona?.identity.portraitFocus));
 	let personaTitle = $derived(
@@ -1440,7 +1443,7 @@
 													type="button"
 													role="menuitem"
 													class="persona-tile"
-													class:is-active={persona.id === chatPersonaStore.resolvedId}
+													class:is-active={persona.id === activePersonaId}
 													title={persona.name}
 													onclick={() => pickPersona(persona.id)}
 												>
@@ -1458,7 +1461,7 @@
 									{:else}
 										<div class="max-h-56 overflow-y-auto">
 											{#each personaOptions as persona (persona.id)}
-												{@const isActive = persona.id === chatPersonaStore.resolvedId}
+												{@const isActive = persona.id === activePersonaId}
 												<button
 													type="button"
 													role="menuitem"

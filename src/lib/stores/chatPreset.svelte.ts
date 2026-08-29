@@ -53,18 +53,22 @@ class ChatPresetStore {
 	 * fallback: that fallback only covers boot, before `ensureActivePreset` has written an id,
 	 * and dropping it here would leave the composer briefly assembling against nothing.
 	 */
-	resolvedPreset = $derived.by((): PromptPreset | null => {
+	get resolvedPreset(): PromptPreset | null {
 		const id = this.layer.resolvedId;
 		const own = id ? presetService.getEffective(id) : null;
 		return own ?? presetService.getActiveEffectivePreset();
-	});
+	}
 
 	/** The id in force, or null where nothing resolves. Taken off the resolved preset so the
 	 *  boot fallback above is reflected here too. */
-	resolvedId = $derived(this.resolvedPreset?.id ?? null);
+	get resolvedId(): string | null {
+		return this.resolvedPreset?.id ?? null;
+	}
 
 	/** Its name, for the Overrides card's own line. */
-	resolvedName = $derived(this.resolvedPreset?.name ?? null);
+	get resolvedName(): string | null {
+		return this.resolvedPreset?.name ?? null;
+	}
 
 	get scope(): OverrideScope {
 		return this.layer.scope;

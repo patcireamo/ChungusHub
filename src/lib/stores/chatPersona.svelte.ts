@@ -46,21 +46,29 @@ class ChatPersonaStore {
 	});
 
 	/** The persona in force for the open chat. Null only where the app has no persona at all
-	 *  (the first-run case), exactly as personaStore.activeEntry is null there. */
-	resolvedEntry = $derived(livePersona(this.layer.resolvedId));
+	 *  (the first-run case), exactly as personaStore.activeEntry is null there.
+	 *
+	 *  Getters rather than `$derived` throughout, for the reason chatOverride.svelte.ts sets
+	 *  out: this is a module-level singleton in an import cycle, and a derived created while
+	 *  modules are still evaluating reads `chatStore` before it exists. */
+	get resolvedEntry(): LibraryEntry | null {
+		return livePersona(this.layer.resolvedId);
+	}
 
 	/** Resolved for prompt assembly. A drop-in for personaStore.activeResolved, which is what
 	 *  lets the live meters pick this up without threading a chat id through them. */
-	resolved = $derived.by((): PromptCharacter | null => {
+	get resolved(): PromptCharacter | null {
 		const entry = this.resolvedEntry;
 		if (!entry) return null;
 		return { name: entry.identity.name, traits: entry.data.traits, storyNotes: '' };
-	});
+	}
 
 	/** The id stamped onto a user turn as it is written, so attribution survives a later
 	 *  switch. Read off the resolved entry rather than the layer, so an id that no longer
 	 *  names a persona is never stamped onto a turn. */
-	resolvedId = $derived(this.resolvedEntry?.id ?? null);
+	get resolvedId(): string | null {
+		return this.resolvedEntry?.id ?? null;
+	}
 
 	get scope(): OverrideScope {
 		return this.layer.scope;

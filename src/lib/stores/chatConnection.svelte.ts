@@ -52,19 +52,25 @@ class ChatConnectionStore {
 	/** The connection serving the open chat's story turns, or undefined before the store has
 	 *  loaded. Never a dangling id: an override naming a deleted connection has already
 	 *  fallen one layer down by the time this is read. */
-	resolvedConnection = $derived.by((): Connection | undefined => {
+	get resolvedConnection(): Connection | undefined {
 		const id = this.layer.resolvedId;
 		return id ? connectionStore.get(id) : undefined;
-	});
+	}
 
 	/** The id in force, or null where nothing resolves. */
-	resolvedId = $derived(this.resolvedConnection?.id ?? null);
+	get resolvedId(): string | null {
+		return this.resolvedConnection?.id ?? null;
+	}
 
 	/** The connection's name, for the Overrides card's own line. */
-	resolvedName = $derived(this.resolvedConnection?.name ?? null);
+	get resolvedName(): string | null {
+		return this.resolvedConnection?.name ?? null;
+	}
 
 	/** The model it would send to, which is the half of the answer a reader actually feels. */
-	resolvedModel = $derived(this.resolvedConnection?.model ?? '');
+	get resolvedModel(): string {
+		return this.resolvedConnection?.model ?? '';
+	}
 
 	get scope(): OverrideScope {
 		return this.layer.scope;

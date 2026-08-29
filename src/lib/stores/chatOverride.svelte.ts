@@ -49,6 +49,7 @@ import {
 	resolveOverrideId,
 	resolveOverrideScope,
 	type AnyChatOverride,
+	type Chat,
 	type ChatFeatureState,
 	type ChatOverride,
 	type OverrideKind,
@@ -123,77 +124,58 @@ export interface ChatOverrideLayer extends OverrideSurface {
 }
 
 /**
- * A factory rather than a class, and not as a matter of taste.
+ * A factory of plain getters, and every part of that is deliberate.
  *
- * A `$derived` declared as a CLASS FIELD is evaluated while the instance is being built, so a
- * config assigned in the constructor body arrives too late and every derived reading it throws
- * on construction. A factory parameter is bound before the first line of the body runs, so
- * there is no ordering to get wrong and eager evaluation is harmless.
+ * **No runes here.** A `$derived` is a signal that gets CREATED, and creating one reads what
+ * it depends on. These stores are module-level singletons, so that read happens while modules
+ * are still being evaluated, and this module sits in an import cycle: `provider.ts` needs the
+ * connection layer, which needs `chatStore`, which reaches `provider.ts` again through memory.
+ * A cycle is harmless as long as nothing is READ until every module has finished evaluating,
+ * and eager deriveds are exactly the thing that reads too early. It surfaced as
+ * `Cannot access 'chatStore' before initialization`, and only in the merged deploy tree, where
+ * another topic's tests import these modules in a different order.
+ *
+ * Plain getters create nothing and read nothing until someone asks, so the cycle stops
+ * mattering. Reactivity is unaffected: Svelte tracks the `$state` reads themselves, wherever
+ * they happen, which is the same reason `personaStore.activeEntry` is a plain getter.
+ *
+ * What is given up is memoisation, so a caller that reads one of these inside a loop should
+ * hoist it into a local `$derived` first, as the composer's persona menu does.
+ *
+ * **A factory rather than a class** because a config assigned in a constructor BODY arrives
+ * after every field initialiser has run. A parameter is bound before the first line of the
+ * body, so there is no ordering left to get wrong.
  */
 export function createChatOverrideLayer<Kind extends OverrideKind>(
 	cfg: ChatOverrideConfig<Kind>
 ): ChatOverrideLayer {
 	/** The chat on screen. See the note at the top on why this is not `activeChatId`. */
-	const openChat = $derived(chatStore.currentChatState?.chat ?? null);
+	const openChat = (): Chat | null => chatStore.currentChatState?.chat ?? null;
 
-	const decision = $derived.by((): AnyChatOverride | null => {
-		const chat = openChat;
+	const decision = (): AnyChatOverride | null => {
+		const chat = openChat();
 		if (!chat) return null;
 		return normalizeChatFeatureState(chat.featureState)[cfg.kind];
-	});
+	};
 
 	/** Null for an unbound chat, which is what makes the Character layer unavailable rather
 	 *  than merely empty. */
-	const boundCharacter = $derived.by((): LibraryEntry | null => {
-		const id = openChat?.characterId;
+	const boundCharacter = (): LibraryEntry | null => {
+		const id = openChat()?.characterId;
 		if (!id) return null;
 		return characterLibraryStore.entries.find((e) => e.id === id && e.type === 'character') ?? null;
-	});
+	};
 
 	/** The bound character's default for this setting, whether or not it still resolves. */
-	const characterDefaultId = $derived(boundCharacter?.overrides?.[cfg.characterKey] ?? null);
+	const characterDefaultId = (): string | null =>
+		boundCharacter()?.overrides?.[cfg.characterKey] ?? null;
 
 	/** Whether that default is one this chat could actually inherit. A dangling one is not:
 	 *  it falls through exactly like no default at all. */
-	const characterDefaultLive = $derived(
-		characterDefaultId !== null && cfg.isLive(characterDefaultId)
-	);
-
-	const resolvedId = $derived(
-		resolveOverrideId(decision, characterDefaultId, cfg.globalId(), cfg.isLive)
-	);
-
-	/** Which layer is actually deciding, which is also which pill reads as on. */
-	const scope = $derived(resolveOverrideScope(decision, characterDefaultId, cfg.isLive));
-
-	/** Whether there is a chat to override at all. */
-	const canScope = $derived(openChat !== null);
-
-	/** Whether the Character layer is reachable: an unbound chat has no card to pin to. */
-	const canScopeCharacter = $derived(boundCharacter !== null);
-
-	const characterName = $derived(boundCharacter?.identity.name?.trim() || null);
-
-	/** Whether this chat follows the app while its character carries a default it could have
-	 *  inherited. The one case where "Global" needs a second sentence: the reader can see a
-	 *  default on the card and would otherwise have no idea why this chat ignores it. */
-	const ignoringCharacterDefault = $derived(decision?.follows === 'app' && characterDefaultLive);
-
-	/** How many OTHER chats a change to the character's default would actually reach: the
-	 *  ones that READ through the character layer, which is not the same as the ones that
-	 *  stored nothing (see chatDefersToCharacter). A number is only worth saying if it is the
-	 *  number resolution would give. */
-	const otherChatsFollowingCharacter = $derived.by((): number => {
-		const character = boundCharacter;
-		if (!character) return 0;
-		const openId = openChat?.id ?? null;
-		return chatStore.chats.filter(
-			(chat) =>
-				chat.id !== openId &&
-				chat.characterId === character.id &&
-				chatDefersToCharacter(normalizeChatFeatureState(chat.featureState)[cfg.kind], cfg.isLive)
-		).length;
-	});
+	const characterDefaultLive = (): boolean => {
+		const id = characterDefaultId();
+		return id !== null && cfg.isLive(id);
+	};
 
 	/** The one writer of a chat's decision for this setting. */
 	const write = (chatId: string, next: ChatOverride<Kind> | null): Promise<void> =>
@@ -201,39 +183,67 @@ export function createChatOverrideLayer<Kind extends OverrideKind>(
 
 	return {
 		get decision() {
-			return decision;
+			return decision();
 		},
+
 		get boundCharacter() {
-			return boundCharacter;
+			return boundCharacter();
 		},
+
+		/** The id in force for the open chat, or null where the app itself has none. */
 		get resolvedId() {
-			return resolvedId;
+			return resolveOverrideId(decision(), characterDefaultId(), cfg.globalId(), cfg.isLive);
 		},
+
+		/** Which layer is actually deciding, which is also which pill reads as on. */
 		get scope() {
-			return scope;
+			return resolveOverrideScope(decision(), characterDefaultId(), cfg.isLive);
 		},
+
+		/** Whether there is a chat to override at all. */
 		get canScope() {
-			return canScope;
+			return openChat() !== null;
 		},
+
+		/** Whether the Character layer is reachable: an unbound chat has no card to pin to. */
 		get canScopeCharacter() {
-			return canScopeCharacter;
+			return boundCharacter() !== null;
 		},
+
 		get characterName() {
-			return characterName;
+			return boundCharacter()?.identity.name?.trim() || null;
 		},
+
+		/** Whether this chat follows the app while its character carries a default it could
+		 *  have inherited. The one case where "Global" needs a second sentence: the reader can
+		 *  see a default on the card and would otherwise have no idea why this chat ignores
+		 *  it. */
 		get ignoringCharacterDefault() {
-			return ignoringCharacterDefault;
+			return decision()?.follows === 'app' && characterDefaultLive();
 		},
+
+		/** How many OTHER chats a change to the character's default would actually reach: the
+		 *  ones that READ through the character layer, which is not the same as the ones that
+		 *  stored nothing (see chatDefersToCharacter). A number is only worth saying if it is
+		 *  the number resolution would give. */
 		get otherChatsFollowingCharacter() {
-			return otherChatsFollowingCharacter;
+			const character = boundCharacter();
+			if (!character) return 0;
+			const openId = openChat()?.id ?? null;
+			return chatStore.chats.filter(
+				(chat) =>
+					chat.id !== openId &&
+					chat.characterId === character.id &&
+					chatDefersToCharacter(normalizeChatFeatureState(chat.featureState)[cfg.kind], cfg.isLive)
+			).length;
 		},
 
 		/** Pin whatever is in force to this chat. Seeding from the resolved value is what
 		 *  makes the press itself change nothing on screen, the same trick chatScene.adopt
 		 *  uses. */
 		async pinToChat(): Promise<void> {
-			const chat = openChat;
-			const id = resolvedId;
+			const chat = openChat();
+			const id = this.resolvedId;
 			if (!chat || !id) return;
 			await write(chat.id, { follows: cfg.kind, id });
 		},
@@ -243,9 +253,9 @@ export function createChatOverrideLayer<Kind extends OverrideKind>(
 		 *  app's": the chat has to READ the default it just set, and a detached chat would
 		 *  ignore it. */
 		async pinToCharacter(): Promise<void> {
-			const chat = openChat;
-			const character = boundCharacter;
-			const id = resolvedId;
+			const chat = openChat();
+			const character = boundCharacter();
+			const id = this.resolvedId;
 			if (!chat || !character || !id) return;
 			await characterLibraryStore.updateOverrides(character.id, cfg.characterPatch(id));
 			await write(chat.id, null);
@@ -255,7 +265,7 @@ export function createChatOverrideLayer<Kind extends OverrideKind>(
 		 *  keeps its default, so its other chats keep theirs, and the explicit state is what
 		 *  stops this chat quietly re-inheriting that default on the next read. */
 		async resetToGlobal(): Promise<void> {
-			const chat = openChat;
+			const chat = openChat();
 			if (!chat) return;
 			await write(chat.id, { follows: 'app' });
 		},
@@ -274,9 +284,9 @@ export function createChatOverrideLayer<Kind extends OverrideKind>(
 			// Read before the await, and written to the id read here. `setGlobal` is allowed to
 			// be asynchronous, and re-reading afterwards would answer for whichever chat is on
 			// screen by then rather than the one the switch was actually made in.
-			const chat = openChat;
-			const current = decision;
-			const inheritable = characterDefaultLive;
+			const chat = openChat();
+			const current = decision();
+			const inheritable = characterDefaultLive();
 
 			await cfg.setGlobal(id);
 
