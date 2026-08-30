@@ -223,6 +223,27 @@ describe('the preset a chat is built from', () => {
 	});
 });
 
+describe('the three claims are resolved apart', () => {
+	// One chat holds all three in one blob and each names a different library. A resolution
+	// that folded them together (one liveness check, one fallback) would read plausibly and be
+	// wrong in the only case that matters: the reader deletes a preset and the story silently
+	// stops playing as its own persona too.
+	test('a dead claim in one category leaves the live ones in the other two alone', () => {
+		presets['house'] = { id: 'house', name: 'house', items: [], controls: [] };
+		appPresetId = 'house';
+		const claimed = chat(OWN.id, 'own-persona', 'gone-preset');
+
+		expect(chatPresetId(claimed)).toBeNull();
+		expect(chatConnectionId(claimed)).toBe(OWN.id);
+		expect(chatPersonaClaim(claimed)).toBe('own-persona');
+
+		connectionStore.connections = [APP];
+		expect(chatConnectionId(claimed)).toBeNull();
+		expect(chatPersonaClaim(claimed)).toBe('own-persona');
+		expect(chatPresetClaim(claimed)).toBe('gone-preset');
+	});
+});
+
 describe('resolvePersonaId', () => {
 	const APP_PERSONA = 'app-persona';
 	const OWN_PERSONA = 'own-persona';
