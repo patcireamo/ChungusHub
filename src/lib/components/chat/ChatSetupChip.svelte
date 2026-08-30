@@ -109,6 +109,10 @@
 	// A null pin on a versioned character reads as the active variant, which is exactly
 	// what generation does with it.
 	let pinnedVersionId = $derived(chat?.characterVersionId ?? entry?.activeVersionId ?? null);
+	// What a chat with this character is born on. The pill compares against this and not the
+	// active version, so it answers "has this story broken away from what a new one would get"
+	// rather than "is the library editing another variant right now".
+	let versionSeed = $derived(entry ? characterLibraryStore.chatVersionSeed(entry.id) : null);
 
 	// ===== The categories =====
 
@@ -160,7 +164,7 @@
 				label: 'Version',
 				noun: 'versions',
 				value: versions.find((v) => v.id === pinnedVersionId)?.name ?? 'Unknown',
-				diverged: !!pinnedVersionId && pinnedVersionId !== entry?.activeVersionId,
+				diverged: !!chat?.characterVersionId && chat.characterVersionId !== versionSeed,
 				lost: null,
 				options: versions.map((v) => ({ id: v.id, name: v.name })),
 				picked: pinnedVersionId,

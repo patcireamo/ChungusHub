@@ -104,16 +104,16 @@ class ChatStore {
 		const now = Date.now();
 		const { characterId } = options;
 		const entry = characterLibraryStore.entries.find((e) => e.id === characterId);
-		// Pin the chat to the character's active version at birth: the story keeps the
-		// exact variant it started with, however far the character moves on. Unversioned
-		// characters pin nothing (null = follow live data, the pre-version behavior).
-		const characterVersionId = entry?.activeVersionId ?? null;
-		// A persona is stamped ONLY from a real choice: this character's seed, or the picker
-		// the reader just used. Every other door leaves it null and the story follows the app,
-		// because createChat is also reached with nobody present (routeAfterDelete mints a
-		// chat as a side effect of deleting another), and stamping whatever happened to be
-		// active there would write a permanent pin nobody made.
+		// The story keeps the exact variant it was born on, however far the character moves
+		// on afterwards.
+		const characterVersionId = characterLibraryStore.chatVersionSeed(characterId);
+		// A persona and a connection are stamped ONLY from a real choice: this character's own
+		// seed, or the picker the reader just used. Every other door leaves them null and the
+		// story follows the app, because createChat is also reached with nobody present
+		// (routeAfterDelete mints a chat as a side effect of deleting another), and stamping
+		// whatever happened to be active there would write a permanent pin nobody made.
 		const personaId = options.personaId ?? entry?.defaultPersonaId ?? null;
+		const connectionId = entry?.defaultConnectionId ?? null;
 		const chat: Chat = {
 			id: crypto.randomUUID(),
 			title: this.generateChatTitle(characterId),
@@ -126,9 +126,14 @@ class ChatStore {
 			characterId,
 			characterVersionId,
 			isFavorite: false,
-			featureState: personaId
-				? JSON.stringify({ ...DEFAULT_CHAT_FEATURE_STATE, persona: personaId })
-				: null
+			featureState:
+				personaId || connectionId
+					? JSON.stringify({
+							...DEFAULT_CHAT_FEATURE_STATE,
+							persona: personaId,
+							connection: connectionId
+						})
+					: null
 		};
 
 		await db.insertChat(chat);
@@ -217,8 +222,9 @@ class ChatStore {
 		lines: string[];
 	}): Promise<{ chatId: string | null }> {
 		const { characterId, lines } = options;
-		const characterVersionId =
-			characterLibraryStore.entries.find((e) => e.id === characterId)?.activeVersionId ?? null;
+		// Same seed as a chat started here: an import is a chat with this character too, and two
+		// answers to "which variant is it on" would be two answers to the same question.
+		const characterVersionId = characterLibraryStore.chatVersionSeed(characterId);
 
 		const now = Date.now();
 		const chatId = crypto.randomUUID();

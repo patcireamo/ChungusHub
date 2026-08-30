@@ -1072,8 +1072,28 @@ async function main() {
 	check('default title is "<name> - date"', newChatRow.title.startsWith(`${ariaName} - `) && /\d{4}-\d{2}-\d{2}$/.test(newChatRow.title), newChatRow.title);
 	check('greeting seeded as root', res.msg.greetingsSeeded === 1 && newChatRow.rootMessageId != null && newChatRow.activeLeafId === newChatRow.rootMessageId);
 	check('greeting content is the First Message, raw', (serverDb.getMessagesByChat(NEWCHAT) as any[])[0]?.content === 'You again.');
-	check('version pin mirrors the character', (newChatRow.characterVersionId ?? null) === ((serverDb.getLibraryEntry(ARIA) as any).activeVersionId ?? null));
+	check('version pin is the version new chats start on', (newChatRow.characterVersionId ?? null) === ((serverDb.getCharacterVersionsByEntry(ARIA) as any[])[0]?.id ?? null));
 	check('result carries a jump-in nav', (res.ui as any).nav?.kind === 'chat');
+
+	// The seed rule, on a character whose active variant is NOT its first: a chat is born on
+	// what new chats with that character start on (its own default, else the first one made),
+	// never on whichever variant the library happens to be editing.
+	const SEEDCHAR = crypto.randomUUID();
+	serverDb.insertLibraryEntry({ id: SEEDCHAR, type: 'character', identity: { name: 'Seeded', tags: [] }, data: { traits: { description: 'v1', background: '' } }, isFavorite: false, createdAt: now, updatedAt: now });
+	const ALT = (await call('manage_character_versions', { characterId: SEEDCHAR, action: 'create', name: 'Alt' })).msg.versionId as string;
+	const seedVersions = serverDb.getCharacterVersionsByEntry(SEEDCHAR) as any[];
+	const FIRST = seedVersions[0].id as string;
+	check('the fork is active and is not the first version', (serverDb.getLibraryEntry(SEEDCHAR) as any).activeVersionId === ALT && FIRST !== ALT);
+	const seededRes = await call('create_chat', { characterId: SEEDCHAR });
+	const seededChat = seededRes.msg.chatId as string;
+	check('with no default set, birth pins the first version made', (serverDb.getChat(seededChat) as any).characterVersionId === FIRST);
+	check('and the result names the pin the row actually carries', seededRes.msg.pinnedVersionId === FIRST);
+	serverDb.updateLibraryEntry({ ...(serverDb.getLibraryEntry(SEEDCHAR) as any), defaultVersionId: ALT });
+	const pinnedChat = (await call('create_chat', { characterId: SEEDCHAR })).msg.chatId as string;
+	check('a set default outranks the first version', (serverDb.getChat(pinnedChat) as any).characterVersionId === ALT);
+	serverDb.updateLibraryEntry({ ...(serverDb.getLibraryEntry(SEEDCHAR) as any), defaultVersionId: crypto.randomUUID() });
+	const danglingChat = (await call('create_chat', { characterId: SEEDCHAR })).msg.chatId as string;
+	check('a default naming a deleted version falls back to the first', (serverDb.getChat(danglingChat) as any).characterVersionId === FIRST);
 
 	// A card edit reaching a chat nobody has written in yet (server/db.ts refreshSeededGreetings).
 	// BOTH greeting doors write through updateLibraryEntry, so both have to announce the message

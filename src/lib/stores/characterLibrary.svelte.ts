@@ -1,6 +1,7 @@
 import { db } from '$lib/services/database';
 import { imageService, type ImageCategory } from '$lib/services/imageService';
 import type {
+	ChatDefaultKey,
 	CharacterSprite,
 	CharacterVersion,
 	LibraryEntry,
@@ -555,14 +556,14 @@ class CharacterLibraryStore {
 		await this.persistEntry(entry);
 	}
 
-	/** Set (or clear, with null) the persona new chats with this character start as. A
-	 *  sibling of `data`, so it never mirrors into a version row: which persona a story is
-	 *  played by is not a property of one variant of the character. */
-	async setDefaultPersona(id: string, personaId: string | null): Promise<void> {
+	/** Set (or clear, with null) one of what a new chat with this character starts on. Each
+	 *  key is a sibling of `data`, so none of them mirrors into a version row: who plays a
+	 *  story and where it is sent are not properties of one variant of the character. */
+	async setChatDefault(id: string, key: ChatDefaultKey, value: string | null): Promise<void> {
 		const entry = this.getEntryById(id);
 		if (!entry) throw new Error('That entry no longer exists.');
-		if (personaId) entry.defaultPersonaId = personaId;
-		else delete entry.defaultPersonaId;
+		if (value) entry[key] = value;
+		else delete entry[key];
 		await this.persistEntry(entry);
 	}
 
@@ -749,6 +750,26 @@ class CharacterLibraryStore {
 	/** All versions of an entry, in creation order. Empty = unversioned. */
 	versionsFor(entryId: string): CharacterVersion[] {
 		return this._versions.filter((v) => v.entryId === entryId);
+	}
+
+	/**
+	 * The version a chat with this character is born pinned to: the character's own default
+	 * while that version still exists, else the first one ever made. Null for an unversioned
+	 * character, which pins nothing and follows live data.
+	 *
+	 * Deliberately NOT the active version. That pointer says which variant the library is
+	 * editing, and letting it decide what new chats start on means opening another variant in
+	 * the editor quietly changes what every story started afterwards is played against.
+	 *
+	 * Every door that mints a chat asks here, because a version pin is not optional the way a
+	 * persona or connection claim is: something has to answer it. The assistant's `create_chat`
+	 * spells the same rule server-side, where this cannot be imported.
+	 */
+	chatVersionSeed(entryId: string): string | null {
+		const versions = this.versionsFor(entryId);
+		const seed = this.getEntryById(entryId)?.defaultVersionId;
+		if (seed && versions.some((v) => v.id === seed)) return seed;
+		return versions[0]?.id ?? null;
 	}
 
 	getVersion(versionId: string): CharacterVersion | null {

@@ -30,6 +30,11 @@ export type RawLibraryEntry = {
 	data: { traits: Record<string, string>; lorebookIds?: string[]; alternateGreetings?: string[]; [k: string]: unknown };
 	/** Character-versioning pointer; absent on unversioned entries and personas. */
 	activeVersionId?: string;
+	/** What a new chat with this character starts on (src/lib/types/library.ts). Only the
+	 *  version seed is read here, by `create_chat`: a version pin has to be answered at birth,
+	 *  while a persona or a connection is stamped only from a real choice, which no server
+	 *  door carries. */
+	defaultVersionId?: string;
 	isFavorite: boolean;
 	createdAt: number;
 	updatedAt: number;

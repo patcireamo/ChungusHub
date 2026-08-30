@@ -986,6 +986,22 @@ describe('per-chat setup (architecture/ui-shell-settings.md)', () => {
 		expect(readers.filter((f) => !APP_WIDE.includes(f))).toEqual([]);
 	});
 
+	// A version pin is not optional the way a persona or connection claim is: every door that
+	// mints a chat has to answer it, and the answer is the character's own chat default, else
+	// the first version made. `activeVersionId` says which variant the LIBRARY is editing;
+	// let it answer here and opening another variant in the editor silently changes what
+	// every story started afterwards is played against.
+	test("no door pins a new chat to the library's active version", () => {
+		for (const site of [
+			['src', 'lib', 'stores', 'chat.svelte.ts'],
+			['server', 'assistant', 'registry', 'workspace.ts']
+		]) {
+			expect(read(...site), `${site.join('/')} pins from the active version`).not.toContain(
+				'activeVersionId'
+			);
+		}
+	});
+
 	// The one place the persona rule is spelled twice: the assistant's chat reads run in the
 	// server process, which cannot import chat-setup.ts. A server that read the app pointer
 	// alone would tell the model that a story playing as somebody else attributes its new

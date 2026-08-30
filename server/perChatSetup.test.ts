@@ -2,13 +2,13 @@
  * What a chat and a character store about who plays the story, against the REAL server
  * database (bun:sqlite).
  *
- * Two storage claims. The character's seed rides BESIDE `data` in the entry payload, so it
- * never mirrors into a version row and never reaches a card export, and it is written only
- * when set, so an entry that never carries one stores byte for byte what it stored before
- * the field existed: that is why none of this needs a migration. And a chat born with a
- * persona stamped on it keeps that stamp, which is a claim about the INSERT rather than
- * about a later write, and the way it fails is silently: the row lands, the chat opens, and
- * the persona the reader chose is simply not there.
+ * Two storage claims. Each of the character's seeds rides BESIDE `data` in the entry payload,
+ * so none of them mirrors into a version row or reaches a card export, and each is written
+ * only when set, so an entry that carries none stores byte for byte what it stored before the
+ * fields existed: that is why none of this needs a migration. And a chat born with something
+ * stamped on it keeps that stamp, which is a claim about the INSERT rather than about a later
+ * write, and the way it fails is silently: the row lands, the chat opens, and the choice the
+ * reader made is simply not there.
  *
  * Same env dance as greetingRefresh.test.ts: CHUNGUS_DATA_DIR is pinned to a throwaway dir
  * before the first db call, so no test can silently write into the real user-data.
@@ -59,57 +59,63 @@ function readBack(id: string): Record<string, unknown> {
 	return serverDb.getLibraryEntry(id) as Record<string, unknown>;
 }
 
-describe('defaultPersonaId', () => {
-	test('an entry that carries none stores no key at all', () => {
-		// Not merely falsy: a stored `null` would be a payload byte that was not there
-		// before the field existed, on every character in every install.
-		const entry = makeCharacter();
-		serverDb.insertLibraryEntry(entry);
-		expect('defaultPersonaId' in readBack(entry.id as string)).toBe(false);
+/** Every seed the New Chat Defaults card writes. Each is tested the same way because each
+ *  makes the same three promises about the payload it lands in. */
+const SEED_KEYS = ['defaultPersonaId', 'defaultConnectionId', 'defaultVersionId'] as const;
 
-		serverDb.updateLibraryEntry(entry);
-		expect('defaultPersonaId' in readBack(entry.id as string)).toBe(false);
-	});
+for (const key of SEED_KEYS) {
+	describe(key, () => {
+		test('an entry that carries none stores no key at all', () => {
+			// Not merely falsy: a stored `null` would be a payload byte that was not there
+			// before the field existed, on every character in every install.
+			const entry = makeCharacter();
+			serverDb.insertLibraryEntry(entry);
+			expect(key in readBack(entry.id as string)).toBe(false);
 
-	test('a set seed round-trips as a sibling of data, never inside it', () => {
-		const personaId = crypto.randomUUID();
-		const entry = makeCharacter({ defaultPersonaId: personaId });
-		serverDb.insertLibraryEntry(entry);
-
-		const read = readBack(entry.id as string);
-		expect(read.defaultPersonaId).toBe(personaId);
-		expect(read.data).not.toHaveProperty('defaultPersonaId');
-	});
-
-	test('clearing it drops the key rather than storing an empty one', () => {
-		const entry = makeCharacter({ defaultPersonaId: crypto.randomUUID() });
-		serverDb.insertLibraryEntry(entry);
-
-		delete entry.defaultPersonaId;
-		serverDb.updateLibraryEntry(entry);
-		expect('defaultPersonaId' in readBack(entry.id as string)).toBe(false);
-	});
-
-	test('it never reaches the version row the entry data is mirrored into', () => {
-		// A version row is one variant's content. Who the story is played by is not a
-		// property of a variant, so a fork or a switch must never carry this along.
-		const versionId = crypto.randomUUID();
-		const entry = makeCharacter({ activeVersionId: versionId, defaultPersonaId: crypto.randomUUID() });
-		serverDb.insertLibraryEntry(entry);
-		serverDb.insertCharacterVersion({
-			id: versionId,
-			entryId: entry.id,
-			name: 'base',
-			data: entry.data,
-			createdAt: clock,
-			updatedAt: clock
+			serverDb.updateLibraryEntry(entry);
+			expect(key in readBack(entry.id as string)).toBe(false);
 		});
 
-		serverDb.updateLibraryEntry(entry);
-		const version = serverDb.getCharacterVersion(versionId) as { data: Record<string, unknown> };
-		expect(version.data).not.toHaveProperty('defaultPersonaId');
+		test('a set seed round-trips as a sibling of data, never inside it', () => {
+			const seed = crypto.randomUUID();
+			const entry = makeCharacter({ [key]: seed });
+			serverDb.insertLibraryEntry(entry);
+
+			const read = readBack(entry.id as string);
+			expect(read[key]).toBe(seed);
+			expect(read.data).not.toHaveProperty(key);
+		});
+
+		test('clearing it drops the key rather than storing an empty one', () => {
+			const entry = makeCharacter({ [key]: crypto.randomUUID() });
+			serverDb.insertLibraryEntry(entry);
+
+			delete entry[key];
+			serverDb.updateLibraryEntry(entry);
+			expect(key in readBack(entry.id as string)).toBe(false);
+		});
+
+		test('it never reaches the version row the entry data is mirrored into', () => {
+			// A version row is one variant's content. Who plays a story, and where it is sent,
+			// are not properties of a variant, so a fork or a switch must never carry them along.
+			const versionId = crypto.randomUUID();
+			const entry = makeCharacter({ activeVersionId: versionId, [key]: crypto.randomUUID() });
+			serverDb.insertLibraryEntry(entry);
+			serverDb.insertCharacterVersion({
+				id: versionId,
+				entryId: entry.id,
+				name: 'base',
+				data: entry.data,
+				createdAt: clock,
+				updatedAt: clock
+			});
+
+			serverDb.updateLibraryEntry(entry);
+			const version = serverDb.getCharacterVersion(versionId) as { data: Record<string, unknown> };
+			expect(version.data).not.toHaveProperty(key);
+		});
 	});
-});
+}
 
 describe('a chat born with a claim', () => {
 	function makeChat(featureState: string | null): string {

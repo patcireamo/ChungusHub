@@ -44,6 +44,11 @@
 		// Unique id for form element IDs
 		entityId: string;
 
+		/** Rendered at the foot of the identity pane: beside the portrait on wide screens, and
+		 *  above the card's own fields when the grid stacks. A snippet rather than data, so
+		 *  what goes there keeps its own state and its own store writes. */
+		identityExtra?: Snippet;
+
 		// Callbacks
 		onFieldChange: (field: 'name', value: string) => void;
 		onTraitChange: (traitKey: keyof CharacterTraits, value: string) => void;
@@ -70,6 +75,7 @@
 		sprites,
 		defaultSprite,
 		entityId,
+		identityExtra,
 		onFieldChange,
 		onTraitChange,
 		onImageSelect,
@@ -631,6 +637,8 @@
 				{/if}
 			</div>
 		</div>
+
+		{@render identityExtra?.()}
 	</div>
 
 	<!-- Fields pane: three fixed, collapsible categories. -->

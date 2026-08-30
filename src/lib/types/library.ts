@@ -80,17 +80,29 @@ export interface LibraryEntry {
 	 */
 	activeVersionId?: string;
 	/**
-	 * The persona new chats with this character start as (characters only). Absent = they
-	 * start as the app's persona, which is every character until somebody sets one. It seeds
-	 * a chat's own persona at birth and has no say after that: which persona a chat PLAYS is
-	 * its feature state alone. Deliberately a sibling of `data` rather than a field inside
-	 * it, so it never mirrors into a version row and never reaches a card export.
+	 * What a new chat with this character starts on (characters only), set from the editor's
+	 * New Chat Defaults card. Each one is a SEED: it stamps the chat at birth and has no say
+	 * after that, so moving one never touches a story already under way, and what a chat is
+	 * actually played with is its own state alone.
+	 *
+	 * Absent means the app answers: the persona new chats start as, and the connection
+	 * Primary routes to. `defaultVersionId` is the exception, because a version pin is not
+	 * optional the way the other two are: absent there means the first version ever made.
+	 *
+	 * All three are deliberately siblings of `data` rather than fields inside it, so they
+	 * never mirror into a version row and never reach a card export.
 	 */
 	defaultPersonaId?: string;
+	defaultConnectionId?: string;
+	defaultVersionId?: string;
 	isFavorite: boolean;
 	createdAt: number;
 	updatedAt: number;
 }
+
+/** One seed above, named: what the editor's New Chat Defaults rows and the store's setter
+ *  pass around. */
+export type ChatDefaultKey = 'defaultPersonaId' | 'defaultConnectionId' | 'defaultVersionId';
 
 /**
  * One named variant of a character ("pirate", "castle guard", "calmer take", …).

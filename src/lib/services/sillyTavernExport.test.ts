@@ -148,10 +148,18 @@ describe('SillyTavern card export', () => {
 	// that true, so this searches the whole serialized card rather than a list of fields: a
 	// second default added beside `data` would otherwise ride out silently and make the line lie.
 	test('a chat default never leaves with the card', () => {
-		const card = buildSillyTavernCard(makeEntry({ defaultPersonaId: 'persona-7' }), [], 'all');
-		const serialized = JSON.stringify(card);
-		expect(serialized).not.toContain('persona-7');
-		expect(serialized).not.toContain('defaultPersonaId');
+		const entry = makeEntry({
+			defaultPersonaId: 'persona-7',
+			defaultConnectionId: 'connection-7',
+			defaultVersionId: 'version-7'
+		});
+		const serialized = JSON.stringify(buildSillyTavernCard(entry, [], 'all'));
+		for (const seed of ['persona-7', 'connection-7', 'version-7']) {
+			expect(serialized).not.toContain(seed);
+		}
+		for (const key of ['defaultPersonaId', 'defaultConnectionId', 'defaultVersionId']) {
+			expect(serialized).not.toContain(key);
+		}
 	});
 
 	test('a specific version surfaces only that version and embeds no version list', () => {

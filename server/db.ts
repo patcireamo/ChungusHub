@@ -138,6 +138,15 @@ interface Migration {
 	sql: string;
 }
 
+/**
+ * What a new chat with a character starts on, stored BESIDE `data` in the entry payload
+ * (src/lib/types/library.ts). Listed once here because `libraryPayload` writes each only when
+ * set: an entry carrying none stores exactly what it stored before they existed, which is what
+ * lets a new seed land without a migration. Nothing in this process parses them except
+ * `create_chat`'s version seed (server/assistant/registry/workspace.ts).
+ */
+const CHAT_DEFAULT_KEYS = ['defaultPersonaId', 'defaultConnectionId', 'defaultVersionId'] as const;
+
 /** A chat row as a caller hands it in, shared by the two doors that create one. */
 interface NewChatRow {
 	id: string;
@@ -2295,14 +2304,16 @@ class ServerDatabase {
 		return rows[0] ? this.mapLibraryEntry(rows[0]) : null;
 	}
 
-	/** The stored payload: identity + data, plus the pointers that live BESIDE the data
-	 *  (the active version, and the persona new chats with this character start as). Each is
-	 *  written only when set, so an entry that carries neither stores byte for byte what it
-	 *  stored before either existed. */
+	/** The stored payload: identity + data, plus the pointers that live BESIDE the data (the
+	 *  active version, and what a new chat with this character starts on). Each is written
+	 *  only when set, so an entry carrying none of them stores byte for byte what it stored
+	 *  before any of them existed, which is what spares every one a migration. */
 	private libraryPayload(entry: Record<string, unknown>): Record<string, unknown> {
 		const payload: Record<string, unknown> = { identity: entry.identity, data: entry.data };
 		if (entry.activeVersionId) payload.activeVersionId = entry.activeVersionId;
-		if (entry.defaultPersonaId) payload.defaultPersonaId = entry.defaultPersonaId;
+		for (const key of CHAT_DEFAULT_KEYS) {
+			if (entry[key]) payload[key] = entry[key];
+		}
 		return payload;
 	}
 

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import Icon from '$lib/components/ui/Icon.svelte';
 	import Select from '$lib/components/ui/Select.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
+	import { connectionStore } from '$lib/stores/connections.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import EntryFormFields from './EntryFormFields.svelte';
 	import CharacterVersionMenu from './CharacterVersionMenu.svelte';
@@ -9,7 +11,7 @@
 	import LibraryEditorHeader from './LibraryEditorHeader.svelte';
 	import ExportDialog from './ExportDialog.svelte';
 	import ConvertEntryDialog from './ConvertEntryDialog.svelte';
-	import type { CharacterTraits } from '$lib/types/library';
+	import type { CharacterTraits, ChatDefaultKey } from '$lib/types/library';
 
 	interface Props {
 		entryId: string;
@@ -56,21 +58,62 @@
 		void characterLibraryStore.updateData(entry.id, { lorebookIds: ids });
 	}
 
-	function handleDefaultPersonaChange(personaId: string | null) {
+	function handleChatDefaultChange(key: ChatDefaultKey, value: string | null) {
 		if (!entry) return;
 		characterLibraryStore
-			.setDefaultPersona(entry.id, personaId)
-			.catch((error) => toastStore.failed('save who new chats with this character start as', error));
+			.setChatDefault(entry.id, key, value)
+			.catch((error) => toastStore.failed('save what new chats with this character start on', error));
 	}
 
-	// The seed names a persona that has since been deleted. Nothing sweeps it (deleting a
-	// persona moves the app's pointer and touches no character), and it is deliberately not
-	// swept here either: the select keeps showing that something IS set, so the state is a
-	// line the reader can read and fix rather than a silent blank.
-	let seedPersonaMissing = $derived(
-		!!entry?.defaultPersonaId &&
-			!characterLibraryStore.personas.some((p) => p.id === entry?.defaultPersonaId)
-	);
+	// Closed by default and per open editor: what a chat starts on is set once and then left
+	// alone, so it costs the pane nothing until somebody comes looking for it.
+	let defaultsOpen = $state(false);
+
+	/** One row of the New Chat Defaults panel. A fourth seed is one more entry here. */
+	interface ChatDefaultRow {
+		key: ChatDefaultKey;
+		label: string;
+		/** The neutral option: what a new chat gets while this row is left alone. */
+		fallback: string;
+		options: { id: string; name: string }[];
+		/** Said when the stored id names something that no longer exists. */
+		gone: string;
+	}
+
+	let chatDefaults = $derived.by<ChatDefaultRow[]>(() => {
+		if (!entry) return [];
+		const versions = characterLibraryStore.versionsFor(entry.id);
+		const rows: ChatDefaultRow[] = [
+			{
+				key: 'defaultPersonaId',
+				label: 'Play as',
+				fallback: 'Whoever new chats start as',
+				options: characterLibraryStore.personas.map((p) => ({
+					id: p.id,
+					name: p.identity.name || 'Unnamed persona'
+				})),
+				gone: "That persona is no longer in your library, so new chats start as the app's."
+			},
+			{
+				key: 'defaultConnectionId',
+				label: 'Connection',
+				fallback: 'Whatever the app is sending on',
+				options: connectionStore.list().map((c) => ({ id: c.id, name: c.name })),
+				gone: "That connection is gone, so new chats send on the app's."
+			}
+		];
+		// Nothing to choose between on an unversioned character, and its chats pin nothing.
+		if (versions.length > 0) {
+			rows.push({
+				key: 'defaultVersionId',
+				label: 'Version',
+				fallback: `The first one made (${versions[0].name})`,
+				options: versions.map((v) => ({ id: v.id, name: v.name })),
+				gone: 'That version is gone, so new chats start on the first one made.'
+			});
+		}
+		return rows;
+	});
 
 	const typeLabel = 'Character';
 	const typeLabelLower = 'character';
@@ -264,6 +307,68 @@
 			{/snippet}
 		</LibraryEditorHeader>
 
+		<!-- Seeds, not claims: each one stamps a chat at birth and has no say afterwards, so
+		     changing anything here never touches a story already under way.
+		     It sits at the foot of the identity pane, quiet and closed: what a chat with this
+		     character starts on belongs beside who the character IS rather than among the card
+		     fields, and it is read far less often than any of them. Deliberately not the accent
+		     section headings the card fields wear, since this is not part of the card and the
+		     eye should not read it as one more of them. A fourth seed is one more row. -->
+		{#snippet chatDefaultsPanel()}
+			<div class="pt-3 border-t border-border-subtle/60">
+				<button
+					type="button"
+					class="group w-full flex items-center gap-1.5 py-1 text-text-muted transition-colors"
+					onclick={() => (defaultsOpen = !defaultsOpen)}
+					aria-expanded={defaultsOpen}
+				>
+					<Icon
+						name="chevronDown"
+						class="w-3 h-3 shrink-0 transition-transform {defaultsOpen ? '' : '-rotate-90'}"
+					/>
+					<span class="section-label group-hover:text-text-secondary">New Chat Defaults</span>
+				</button>
+
+				{#if defaultsOpen}
+					<div class="mt-2 space-y-3">
+						{#each chatDefaults as row (row.key)}
+							{@const stored = entry[row.key]}
+							{@const lost = !!stored && !row.options.some((option) => option.id === stored)}
+							<div>
+								<label for="{row.key}-{entryId}" class="slider-label block mb-1">{row.label}</label>
+								{#if lost}
+									<p class="mb-1 text-xs font-ui text-warning">{row.gone}</p>
+								{/if}
+								<Select
+									id="{row.key}-{entryId}"
+									value={stored ?? ''}
+									onchange={(e) =>
+										handleChatDefaultChange(
+											row.key,
+											(e.currentTarget as HTMLSelectElement).value || null
+										)}
+								>
+									<option value="">{row.fallback}</option>
+									{#if lost}
+										<!-- The seed is never swept, so the control shows that something IS set
+										     rather than blanking to a value nobody chose. -->
+										<option value={stored}>No longer here</option>
+									{/if}
+									{#each row.options as option (option.id)}
+										<option value={option.id}>{option.name}</option>
+									{/each}
+								</Select>
+							</div>
+						{/each}
+						<p class="text-xs font-ui leading-relaxed text-text-muted">
+							Only new chats; the ones already going keep what they have. Nothing here is written
+							into an exported card.
+						</p>
+					</div>
+				{/if}
+			</div>
+		{/snippet}
+
 		<div class="flex-1 panel-scroll">
 			<EntryFormFields
 					name={data.name}
@@ -288,59 +393,8 @@
 					onSpriteLabel={handleSpriteLabel}
 					onSpriteDefault={handleSpriteDefault}
 					onSpriteRemove={handleSpriteRemove}
+					identityExtra={chatDefaultsPanel}
 			/>
-
-			<!-- Seeds, not claims: each one stamps a chat at birth and has no say afterwards, so
-			     changing anything here never touches a story already under way.
-			     It wears the settings card recipe rather than the editor's own section headings
-			     because that is the difference a reader has to see at a glance: everything above
-			     is the character and travels with them, everything here is how this install
-			     starts chats with them. A second default is one more row and nothing else. -->
-			<div class="px-6 pb-6">
-				<section class="card max-w-[40rem]">
-					<div class="card-head">
-						<span class="card-title">New Chat Defaults</span>
-					</div>
-
-					<div class="card-body">
-						<div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-							<div class="flex-[1_1_12rem] min-w-0">
-								<label for="default-persona-{entryId}" class="slider-label block">Play as</label>
-								<p class="mt-0.5 text-xs font-ui text-text-muted">
-									Only new chats. The ones already going keep theirs.
-								</p>
-								{#if seedPersonaMissing}
-									<p class="mt-1 text-xs font-ui text-warning">
-										That persona is no longer in your library, so new chats start as the app's.
-									</p>
-								{/if}
-							</div>
-							<!-- Both halves grow, so the control is never narrower than the text above it
-							     once the row wraps onto two lines on a narrow screen. -->
-							<div class="flex-[1_1_14rem]">
-								<Select
-									id="default-persona-{entryId}"
-									value={entry.defaultPersonaId ?? ''}
-									onchange={(e) =>
-										handleDefaultPersonaChange((e.currentTarget as HTMLSelectElement).value || null)}
-								>
-									<option value="">Whoever new chats start as</option>
-									{#if seedPersonaMissing}
-										<option value={entry.defaultPersonaId}>Deleted persona</option>
-									{/if}
-									{#each characterLibraryStore.personas as persona (persona.id)}
-										<option value={persona.id}>{persona.identity.name || 'Unnamed persona'}</option>
-									{/each}
-								</Select>
-							</div>
-						</div>
-					</div>
-
-					<p class="mt-3.5 pt-2.5 border-t border-border-subtle/60 text-xs font-ui text-text-muted">
-						Stays in your library. None of it is written into an exported card.
-					</p>
-				</section>
-			</div>
 		</div>
 
 		<CharacterStatsBar {entry} />

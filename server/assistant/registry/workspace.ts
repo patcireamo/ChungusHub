@@ -71,19 +71,36 @@ function defaultChatTitle(name: string, when: number): string {
 }
 
 /**
+ * The version a chat with this character is born pinned to. Second spelling of
+ * `characterLibraryStore.chatVersionSeed` (src/lib/stores/characterLibrary.svelte.ts), which
+ * this process cannot import: the character's own default while that version still exists,
+ * else the first one ever made, else nothing for an unversioned character. Never the active
+ * version, which says which variant the LIBRARY is editing and nothing about what a story
+ * starts on. Two answers here and a chat the assistant made plays a different variant than
+ * the same chat started from the composer.
+ */
+function chatVersionSeed(entry: RawLibraryEntry): string | null {
+	const versions = serverDb.getCharacterVersionsByEntry(entry.id) as { id: string }[];
+	const seed = entry.defaultVersionId;
+	if (seed && versions.some((v) => v.id === seed)) return seed;
+	return versions[0]?.id ?? null;
+}
+
+/**
  * Server-side replica of chatStore.createChat + seedCharacterGreetings
  * (architecture/chat-sessions.md). The store's client orchestration isn't reachable from
  * here, so the invariants are hand-honored: chat row first with null root/leaf
  * (messages.chat_id is a real FK), greeting rows parent-first as ROOT SIBLINGS
  * stored RAW ({{char}}/{{user}} literal; they resolve live at display/generation),
- * then the root/leaf pointers, all in one transaction; the chat pins to the
- * character's active version at birth. The greeting LIST itself is not replicated:
+ * then the root/leaf pointers, all in one transaction; the chat pins to the character's
+ * chat-default version at birth. It stamps no persona and no connection, like every door
+ * but the two that carry a real choice. The greeting LIST itself is not replicated:
  * `chatGreetingsOf` is the db module's own, and `refreshSeededGreetings` recognises a
  * still-unwritten chat by exactly the rows it produces.
  */
 export const createChat: Capability = {
 	name: 'create_chat',
-	summary: 'Start a new chat with a character, seeded exactly like the UI: the First Message plus any alternate greetings open the chat as swipeable greeting branches, the chat pins to the character\'s active version, and the title defaults to "<name> - YYYY-MM-DD". Does NOT switch what the user has open: the result carries a button to jump in.',
+	summary: 'Start a new chat with a character, seeded exactly like the UI: the First Message plus any alternate greetings open the chat as swipeable greeting branches, the chat pins to the version new chats with that character start on, and the title defaults to "<name> - YYYY-MM-DD". Does NOT switch what the user has open: the result carries a button to jump in.',
 	risk: 'write',
 	params: [
 		{ name: 'characterId', type: 'string', describe: 'The character the chat is bound to.', required: true },
@@ -112,6 +129,9 @@ export const createChat: Capability = {
 		const title = str(args.title).trim() || defaultChatTitle(entry.identity.name, now);
 		const chatId = crypto.randomUUID();
 		const greetings = chatGreetingsOf(entry.data);
+		// Resolved once: the row and the result the assistant reads back have to name the same
+		// variant, or the model is told a pin the chat does not carry.
+		const versionId = chatVersionSeed(entry);
 		serverDb.inTransaction(() => {
 			serverDb.insertChat({
 				id: chatId,
@@ -123,7 +143,7 @@ export const createChat: Capability = {
 				canonLeafId: null,
 				settings: null,
 				characterId: entry.id,
-				characterVersionId: entry.activeVersionId ?? null,
+				characterVersionId: versionId,
 				isFavorite: false
 			});
 			// What the card handed this chat: a chat still holding exactly it is a mirror the
@@ -161,7 +181,7 @@ export const createChat: Capability = {
 				chatId,
 				title,
 				characterId: entry.id,
-				...(entry.activeVersionId ? { pinnedVersionId: entry.activeVersionId } : {}),
+				...(versionId ? { pinnedVersionId: versionId } : {}),
 				greetingsSeeded: greetings.length,
 				...(greetings.length === 0 ? { note: 'The character has no First Message or alternate greetings: the chat opens empty.' } : {}),
 				...stampState(['chat', chatId])
