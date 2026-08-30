@@ -43,7 +43,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			steeringHistory: ['earlier note'],
 			impersonatePerspective: 'third',
 			scene: null,
-			connection: null
+			connection: null,
+			persona: null
 		});
 	});
 
@@ -52,7 +53,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			steeringHistory: ['x'],
 			impersonatePerspective: 'second' as const,
 			scene: null,
-			connection: null
+			connection: null,
+			persona: null
 		};
 		expect(normalizeChatFeatureState(value)).toEqual(value);
 	});
@@ -70,7 +72,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			steeringHistory: ['earlier note'],
 			impersonatePerspective: 'third',
 			scene: null,
-			connection: null
+			connection: null,
+			persona: null
 		});
 		expect('steering' in result).toBe(false);
 	});
@@ -144,6 +147,24 @@ describe('normalizeChatFeatureState: connection', () => {
 		expect(normalizeChatFeatureState({ connection: '' }).connection).toBeNull();
 		expect(normalizeChatFeatureState({ connection: 7 }).connection).toBeNull();
 		expect(normalizeChatFeatureState({ connection: { id: 'conn-1' } }).connection).toBeNull();
+	});
+});
+
+describe('normalizeChatFeatureState: persona', () => {
+	test('a chat that has claimed nobody reads as null', () => {
+		expect(normalizeChatFeatureState({}).persona).toBeNull();
+		expect(normalizeChatFeatureState({ connection: 'conn-1' }).persona).toBeNull();
+	});
+
+	test('a claimed persona survives the trip through the column it is stored in', () => {
+		const state = normalizeChatFeatureState({ persona: 'persona-1', connection: 'conn-1' });
+		expect(state.persona).toBe('persona-1');
+		expect(normalizeChatFeatureState(JSON.stringify(state))).toEqual(state);
+	});
+
+	test('anything that is not a non-empty string is no claim at all', () => {
+		expect(normalizeChatFeatureState({ persona: '' }).persona).toBeNull();
+		expect(normalizeChatFeatureState({ persona: false }).persona).toBeNull();
 	});
 });
 

@@ -7,7 +7,6 @@
 	import TransformPanel from './TransformPanel.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { presetService } from '$lib/services/presets.svelte';
-	import { personaStore } from '$lib/stores/persona.svelte';
 	import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
@@ -25,8 +24,7 @@
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 	import { viewport } from '$lib/stores/viewport.svelte';
 	import { assemblePrompt } from '$lib/utils/prompt-assembly';
-	import { resolvePromptTarget } from '$lib/utils/chat-setup';
-	import { portraitFocusStyle } from '$lib/utils/portrait-focus';
+	import { chatPersonaEntry, resolvePromptTarget, toPromptCharacter } from '$lib/utils/chat-setup';
 	import { relativeClock } from '$lib/utils/time-format.svelte';
 	import { llmService } from '$lib/services/llm/provider';
 	import { imageService, imageRejectionReason, isImageFile } from '$lib/services/imageService';
@@ -246,12 +244,14 @@
 	// Model, budget and prompt shape from the SAME resolver the send runs, so the meter can
 	// never price this chat against one connection while the send rides another.
 	let promptTarget = $derived(resolvePromptTarget(chatStore.activeChat));
+	// Who this story plays as: its own persona while it names one, else the app's.
+	let chatPersona = $derived(chatPersonaEntry(chatStore.activeChat));
 
 	let assembly = $derived(
 		currentPreset
 			? assemblePrompt({
 					preset: currentPreset,
-					resolvedPersona: personaStore.activeResolved,
+					resolvedPersona: toPromptCharacter(chatPersona),
 					resolvedCharacters: activeCharacterEntry && activeCharacterData
 						? [
 								{
@@ -262,7 +262,7 @@
 						: [],
 					lorebooks: lorebookStore.resolveBooks([
 						...(activeCharacterData?.lorebookIds ?? []),
-						...(personaStore.activeEntry?.data.lorebookIds ?? [])
+						...(chatPersona?.data.lorebookIds ?? [])
 					]),
 					lorebookSettings: lorebookSettingsStore.settings,
 					controls: currentPreset.controls ?? [],
@@ -474,56 +474,6 @@
 
 	// ===== Persona quick switch =====
 
-	// Switches the ONE global active persona (personaStore), not this chat's message
-	// attribution: from here on, new user turns are stamped with it and prompt assembly
-	// speaks as it. Past turns keep the persona they were sent with; rebinding those is
-	// the menu's "Relabel your messages…" (ChatPersonaDialog), a different job. The two labels
-	// deliberately share no words: they sit centimetres apart and both show a persona list.
-	// Past a dozen personas a portrait+name list is mostly scrolling, so the popover
-	// flips to a face grid: same rows of pixels, roughly twice the personas in them.
-	const PERSONA_GRID_THRESHOLD = 12;
-
-	let personaMenuOpen = $state(false);
-	let personaMenuRef = $state<HTMLDivElement | null>(null);
-	// One prepared list both popover layouts render from.
-	let personaOptions = $derived(
-		characterLibraryStore.personas.map((p) => ({
-			id: p.id,
-			name: p.identity.name?.trim() || 'Unnamed persona',
-			thumb: imageService.thumbnailUrl(p.identity.imageUrl),
-			focus: portraitFocusStyle(p.identity.portraitFocus)
-		}))
-	);
-	let personaGrid = $derived(personaOptions.length > PERSONA_GRID_THRESHOLD);
-	let activePersona = $derived(personaStore.activeEntry);
-	let activePersonaThumb = $derived(imageService.thumbnailUrl(activePersona?.identity.imageUrl));
-	let activePersonaFocus = $derived(portraitFocusStyle(activePersona?.identity.portraitFocus));
-	let personaTitle = $derived(
-		activePersona
-			? `You are ${activePersona.identity.name?.trim() || 'an unnamed persona'}. Click to switch`
-			: 'No persona. Click to pick one'
-	);
-
-	$effect(() => {
-		if (!personaMenuOpen) return;
-		const onDown = (e: MouseEvent) => {
-			if (personaMenuRef && !personaMenuRef.contains(e.target as Node)) personaMenuOpen = false;
-		};
-		document.addEventListener('mousedown', onDown);
-		return () => document.removeEventListener('mousedown', onDown);
-	});
-
-	// Switching only. Clearing the persona is deliberately not offered here: an
-	// unset persona is a library-level state, not a story move.
-	function pickPersona(id: string) {
-		personaMenuOpen = false;
-		if (id === personaStore.activeId) return;
-		personaStore.setActive(id);
-		const name = personaOptions.find((p) => p.id === id)?.name ?? 'persona';
-		// The persona is app-wide, so say so: the switch follows you into every chat.
-		toastStore.success(`Now playing as ${name} everywhere`);
-	}
-
 	// ===== Composer transforms (Spellcheck / Impersonate) =====
 
 	// The strip that opens above the composer owns the run; what stays here is which one is
@@ -599,7 +549,7 @@
 		activeLeafId: chatStore.activeChat?.activeLeafId ?? null,
 		canonLeafId: chatStore.activeChat?.canonLeafId ?? null,
 		characterEntryId: activeCharacterEntry?.id ?? null,
-		personaEntryId: personaStore.activeEntry?.id ?? null,
+		personaEntryId: chatPersona?.id ?? null,
 		lastTurnId: lastTurn?.id ?? null,
 		canContinue,
 		canRegenerateLast,
@@ -1405,92 +1355,6 @@
 						</div>
 					{/if}
 
-					{#if generalSettingsStore.personaSwitcher}
-						<div class="composer-menu-wrap relative" bind:this={personaMenuRef}>
-							<button
-								type="button"
-								onclick={() => (personaMenuOpen = !personaMenuOpen)}
-								class="composer-icon-btn persona-trigger"
-								class:composer-icon-btn--active={personaMenuOpen}
-								aria-label="Switch persona"
-								aria-haspopup="menu"
-								aria-expanded={personaMenuOpen}
-								title={personaTitle}
-							>
-								{#if activePersonaThumb}
-									<img class="persona-trigger-art" src={activePersonaThumb} alt="" style={activePersonaFocus} />
-								{:else}
-									<Icon name="user" class="w-4 h-4" />
-								{/if}
-							</button>
-
-							{#if personaMenuOpen}
-								<div
-									role="menu"
-									class="persona-menu absolute bottom-full left-0 mb-2 z-20 py-1.5 surface-float rounded-lg shadow-md"
-									class:is-grid={personaGrid}
-								>
-									<p class="px-3 pb-1 text-[10px] font-ui uppercase tracking-wide text-text-muted">
-										Persona
-									</p>
-									{#if personaGrid}
-										<div class="persona-grid">
-											{#each personaOptions as persona (persona.id)}
-												<button
-													type="button"
-													role="menuitem"
-													class="persona-tile"
-													class:is-active={persona.id === personaStore.activeId}
-													title={persona.name}
-													onclick={() => pickPersona(persona.id)}
-												>
-													<span class="persona-tile-art">
-														{#if persona.thumb}
-															<img src={persona.thumb} alt="" loading="lazy" style={persona.focus} />
-														{:else}
-															<Icon name="user" class="w-4 h-4" />
-														{/if}
-													</span>
-													<span class="persona-tile-name">{persona.name}</span>
-												</button>
-											{/each}
-										</div>
-									{:else}
-										<div class="max-h-56 overflow-y-auto">
-											{#each personaOptions as persona (persona.id)}
-												{@const isActive = persona.id === personaStore.activeId}
-												<button
-													type="button"
-													role="menuitem"
-													class="persona-row"
-													class:is-active={isActive}
-													onclick={() => pickPersona(persona.id)}
-												>
-													<span class="persona-check" class:is-visible={isActive}>
-														<Icon name="check" class="w-3.5 h-3.5" />
-													</span>
-													<span class="persona-avatar">
-														{#if persona.thumb}
-															<img src={persona.thumb} alt="" loading="lazy" style={persona.focus} />
-														{:else}
-															<Icon name="user" class="w-3 h-3" />
-														{/if}
-													</span>
-													<span class="persona-row-name">{persona.name}</span>
-												</button>
-											{/each}
-										</div>
-									{/if}
-									{#if personaOptions.length === 0}
-										<p class="px-3 pt-1 text-[10px] leading-snug font-ui text-text-muted">
-											No personas yet. Create one in the Personas tab.
-										</p>
-									{/if}
-								</div>
-							{/if}
-						</div>
-					{/if}
-
 					<div class="composer-feature-divider" aria-hidden="true"></div>
 
 					<ChatSetupChip />
@@ -1915,162 +1779,6 @@
 	   of the story above it. The list itself is CommandPalette.svelte. */
 	.composer-shell--command {
 		border-color: var(--color-accent);
-	}
-
-	/* ===== Persona quick switch ===== */
-
-	/* The trigger doubles as the readout of who you currently are, so the portrait
-	   fills it edge to edge (the icon fallback keeps the normal button padding). */
-	.persona-trigger {
-		overflow: hidden;
-	}
-
-	.persona-trigger-art {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-	}
-
-	.persona-menu {
-		width: 15rem;
-		max-width: calc(100vw - 1rem);
-	}
-
-	/* The grid needs room for three faces per row; below that it reads as a
-	   worse list. auto-fill keeps it honest if the clamp ever narrows it. */
-	.persona-menu.is-grid {
-		width: 18.5rem;
-	}
-
-	.persona-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr));
-		gap: 0.25rem;
-		padding: 0.15rem 0.5rem;
-		max-height: 17rem;
-		overflow-y: auto;
-	}
-
-	.persona-tile {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.35rem;
-		min-width: 0;
-		padding: 0.4rem 0.25rem;
-		border: 0;
-		border-radius: var(--radius-md);
-		background: transparent;
-		color: var(--color-text-secondary);
-		font-family: var(--font-ui);
-		font-size: 0.66rem;
-		cursor: pointer;
-		transition: background-color 120ms ease, color 120ms ease;
-	}
-
-	.persona-tile:hover {
-		background: color-mix(in srgb, var(--color-bg-tertiary) 85%, transparent);
-		color: var(--color-text-primary);
-	}
-
-	.persona-tile.is-active {
-		color: var(--color-text-primary);
-		font-weight: 600;
-	}
-
-	.persona-tile-art {
-		display: grid;
-		place-items: center;
-		width: 2.6rem;
-		height: 2.6rem;
-		border-radius: 999px;
-		overflow: hidden;
-		background: var(--color-bg-tertiary);
-		color: var(--color-text-muted);
-	}
-
-	.persona-tile-art img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-	}
-
-	/* The active mark is a ring on the portrait, not a check badge: a badge would be
-	   clipped by the circle's own overflow, and the ring survives a dark thumbnail. */
-	.persona-tile.is-active .persona-tile-art {
-		box-shadow: 0 0 0 2px var(--color-accent);
-	}
-
-	.persona-tile-name {
-		width: 100%;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		text-align: center;
-	}
-
-	.persona-row {
-		width: 100%;
-		display: flex;
-		align-items: center;
-		gap: 0.4rem;
-		padding: 0.35rem 0.65rem 0.35rem 0.5rem;
-		border: 0;
-		background: transparent;
-		color: var(--color-text-secondary);
-		font-family: var(--font-ui);
-		font-size: 0.76rem;
-		text-align: left;
-		cursor: pointer;
-		transition: background-color 120ms ease, color 120ms ease;
-	}
-
-	.persona-row:hover {
-		background: color-mix(in srgb, var(--color-bg-tertiary) 85%, transparent);
-		color: var(--color-text-primary);
-	}
-
-	.persona-row.is-active {
-		color: var(--color-text-primary);
-		font-weight: 600;
-	}
-
-	.persona-check {
-		width: 0.9rem;
-		flex-shrink: 0;
-		display: inline-flex;
-		color: var(--color-accent);
-		visibility: hidden;
-	}
-
-	.persona-check.is-visible {
-		visibility: visible;
-	}
-
-	.persona-avatar {
-		display: grid;
-		place-items: center;
-		width: 1.5rem;
-		height: 1.5rem;
-		flex-shrink: 0;
-		border-radius: 999px;
-		overflow: hidden;
-		background: var(--color-bg-tertiary);
-		color: var(--color-text-muted);
-	}
-
-	.persona-avatar img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-	}
-
-	.persona-row-name {
-		flex: 1;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
 	}
 
 	/* ===== Steering trigger (the panel's own styles live in SteeringPopover) ===== */

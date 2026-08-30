@@ -555,6 +555,17 @@ class CharacterLibraryStore {
 		await this.persistEntry(entry);
 	}
 
+	/** Set (or clear, with null) the persona new chats with this character start as. A
+	 *  sibling of `data`, so it never mirrors into a version row: which persona a story is
+	 *  played by is not a property of one variant of the character. */
+	async setDefaultPersona(id: string, personaId: string | null): Promise<void> {
+		const entry = this.getEntryById(id);
+		if (!entry) throw new Error('That entry no longer exists.');
+		if (personaId) entry.defaultPersonaId = personaId;
+		else delete entry.defaultPersonaId;
+		await this.persistEntry(entry);
+	}
+
 	/** Trait-only `updateData`. The proposal apply path writes through here right after
 	 *  forking a version. */
 	updateTraits(id: string, changes: Partial<LibraryEntryData['traits']>): Promise<void> {

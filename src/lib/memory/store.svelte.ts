@@ -18,7 +18,7 @@ import type { LLMCompletionResult, LLMMessage } from '$lib/types/llm';
 import { llmService } from '$lib/services/llm/provider';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
-import { personaStore } from '$lib/stores/persona.svelte';
+import { personaEntryFor, toPromptCharacter } from '$lib/utils/chat-setup';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { resolveLorebooks } from '$lib/lorebook/engine';
@@ -65,6 +65,10 @@ export interface ChatCtx {
 	 *  ctx. Without it the card sheet memory extracts against silently becomes the
 	 *  library's active variant instead of the one this chat is actually playing. */
 	characterVersionId: string | null;
+	/** The persona this chat claimed, travelling with the ctx for the same reason the version
+	 *  pin does. Null is "follow the app", which is what memory extracts against unless the
+	 *  chat named someone else. */
+	personaId: string | null;
 }
 
 export type MemoryStatus = 'idle' | 'processing' | 'building' | 'rebuilding' | 'error';
@@ -415,9 +419,11 @@ class MemoryStore {
 				}
 			: null;
 		const chatMessages = ctx.leafId ? findActivePath(ctx.allMessages, ctx.leafId) : [];
+		// The persona this chat plays as, same rule and same resolver as the prompt.
+		const persona = personaEntryFor(ctx.personaId);
 		const base: MacroContext = {
 			resolvedCharacters: character ? [character] : [],
-			resolvedPersona: personaStore.activeResolved,
+			resolvedPersona: toPromptCharacter(persona),
 			chatMessages,
 			controls: presetService.getActiveEffectivePreset()?.controls ?? [],
 			customFields: presetControlsStore.values,
@@ -428,7 +434,7 @@ class MemoryStore {
 		const lore = resolveLorebooks({
 			books: lorebookStore.resolveBooks([
 				...(data?.lorebookIds ?? []),
-				...(personaStore.activeEntry?.data.lorebookIds ?? [])
+				...(persona?.data.lorebookIds ?? [])
 			]),
 			messages: chatMessages.map((m) => m.content),
 			fields: lorebookScanFields(base.resolvedCharacters ?? [], base.resolvedPersona),
@@ -786,24 +792,28 @@ class MemoryStore {
 		const charName =
 			(ctx.characterId && characterLibraryStore.entries.find((e) => e.id === ctx.characterId)?.identity.name?.trim()) ||
 			'Narrator';
+		// Who an unstamped user turn belongs to: the persona this chat plays as. Imported and
+		// pre-feature rows carry no persona of their own, so they read as whoever the story
+		// is being played by rather than as whoever the app happens to be.
+		const userName = personaEntryFor(ctx.personaId)?.identity.name?.trim() || 'User';
 		return ctx.allMessages.map((m) => ({
 			id: m.id,
 			parentId: m.parentId,
 			role: m.role,
 			content: m.content,
-			speaker: this.speakerFor(m, charName),
+			speaker: this.speakerFor(m, charName, userName),
 			editedAt: m.editedAt
 		}));
 	}
 
-	private speakerFor(m: Message, charName: string): string {
+	private speakerFor(m: Message, charName: string, userName: string): string {
 		if (m.role === 'assistant') return charName;
 		if (m.role === 'system') return 'System';
 		if (m.personaId) {
 			const p = characterLibraryStore.entries.find((e) => e.id === m.personaId && e.type === 'persona');
 			if (p?.identity.name?.trim()) return p.identity.name.trim();
 		}
-		return personaStore.activeResolved?.name?.trim() || 'User';
+		return userName;
 	}
 }
 

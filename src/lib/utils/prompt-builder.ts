@@ -11,18 +11,16 @@ import type { CallTarget, LLMMessage } from '$lib/types/llm';
 import type { Message } from '$lib/types/chat';
 import { activeSteeringNotes, resolveSteeringForPrompt, steeringTargetForChat } from '$lib/types/steering';
 import type { PromptPreset } from '$lib/types/database';
-import type { LibraryEntry } from '$lib/types/library';
 import type { Lorebook, LorebookTrace, LorebookTrigger } from '$lib/lorebook/types';
 import { resolveLorebookLinks } from '$lib/lorebook/types';
 import { db } from '$lib/services/database';
 import { presetService } from '$lib/services/presets.svelte';
 import { readPresetControlValues } from '$lib/stores/presetControls.svelte';
-import type { PromptCharacter } from '$lib/macros';
 import { memoryStore } from '$lib/memory/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
-import { resolvePromptTarget } from './chat-setup';
+import { chatPersonaClaim, resolvePersonaId, resolvePromptTarget, toPromptCharacter } from './chat-setup';
 import { assemblePrompt, type PromptRecall } from './prompt-assembly';
 
 const ACTIVE_PERSONA_KEY = 'activePersonaId';
@@ -41,15 +39,6 @@ export interface PromptBuildContext {
 	 *  connection is assembled in that connection's terms, not primary's.
 	 *  Defaults to the primary chat send. */
 	target?: CallTarget;
-}
-
-function toPromptCharacter(entry: LibraryEntry | null | undefined): PromptCharacter | null {
-	if (!entry) return null;
-	return {
-		name: entry.identity.name,
-		traits: entry.data.traits,
-		storyNotes: ''
-	};
 }
 
 /** A built prompt: what goes on the wire, and the lorebook scan that shaped it. */
@@ -83,7 +72,7 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 	await presetService.initialize();
 	const preset: PromptPreset | null = presetService.getActiveEffectivePreset();
 
-	// Resolve the chat's bound character, the global persona, and that character's
+	// Resolve the chat's bound character, the persona it plays as, and that character's
 	// lorebook + the global preset-control values for macro expansion.
 	const chat = chatId ? await db.getChat(chatId) : null;
 	const libraryEntries = chat ? await db.getAllLibraryEntries() : [];
@@ -104,9 +93,16 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 		}
 		character = { ...character, data: version.data };
 	}
-	const activePersonaId = (await db.getSetting(ACTIVE_PERSONA_KEY)) || null;
-	const personaEntry = activePersonaId
-		? libraryEntries.find((entry) => entry.id === activePersonaId && entry.type === 'persona') ?? null
+	// The chat's own persona while it names one that still exists, else the app's. Same
+	// resolver the meter and the transcript run, against the rows read here rather than the
+	// store's copy (architecture/prompt-pipeline.md coupling 3c).
+	const personaId = resolvePersonaId(
+		chatPersonaClaim(chat),
+		libraryEntries,
+		(await db.getSetting(ACTIVE_PERSONA_KEY)) || null
+	);
+	const personaEntry = personaId
+		? libraryEntries.find((entry) => entry.id === personaId && entry.type === 'persona') ?? null
 		: null;
 
 	// Active lorebooks = those linked by the bound character + the active persona, resolved IN

@@ -79,6 +79,14 @@ export interface LibraryEntry {
 	 * version rows (parked and active) always hold real, current content.
 	 */
 	activeVersionId?: string;
+	/**
+	 * The persona new chats with this character start as (characters only). Absent = they
+	 * start as the app's persona, which is every character until somebody sets one. It seeds
+	 * a chat's own persona at birth and has no say after that: which persona a chat PLAYS is
+	 * its feature state alone. Deliberately a sibling of `data` rather than a field inside
+	 * it, so it never mirrors into a version row and never reaches a card export.
+	 */
+	defaultPersonaId?: string;
 	isFavorite: boolean;
 	createdAt: number;
 	updatedAt: number;

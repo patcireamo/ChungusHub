@@ -23,7 +23,9 @@ interface GeneralSettings {
 	transcriptLoadMode: TranscriptLoadMode;
 	/** Open the per-message reasoning box by default (streaming and saved turns). */
 	autoExpandReasoning: boolean;
-	/** Show the persona quick-switch button in the chat box's feature row. */
+	/** Read by nothing. Who a story plays as is claimed in the chat itself (the composer's
+	 *  setup chip), so there is no app-wide switch to show or hide. The key is still parsed
+	 *  and written back so an install that recorded a value keeps it byte for byte. */
 	personaSwitcher: boolean;
 	/** Show the floating Chungus Assistant launcher in the workspace corner. Off hides
 	 *  the button only: the assistant itself is untouched, and Ctrl/⌘+J still opens it. */
@@ -147,7 +149,6 @@ class GeneralSettingsStore {
 	transcriptPageSize = $derived(this.settings.transcriptPageSize);
 	transcriptLoadMode = $derived(this.settings.transcriptLoadMode);
 	autoExpandReasoning = $derived(this.settings.autoExpandReasoning);
-	personaSwitcher = $derived(this.settings.personaSwitcher);
 	assistantLauncher = $derived(this.settings.assistantLauncher);
 	settingsSplitView = $derived(this.settings.settingsSplitView);
 	storyMapWheelPans = $derived(this.settings.storyMapWheelPans);
@@ -200,11 +201,6 @@ class GeneralSettingsStore {
 
 	setAutoExpandReasoning(enabled: boolean): void {
 		this.settings.autoExpandReasoning = enabled;
-		this.persist();
-	}
-
-	setPersonaSwitcher(enabled: boolean): void {
-		this.settings.personaSwitcher = enabled;
 		this.persist();
 	}
 

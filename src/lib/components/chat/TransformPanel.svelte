@@ -28,7 +28,7 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import PillRow from '$lib/components/ui/PillRow.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
-	import { personaStore } from '$lib/stores/persona.svelte';
+	import { chatPersonaEntry } from '$lib/utils/chat-setup';
 	import { promptHoldStore } from '$lib/stores/promptHold.svelte';
 	import { engineById } from '$lib/engines/registry';
 	import { failureText } from '$lib/stores/toast.svelte';
@@ -74,7 +74,7 @@
 
 	// Written as the reader would meet it: the same sentence in each person, with the
 	// active persona's own name in the third, so the pick needs no explaining.
-	let speaker = $derived(personaStore.activeEntry?.identity.name?.trim() ?? '');
+	let speaker = $derived(chatPersonaEntry(chatStore.activeChat)?.identity.name?.trim() ?? '');
 	let perspectiveOptions = $derived([
 		{ value: 'first', label: 'First person', title: 'Written as "I reach for the letter"' },
 		{ value: 'second', label: 'Second person', title: 'Written as "You reach for the letter"' },

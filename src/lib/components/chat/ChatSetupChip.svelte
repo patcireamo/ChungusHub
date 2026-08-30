@@ -15,11 +15,22 @@
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { connectionStore } from '$lib/stores/connections.svelte';
-	import { personaStore } from '$lib/stores/persona.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
-	import { chatConnectionId } from '$lib/utils/chat-setup';
+	import { chatConnectionId, chatPersonaClaim, chatPersonaEntry } from '$lib/utils/chat-setup';
 
 	let chat = $derived(chatStore.activeChat);
+
+	// ===== You =====
+
+	let personas = $derived(characterLibraryStore.entries.filter((e) => e.type === 'persona'));
+	let claimedPersona = $derived(chatPersonaClaim(chat));
+	let persona = $derived(chatPersonaEntry(chat));
+	/** The chat named a persona that no longer exists, so it is speaking as the app's. */
+	let lostPersona = $derived(
+		claimedPersona !== null && !personas.some((p) => p.id === claimedPersona)
+	);
+	/** Which row wears the check: the claim while it is live, else the app entry. */
+	let pickedPersona = $derived(lostPersona ? null : claimedPersona);
 
 	// ===== Connection =====
 
@@ -47,7 +58,7 @@
 
 	// ===== The chip itself =====
 
-	let personaName = $derived(personaStore.activeEntry?.identity.name ?? 'You');
+	let personaName = $derived(persona?.identity.name ?? 'You');
 	let modelName = $derived(connection?.model.split('/').pop() || 'No model');
 
 	let open = $state(false);
@@ -62,6 +73,20 @@
 		document.addEventListener('mousedown', onDown);
 		return () => document.removeEventListener('mousedown', onDown);
 	});
+
+	async function pickPersona(id: string | null) {
+		if (!chat || busy) return;
+		open = false;
+		if (id === claimedPersona) return;
+		busy = true;
+		try {
+			await chatStore.updateChatFeatureState(chat.id, { persona: id });
+		} catch (error) {
+			toastStore.failed('change who you play as in this chat', error);
+		} finally {
+			busy = false;
+		}
+	}
 
 	async function pickConnection(id: string | null) {
 		if (!chat || busy) return;
@@ -112,7 +137,43 @@
 				role="menu"
 				class="absolute bottom-full left-0 mb-2 z-20 w-[264px] py-1.5 surface-float rounded-lg shadow-md"
 			>
-				<p class="setup-heading">Connection</p>
+				<p class="setup-heading">You</p>
+				{#if lostPersona}
+					<p class="setup-note">The persona this chat named is gone. It is playing as the app's.</p>
+				{/if}
+				<div class="setup-list">
+					<button
+						type="button"
+						role="menuitem"
+						class="setup-row"
+						class:is-picked={pickedPersona === null}
+						disabled={busy}
+						onclick={() => pickPersona(null)}
+					>
+						<span class="setup-check" class:is-visible={pickedPersona === null}>
+							<Icon name="check" class="w-3.5 h-3.5" />
+						</span>
+						<span class="setup-row-name">Follow the app</span>
+					</button>
+					{#each personas as option (option.id)}
+						{@const isPicked = option.id === pickedPersona}
+						<button
+							type="button"
+							role="menuitem"
+							class="setup-row"
+							class:is-picked={isPicked}
+							disabled={busy}
+							onclick={() => pickPersona(option.id)}
+						>
+							<span class="setup-check" class:is-visible={isPicked}>
+								<Icon name="check" class="w-3.5 h-3.5" />
+							</span>
+							<span class="setup-row-name">{option.identity.name}</span>
+						</button>
+					{/each}
+				</div>
+
+				<p class="setup-heading setup-heading-next">Connection</p>
 				{#if lostConnection}
 					<p class="setup-note">
 						The connection this chat named is gone. It is sending on the app's.

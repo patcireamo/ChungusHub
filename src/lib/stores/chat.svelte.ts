@@ -1,5 +1,6 @@
 import type { Chat, Message, ChatState, ChatStream } from '$lib/types/chat';
 import {
+	DEFAULT_CHAT_FEATURE_STATE,
 	normalizeChatFeatureState,
 	pushSteeringHistoryEntry,
 	type ChatFeatureState,
@@ -8,6 +9,7 @@ import {
 import { db } from '$lib/services/database';
 import { llmStatus, stopGeneration } from '$lib/services/transport';
 import { findActivePath } from '$lib/utils/message-tree';
+import { chatPersonaClaim } from '$lib/utils/chat-setup';
 import { formatDate } from '$lib/utils/date';
 import { convertSillyTavernChat } from '$lib/services/sillyTavernChatImport';
 import { toastStore } from '$lib/stores/toast.svelte';
@@ -93,15 +95,25 @@ class ChatStore {
 	}
 
 	/** Create a chat bound to a library character (ST-style). Always a fresh
-	 *  chat: a story never exists without a character, so the id is required. */
-	async createChat(options: { characterId: string }): Promise<string> {
+	 *  chat: a story never exists without a character, so the id is required.
+	 *
+	 *  `personaId` is the New chat flow's persona step saying who this story is played by.
+	 *  It is the only thing that outranks the character's own seed, because it is a choice
+	 *  somebody just made about this chat. */
+	async createChat(options: { characterId: string; personaId?: string }): Promise<string> {
 		const now = Date.now();
 		const { characterId } = options;
+		const entry = characterLibraryStore.entries.find((e) => e.id === characterId);
 		// Pin the chat to the character's active version at birth: the story keeps the
 		// exact variant it started with, however far the character moves on. Unversioned
 		// characters pin nothing (null = follow live data, the pre-version behavior).
-		const characterVersionId =
-			characterLibraryStore.entries.find((e) => e.id === characterId)?.activeVersionId ?? null;
+		const characterVersionId = entry?.activeVersionId ?? null;
+		// A persona is stamped ONLY from a real choice: this character's seed, or the picker
+		// the reader just used. Every other door leaves it null and the story follows the app,
+		// because createChat is also reached with nobody present (routeAfterDelete mints a
+		// chat as a side effect of deleting another), and stamping whatever happened to be
+		// active there would write a permanent pin nobody made.
+		const personaId = options.personaId ?? entry?.defaultPersonaId ?? null;
 		const chat: Chat = {
 			id: crypto.randomUUID(),
 			title: this.generateChatTitle(characterId),
@@ -114,7 +126,9 @@ class ChatStore {
 			characterId,
 			characterVersionId,
 			isFavorite: false,
-			featureState: null
+			featureState: personaId
+				? JSON.stringify({ ...DEFAULT_CHAT_FEATURE_STATE, persona: personaId })
+				: null
 		};
 
 		await db.insertChat(chat);
@@ -467,7 +481,8 @@ class ChatStore {
 				allMessages: messages,
 				leafId: chat.activeLeafId,
 				characterId: chat.characterId,
-				characterVersionId: chat.characterVersionId
+				characterVersionId: chat.characterVersionId,
+				personaId: chatPersonaClaim(chat)
 			});
 		} catch (e) {
 			console.error('[memory] refresh failed:', e);

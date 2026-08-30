@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import Select from '$lib/components/ui/Select.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import EntryFormFields from './EntryFormFields.svelte';
@@ -53,6 +54,13 @@
 	function handleLorebookLinksChange(ids: string[]) {
 		if (!entry) return;
 		void characterLibraryStore.updateData(entry.id, { lorebookIds: ids });
+	}
+
+	function handleDefaultPersonaChange(personaId: string | null) {
+		if (!entry) return;
+		characterLibraryStore
+			.setDefaultPersona(entry.id, personaId)
+			.catch((error) => toastStore.failed('save who new chats with this character start as', error));
 	}
 
 	const typeLabel = 'Character';
@@ -272,6 +280,31 @@
 					onSpriteDefault={handleSpriteDefault}
 					onSpriteRemove={handleSpriteRemove}
 			/>
+
+			<!-- The seed, not a claim: it stamps a chat's own persona at birth and has no say
+			     afterwards, so changing it never touches a story already under way. -->
+			<div class="px-6 pb-6 max-w-md">
+				<label
+					for="default-persona-{entryId}"
+					class="block text-sm font-ui font-medium text-text-primary mb-1.5"
+				>
+					Play as
+				</label>
+				<Select
+					id="default-persona-{entryId}"
+					value={entry.defaultPersonaId ?? ''}
+					onchange={(e) =>
+						handleDefaultPersonaChange((e.currentTarget as HTMLSelectElement).value || null)}
+				>
+					<option value="">Whoever new chats start as</option>
+					{#each characterLibraryStore.personas as persona (persona.id)}
+						<option value={persona.id}>{persona.identity.name || 'Unnamed persona'}</option>
+					{/each}
+				</Select>
+				<p class="mt-1.5 text-xs font-ui text-text-muted">
+					New chats with this character start as this persona. Chats already going keep theirs.
+				</p>
+			</div>
 		</div>
 
 		<CharacterStatsBar {entry} />

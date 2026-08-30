@@ -17,7 +17,7 @@
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import MacroReference from '$lib/components/ui/MacroReference.svelte';
 	import PresetManager from '$lib/components/presets/PresetManager.svelte';
-	import { resolvePromptTarget } from '$lib/utils/chat-setup';
+	import { chatPersonaEntry, resolvePromptTarget, toPromptCharacter } from '$lib/utils/chat-setup';
 	import { presetService } from '$lib/services/presets.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { personaStore } from '$lib/stores/persona.svelte';
@@ -123,9 +123,10 @@
 	// auto-lorebook all included, instead of a separate approximation that drifts. The
 	// connection those numbers are counted in comes from the same resolver too.
 	let promptTarget = $derived(resolvePromptTarget(chatStore.activeChat));
+	let chatPersona = $derived(chatPersonaEntry(chatStore.activeChat));
 	let assembleInput = $derived<AssembleInput>({
 		preset: currentPreset,
-		resolvedPersona: personaStore.activeResolved,
+		resolvedPersona: toPromptCharacter(chatPersona),
 		resolvedCharacters: activeCharacterEntry && activeCharacterData
 			? [
 					{
@@ -136,7 +137,7 @@
 			: [],
 		lorebooks: lorebookStore.resolveBooks([
 			...(activeCharacterData?.lorebookIds ?? []),
-			...(personaStore.activeEntry?.data.lorebookIds ?? [])
+			...(chatPersona?.data.lorebookIds ?? [])
 		]),
 		lorebookSettings: lorebookSettingsStore.settings,
 		controls: currentPreset?.controls ?? [],

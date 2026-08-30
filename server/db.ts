@@ -2290,11 +2290,14 @@ class ServerDatabase {
 		return rows[0] ? this.mapLibraryEntry(rows[0]) : null;
 	}
 
-	/** The stored payload: identity + data, plus the active version pointer when the
-	 *  entry is versioned. Unversioned entries keep the exact pre-version shape. */
+	/** The stored payload: identity + data, plus the pointers that live BESIDE the data
+	 *  (the active version, and the persona new chats with this character start as). Each is
+	 *  written only when set, so an entry that carries neither stores byte for byte what it
+	 *  stored before either existed. */
 	private libraryPayload(entry: Record<string, unknown>): Record<string, unknown> {
 		const payload: Record<string, unknown> = { identity: entry.identity, data: entry.data };
 		if (entry.activeVersionId) payload.activeVersionId = entry.activeVersionId;
+		if (entry.defaultPersonaId) payload.defaultPersonaId = entry.defaultPersonaId;
 		return payload;
 	}
 

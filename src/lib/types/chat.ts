@@ -118,10 +118,22 @@ export interface ChatFeatureState {
 	 *  stay app-wide. An id naming a connection that no longer exists resolves to the app's
 	 *  too, rather than throwing or being swept (see utils/chat-setup.ts). */
 	connection: string | null;
+	/** The persona this story plays as, or null to follow the app's. Stamped at birth only
+	 *  from a real choice (the character's defaultPersonaId seed, or the persona step of the
+	 *  New chat flow); every other door leaves it null, so a chat minted as a side effect of
+	 *  something else never carries a pin nobody made. Resolved like `connection`: a deleted
+	 *  persona reads as no claim. */
+	persona: string | null;
 }
 
 function defaultChatFeatureState(): ChatFeatureState {
-	return { steeringHistory: [], impersonatePerspective: 'first', scene: null, connection: null };
+	return {
+		steeringHistory: [],
+		impersonatePerspective: 'first',
+		scene: null,
+		connection: null,
+		persona: null
+	};
 }
 
 export const DEFAULT_CHAT_FEATURE_STATE: ChatFeatureState = defaultChatFeatureState();
@@ -177,7 +189,8 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		steeringHistory: normalizeSteeringHistory(obj.steeringHistory),
 		impersonatePerspective: normalizeImpersonatePerspective(obj.impersonatePerspective),
 		scene: normalizeChatScene(obj.scene),
-		connection: normalizeClaimedId(obj.connection)
+		connection: normalizeClaimedId(obj.connection),
+		persona: normalizeClaimedId(obj.persona)
 	};
 }
 

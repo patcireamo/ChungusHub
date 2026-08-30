@@ -34,18 +34,38 @@ export function requireChatId(explicit: unknown): string {
 	return explicit.trim();
 }
 
-/** Books active for a chat: those linked by its character + the globally-active persona. */
+function personaEntry(id: string | null | undefined): RawLibraryEntry | null {
+	if (!id) return null;
+	const entry = serverDb.getLibraryEntry(id) as RawLibraryEntry | null;
+	return entry?.type === 'persona' ? entry : null;
+}
+
+/**
+ * The persona a chat plays as: its own claim while that persona still exists, else the one
+ * the app starts new chats as. The client resolves this in `src/lib/utils/chat-setup.ts`,
+ * which the server cannot import, so the rule is spelled again here rather than reported
+ * wrong: a read that named the app's persona would tell the model that a story playing as
+ * somebody else attributes its new turns to them.
+ */
+function chatPersona(chat: RawChat): RawLibraryEntry | null {
+	let claimed: unknown = null;
+	try {
+		claimed = chat.featureState ? (JSON.parse(chat.featureState) as { persona?: unknown }).persona : null;
+	} catch {
+		claimed = null;
+	}
+	const own = typeof claimed === 'string' && claimed ? claimed : null;
+	return personaEntry(own) ?? personaEntry(serverDb.getSetting('activePersonaId'));
+}
+
+/** Books active for a chat: those linked by its character + the persona it plays as. */
 function chatLorebooks(chat: RawChat): RawLorebookBook[] {
 	const ids = new Set<string>();
 	if (chat.characterId) {
 		const c = serverDb.getLibraryEntry(chat.characterId) as RawLibraryEntry | null;
 		for (const id of c?.data?.lorebookIds ?? []) ids.add(id);
 	}
-	const activePersonaId = serverDb.getSetting('activePersonaId');
-	if (activePersonaId) {
-		const p = serverDb.getLibraryEntry(activePersonaId) as RawLibraryEntry | null;
-		for (const id of p?.data?.lorebookIds ?? []) ids.add(id);
-	}
+	for (const id of chatPersona(chat)?.data?.lorebookIds ?? []) ids.add(id);
 	return [...ids].map((id) => serverDb.getLorebook(id) as RawLorebookBook | null).filter((b): b is RawLorebookBook => !!b);
 }
 
@@ -425,7 +445,7 @@ function entryIndex(e: RawLorebookEntry): Record<string, unknown> {
 
 export const readChatContext: Capability = {
 	name: 'read_chat_context',
-	summary: "Read a chat's cast: its bound character IN FULL and the personas that actually speak in its thread IN FULL (each user message is stamped with the persona it was sent with; null = unattributed, renders as \"You\"), plus an INDEX of the scene's lorebooks (book + entry ids, keys, content previews). `activePersona` is a name pointer only: who NEW messages will be attributed to, not necessarily who spoke earlier; read_entity it when needed. Read this before editing roleplay so you write them in character. For an entry's full text, use read_lorebook_entries.",
+	summary: "Read a chat's cast: its bound character IN FULL and the personas that actually speak in its thread IN FULL (each user message is stamped with the persona it was sent with; null = unattributed, renders as \"You\"), plus an INDEX of the scene's lorebooks (book + entry ids, keys, content previews). `activePersona` is a name pointer only: who NEW messages in THIS chat will be attributed to (its own persona if it plays as one, else the app's), not necessarily who spoke earlier; read_entity it when needed. Read this before editing roleplay so you write them in character. For an entry's full text, use read_lorebook_entries.",
 	risk: 'read',
 	params: [{ name: 'chatId', type: 'string', describe: 'The chat to read.', required: true }],
 	run(args, ctx) {
@@ -452,8 +472,7 @@ export const readChatContext: Capability = {
 			// A deleted persona stays visible as a distinct (dead) speaker, not dropped.
 			return flat ? { id: flat.id, ...flat.fields } : { id, deleted: true };
 		});
-		const activePersonaId = serverDb.getSetting('activePersonaId');
-		const activeRaw = activePersonaId ? (serverDb.getLibraryEntry(activePersonaId) as RawLibraryEntry | null) : null;
+		const activeRaw = chatPersona(chat);
 		const books = chatLorebooks(chat);
 		// Portraits for who is actually in the scene: the character + the speakers.
 		const attach = portraitAttachment([charFlat?.id, ...usedIds], ctx);
@@ -473,7 +492,7 @@ export const readChatContext: Capability = {
 				character: charFlat ? { id: charFlat.id, ...charFlat.fields } : null,
 				personas,
 				...(unattributed ? { unattributedUserMessages: unattributed } : {}),
-				activePersona: activeRaw?.type === 'persona' ? { id: activeRaw.id, name: activeRaw.identity.name } : null,
+				activePersona: activeRaw ? { id: activeRaw.id, name: activeRaw.identity.name } : null,
 				note: noteParts.join(' '),
 				...(attach.note ? { portraits: attach.note } : {}),
 				lorebooks: books.map((b) => ({

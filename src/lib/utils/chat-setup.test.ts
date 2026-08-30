@@ -1,10 +1,11 @@
 /**
- * The connection a chat's prompt is priced, shaped and sent in. Run with `bun test`.
+ * What a chat runs on: the persona it plays as, and the connection its prompt is priced,
+ * shaped and sent in. Run with `bun test`.
  *
- * What is under test is the agreement: the composer's meter, the Prompt Builder breakdown
- * and the send all resolve here, so one chat can only ever have one answer. A second
- * resolution anywhere is what lets a story be metered against a 32k window and sent to a
- * 200k model with nothing on screen saying so.
+ * What is under test is the agreement: the composer's meter, the Prompt Builder breakdown,
+ * the transcript and the send all resolve here, so one chat can only ever have one answer.
+ * A second resolution anywhere is what lets a story be metered against a 32k window and sent
+ * to a 200k model with nothing on screen saying so.
  *
  * Runes are compile-time macros and nothing compiles a store under `bun test`, so `$state`
  * is shimmed to identity BEFORE the modules load (dynamic imports below). Only `$state`:
@@ -14,12 +15,14 @@
 import { describe, expect, test, beforeEach } from 'bun:test';
 
 import type { Chat } from '$lib/types/chat';
+import type { LibraryEntry } from '$lib/types/library';
 import { DEFAULT_GENERATION_SETTINGS, type Connection } from '$lib/types/llm';
 
 (globalThis as unknown as { $state: <T>(v?: T) => T | undefined }).$state = (v) => v;
 
 const { connectionStore } = await import('$lib/stores/connections.svelte');
-const { chatConnectionId, resolvePromptTarget } = await import('./chat-setup');
+const { chatConnectionId, chatPersonaClaim, resolvePersonaId, resolvePromptTarget } =
+	await import('./chat-setup');
 
 function connection(id: string, model: string, contextSize: number): Connection {
 	return {
@@ -37,7 +40,19 @@ function connection(id: string, model: string, contextSize: number): Connection 
 	};
 }
 
-function chat(claimed: string | null): Chat {
+function persona(id: string): LibraryEntry {
+	return {
+		id,
+		type: 'persona',
+		identity: { name: id },
+		data: { traits: {} },
+		isFavorite: false,
+		createdAt: 0,
+		updatedAt: 0
+	} as LibraryEntry;
+}
+
+function chat(claimed: string | null, claimedPersona: string | null = null): Chat {
 	return {
 		id: 'chat-1',
 		title: 'A story',
@@ -50,7 +65,7 @@ function chat(claimed: string | null): Chat {
 		characterId: 'char-1',
 		characterVersionId: null,
 		isFavorite: false,
-		featureState: JSON.stringify({ connection: claimed })
+		featureState: JSON.stringify({ connection: claimed, persona: claimedPersona })
 	};
 }
 
@@ -113,5 +128,36 @@ describe('resolvePromptTarget', () => {
 	test('only the story can be claimed: an engine target ignores the chat', () => {
 		const resolved = resolvePromptTarget(chat(OWN.id), { engine: 'opening-scene' });
 		expect(resolved.target).toEqual({ engine: 'opening-scene' });
+	});
+});
+
+describe('resolvePersonaId', () => {
+	const APP_PERSONA = 'app-persona';
+	const OWN_PERSONA = 'own-persona';
+	const LIBRARY = [persona(APP_PERSONA), persona(OWN_PERSONA)];
+
+	test('a chat that claimed nobody plays as the app persona', () => {
+		expect(resolvePersonaId(chatPersonaClaim(chat(null)), LIBRARY, APP_PERSONA)).toBe(APP_PERSONA);
+		expect(resolvePersonaId(null, LIBRARY, APP_PERSONA)).toBe(APP_PERSONA);
+	});
+
+	test('a live claim outranks the app persona', () => {
+		const claim = chatPersonaClaim(chat(null, OWN_PERSONA));
+		expect(claim).toBe(OWN_PERSONA);
+		expect(resolvePersonaId(claim, LIBRARY, APP_PERSONA)).toBe(OWN_PERSONA);
+	});
+
+	test('a claim naming a deleted persona falls back to the app persona', () => {
+		expect(resolvePersonaId('gone', LIBRARY, APP_PERSONA)).toBe(APP_PERSONA);
+	});
+
+	test('an id belonging to a character is not a persona claim', () => {
+		// The store holds both kinds in one list, so the type check is the whole guard.
+		const characters = [{ ...persona(OWN_PERSONA), type: 'character' } as LibraryEntry];
+		expect(resolvePersonaId(OWN_PERSONA, characters, APP_PERSONA)).toBe(APP_PERSONA);
+	});
+
+	test('with no app persona either, a dead claim resolves to nobody', () => {
+		expect(resolvePersonaId('gone', LIBRARY, null)).toBeNull();
 	});
 });

@@ -203,7 +203,6 @@ export const ANCHOR_PAGES: Record<string, SettingsPage> = {
 	// General
 	'message-drafts': 'general',
 	'input-history': 'general',
-	'persona-switcher': 'general',
 	'long-chats': 'general',
 	reasoning: 'general',
 	'assistant-button': 'general',

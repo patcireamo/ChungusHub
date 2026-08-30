@@ -948,6 +948,59 @@ describe('provider vocabulary (architecture/llm-providers.md #1)', () => {
 	});
 });
 
+describe('per-chat setup (architecture/ui-shell-settings.md)', () => {
+	// A chat's persona is stamped ONLY from a real choice: the character's own seed, or the
+	// persona the New chat flow just asked for. createChat is also reached with nobody
+	// present (routeAfterDelete mints a chat as a side effect of deleting another), so a door
+	// handing it whatever persona happened to be active would write a permanent silent pin.
+	test('a new chat takes its persona from the seed or the flow, never from the app', () => {
+		const source = read('src', 'lib', 'stores', 'chat.svelte.ts');
+		expect(source).toContain('options.personaId ?? entry?.defaultPersonaId ?? null');
+		expect(source).not.toContain('personaStore');
+	});
+
+	// The persona a story plays as is `chatValue ?? appValue`, resolved in chat-setup.ts and
+	// nowhere else. A surface reading the app's active persona directly speaks as the wrong
+	// person the moment a chat claims one, and it does it silently: the name is a real
+	// persona's, just not this story's.
+	test('nothing that renders or assembles a chat reads the app persona directly', () => {
+		// Everything app-wide by nature: boot, cross-device reload, the Library's own view of
+		// which persona new chats start as, and the resolver that owns the fallback.
+		const APP_WIDE = [
+			'src/lib/components/layout/AppShell.svelte',
+			'src/lib/components/layout/WelcomeDialog.svelte',
+			'src/lib/components/library/CharacterStatsBar.svelte',
+			'src/lib/components/library/PersonaEditor.svelte',
+			'src/lib/components/library/PersonasView.svelte',
+			'src/lib/services/sync.ts',
+			'src/lib/utils/chat-setup.ts'
+		];
+		const readers = [
+			...new Set(
+				codeLines(join(ROOT, 'src'), (n) => n.endsWith('.ts') || n.endsWith('.svelte'))
+					.filter((l) => l.text.includes('personaStore.'))
+					.map((l) => l.file.slice(l.file.indexOf('src/')))
+			)
+		].filter((f) => !f.endsWith('.test.ts'));
+		expect(readers.length, 'nothing reads the persona store, so this scan is stale').toBeGreaterThan(0);
+		expect(readers.filter((f) => !APP_WIDE.includes(f))).toEqual([]);
+	});
+
+	// The one place the persona rule is spelled twice: the assistant's chat reads run in the
+	// server process, which cannot import chat-setup.ts. A server that read the app pointer
+	// alone would tell the model that a story playing as somebody else attributes its new
+	// turns to whoever the app starts chats as.
+	test("the assistant's chat reads resolve the chat's own persona first", () => {
+		const source = read('server', 'assistant', 'registry', 'chat-reads.ts');
+		const resolver = block(source, /function chatPersona\(chat: RawChat\)[\s\S]*?\n\}/, 'chatPersona');
+		expect(resolver).toContain('chat.featureState');
+		expect(resolver).toContain(".persona");
+		expect(resolver).toContain("serverDb.getSetting('activePersonaId')");
+		// Every read of the app pointer in this file goes through that fallback.
+		expect(scan(source, /(serverDb\.getSetting\('activePersonaId'\))/g, 'app persona reads')).toHaveLength(1);
+	});
+});
+
 describe('prompt target (architecture/prompt-pipeline.md #10)', () => {
 	// Every surface that assembles a prompt prices and shapes it against a connection's model,
 	// context window and post-processing. Resolve those per surface and a chat can be metered

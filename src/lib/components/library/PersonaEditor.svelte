@@ -162,7 +162,7 @@
 	let deleteName = $derived(snapshot?.name || 'this persona');
 	let deleteMessage = $derived(
 		`Are you sure you want to delete ${deleteName}? This cannot be undone.` +
-			(isActive ? ' It is your active persona, so another one takes over.' : '')
+			(isActive ? ' New chats start as it, so another one takes that over.' : '')
 	);
 	// The app keeps at least one persona (architecture/library.md): the server refuses the last
 	// delete, so the menu item goes inert and says why rather than vanishing.
@@ -274,7 +274,7 @@
 			{#snippet badge()}
 				{#if isActive && !isNew}
 					<span class="shrink-0 text-[10px] font-ui px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
-						Active
+						New chats
 					</span>
 				{/if}
 			{/snippet}
@@ -282,7 +282,7 @@
 				{#if !isActive}
 					<Button variant="secondary" size="sm" onclick={handleSetActive}>
 						<Icon name="user" class="w-4 h-4" />
-						Set active
+						Start new chats as this
 					</Button>
 				{/if}
 			{/snippet}

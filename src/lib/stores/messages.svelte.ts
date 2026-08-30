@@ -10,7 +10,7 @@ import { promptHoldStore } from './promptHold.svelte';
 import type { HoldGate } from '$lib/config/prompt-hold';
 import { joinContinuation } from '$lib/utils/continuation';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
-import { personaStore } from './persona.svelte';
+import { chatPersonaClaim, chatPersonaEntry } from '$lib/utils/chat-setup';
 import { chatCastStore } from './chatCast.svelte';
 import { resolveMacroValues, substitute } from '$lib/macros';
 import { buildLiveMacroContext } from '$lib/utils/live-macro-context';
@@ -1045,7 +1045,8 @@ class MessageStore {
 			allMessages: state.allMessages,
 			leafId: state.chat.activeLeafId,
 			characterId: state.chat.characterId,
-			characterVersionId: state.chat.characterVersionId
+			characterVersionId: state.chat.characterVersionId,
+			personaId: chatPersonaClaim(state.chat)
 		});
 	}
 
@@ -1079,14 +1080,14 @@ class MessageStore {
 			parentId: data.parentId ?? null,
 			role: data.role,
 			content: data.content,
-			// Lock the persona this message belongs to. New user messages capture the
-			// currently active persona; branches/clones pass the source message's personaId
+			// Lock the persona this message belongs to. New user messages capture the persona
+			// the chat is being played as; branches/clones pass the source message's personaId
 			// to inherit it. Assistant/system messages never carry a persona.
 			personaId:
 				data.role === 'user'
 					? data.personaId !== undefined
 						? data.personaId
-						: personaStore.activeId
+						: chatPersonaEntry(chatStore.activeChat)?.id ?? null
 					: null,
 			branchLabel: data.branchLabel ?? null,
 			thinking: data.thinking ?? null,

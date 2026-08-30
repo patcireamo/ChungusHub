@@ -159,14 +159,18 @@
 	);
 
 	// ---- Entry actions ----
-	// Primary click makes the persona the active "you" across the app. In the New
-	// Story flow's persona step it also completes the flow: a fresh chat for the
-	// picked character (createChat's selectChat clears the flow), Library handed back.
+	// In the New chat flow's persona step the pick belongs to the chat being made: it stamps
+	// that story's own persona and touches nothing app-wide, because a reader answering "who
+	// are you in this one" has not asked to be that person everywhere. (createChat's selectChat
+	// clears the flow; the Library is handed back after.) Outside the flow the same press is
+	// the app-level choice: the persona new chats start as.
 	async function handleSelectEntry(id: string) {
-		personaStore.setActive(id);
 		const characterId = uiStore.newChatStep === 'persona' ? uiStore.newChatCharacterId : null;
-		if (!characterId) return;
-		await chatStore.createChat({ characterId });
+		if (!characterId) {
+			personaStore.setActive(id);
+			return;
+		}
+		await chatStore.createChat({ characterId, personaId: id });
 		uiStore.closeLibrary();
 	}
 
@@ -202,7 +206,7 @@
 	);
 	let deleteTargetMessage = $derived(
 		`Are you sure you want to delete "${deleteTargetName}"? This cannot be undone.` +
-			(deleteTargetId === activeId ? ' It is your active persona, so another one takes over.' : '')
+			(deleteTargetId === activeId ? ' New chats start as it, so another one takes that over.' : '')
 	);
 
 	// The successor is the server's to pick, and it announces the switch on the `settings`

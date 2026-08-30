@@ -31,7 +31,6 @@
 	let transcriptPageSize = $derived(generalSettingsStore.transcriptPageSize);
 	let transcriptLoadMode = $derived(generalSettingsStore.transcriptLoadMode);
 	let autoExpandReasoning = $derived(generalSettingsStore.autoExpandReasoning);
-	let personaSwitcher = $derived(generalSettingsStore.personaSwitcher);
 	let assistantLauncher = $derived(generalSettingsStore.assistantLauncher);
 	let settingsSplitView = $derived(generalSettingsStore.settingsSplitView);
 	let storyMapWheelPans = $derived(generalSettingsStore.storyMapWheelPans);
@@ -140,23 +139,6 @@
 				</div>
 			</div>
 		{/if}
-	</section>
-
-	<section class="card" data-setting="persona-switcher">
-		<div class="card-head">
-			<span class="card-title">Persona Switcher</span>
-			<InfoTip
-				text="Shows who you are right now and swaps persona in one click. The persona is app-wide, so the switch follows you into every chat."
-			/>
-		</div>
-		<div class="toggle-row" use:toggleRow>
-			<span class="slider-label">Persona button in the chat box</span>
-			<Toggle
-				checked={personaSwitcher}
-				onchange={(v) => generalSettingsStore.setPersonaSwitcher(v)}
-				label="Persona button in the chat box"
-			/>
-		</div>
 	</section>
 
 	<section class="card" data-setting="reasoning">

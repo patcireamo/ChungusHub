@@ -15,13 +15,12 @@ import { expandMacros, type MacroContext, type PromptCharacter } from '$lib/macr
 import { resolveLorebooks } from '$lib/lorebook/engine';
 import { lorebookHistory, lorebookScanFields, type LorebookTrigger } from '$lib/lorebook/types';
 import { chatStore } from '$lib/stores/chat.svelte';
-import { personaStore } from '$lib/stores/persona.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { presetService } from '$lib/services/presets.svelte';
 import { presetControlsStore } from '$lib/stores/presetControls.svelte';
-import { resolvePromptTarget } from './chat-setup';
+import { chatPersonaEntry, resolvePromptTarget, toPromptCharacter } from './chat-setup';
 import { countTokens } from '$lib/tokenizer/count';
 
 export interface LiveMacroContextOptions {
@@ -65,8 +64,9 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 					count: (text: string) => countTokens(text, promptTarget.model)
 				}
 			: undefined;
+	const persona = chatPersonaEntry(chatStore.activeChat);
 	const base: MacroContext = {
-		resolvedPersona: personaStore.activeResolved,
+		resolvedPersona: toPromptCharacter(persona),
 		resolvedCharacters: character ? [character] : [],
 		chatMessages,
 		controls: preset?.controls ?? [],
@@ -79,7 +79,7 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 	const lore = resolveLorebooks({
 		books: lorebookStore.resolveBooks([
 			...(characterData?.lorebookIds ?? []),
-			...(personaStore.activeEntry?.data.lorebookIds ?? [])
+			...(persona?.data.lorebookIds ?? [])
 		]),
 		messages: chatMessages.map((m) => m.content),
 		fields: lorebookScanFields(base.resolvedCharacters ?? [], base.resolvedPersona),
