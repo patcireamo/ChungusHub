@@ -1,9 +1,10 @@
 <script lang="ts">
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
-	import Select from '$lib/components/ui/Select.svelte';
+	import ChatDefaultSelect from './ChatDefaultSelect.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { connectionStore } from '$lib/stores/connections.svelte';
+	import { chatPersonaEntry } from '$lib/utils/chat-setup';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import EntryFormFields from './EntryFormFields.svelte';
 	import CharacterVersionMenu from './CharacterVersionMenu.svelte';
@@ -73,11 +74,12 @@
 	interface ChatDefaultRow {
 		key: ChatDefaultKey;
 		label: string;
-		/** The neutral option: what a new chat gets while this row is left alone. */
+		/** The app's own answer, as this row calls it. */
 		fallback: string;
-		/** Heading over the real things below the neutral option. The neutral one answers with
-		 *  something the app decides, so it must not read as one more row of the library: a
-		 *  connection can be NAMED Default, and a flat list makes the two look alike. */
+		/** What that answer resolves to right now, named under it so it cannot be read as one
+		 *  more thing somebody made: an install genuinely has a connection called Default. */
+		detail: string | null;
+		/** Heading over the rows that come from the library. */
 		group: string;
 		options: { id: string; name: string }[];
 		/** Said when the stored id names something that no longer exists. */
@@ -94,6 +96,7 @@
 				// The word the library badges the app's own persona with, so the option points at
 				// something the reader can go and look at.
 				fallback: 'Default',
+				detail: chatPersonaEntry(null)?.identity.name?.trim() || 'No persona',
 				group: 'Personas',
 				options: characterLibraryStore.personas.map((p) => ({
 					id: p.id,
@@ -107,6 +110,7 @@
 				// Not "Default" here: a connection can BE named Default (a fresh install's is), and
 				// an option naming one of the rows under it is a trap.
 				fallback: 'Global',
+				detail: connectionStore.connectionFor('primary')?.name ?? 'No connection',
 				group: 'Connections',
 				options: connectionStore.list().map((c) => ({ id: c.id, name: c.name })),
 				gone: "That connection is gone, so new chats send on the app's."
@@ -117,9 +121,10 @@
 			rows.push({
 				key: 'defaultVersionId',
 				label: 'Version',
-				// Which one that is carries the Default badge in the header's version menu, rather
-				// than a name spelled out here that would go stale the moment it is renamed.
+				// Which one that is carries the Default badge in the header's version menu too, so
+				// the answer is the same wherever the reader meets it.
 				fallback: 'Default',
+				detail: versions[0].name,
 				group: 'Versions',
 				options: versions.map((v) => ({ id: v.id, name: v.name })),
 				gone: 'That version is gone, so new chats start on the first one made.'
@@ -352,30 +357,16 @@
 								{#if lost}
 									<p class="mb-1 text-xs font-ui text-warning">{row.gone}</p>
 								{/if}
-								<Select
+								<ChatDefaultSelect
 									id="{row.key}-{entryId}"
-									value={stored ?? ''}
-									onchange={(e) =>
-										handleChatDefaultChange(
-											row.key,
-											(e.currentTarget as HTMLSelectElement).value || null
-										)}
-								>
-									<!-- What the app answers with sits above the group, ungrouped: the OS picker
-									     draws the heading and indents everything under it, so the one option
-									     that is not a thing in the library never reads as one. -->
-									<option value="">{row.fallback}</option>
-									{#if lost}
-										<!-- The seed is never swept, so the control shows that something IS set
-										     rather than blanking to a value nobody chose. -->
-										<option value={stored}>No longer here</option>
-									{/if}
-									<optgroup label={row.group}>
-										{#each row.options as option (option.id)}
-											<option value={option.id}>{option.name}</option>
-										{/each}
-									</optgroup>
-								</Select>
+									value={stored ?? null}
+									fallbackLabel={row.fallback}
+									fallbackDetail={row.detail}
+									groupLabel={row.group}
+									options={row.options}
+									{lost}
+									onpick={(next) => handleChatDefaultChange(row.key, next)}
+								/>
 							</div>
 						{/each}
 						<p class="text-xs font-ui leading-relaxed text-text-muted">
