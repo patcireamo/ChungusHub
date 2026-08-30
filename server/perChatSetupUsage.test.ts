@@ -141,15 +141,13 @@ describe("the assistant's create_chat", () => {
 		expect(chatRow(made.chatId).characterVersionId).toBeNull();
 	});
 
-	test('it mints a DIFFERENT setup than the composer: the version seed alone', () => {
+	test('it mints the same setup as the composer: all four seeds', () => {
 		// The composer stamps all four of a character's New Chat Defaults at birth
-		// (src/lib/stores/chat.svelte.ts createChat, pinned by chat-setup-birth.test.ts). This
-		// door answers the version and drops the other three, so the same character started
-		// from the assistant is played by a different persona, sent on a different connection
-		// and built from a different preset than the same character started from the composer,
-		// with nothing on either screen saying why. Characterized here rather than asserted as
-		// correct: architecture/ui-shell-settings.md calls this door's silence deliberate in one
-		// sentence and calls the character's own seeds a real choice in the sentence before it.
+		// (src/lib/stores/chat.svelte.ts createChat, pinned by chat-setup-birth.test.ts), so
+		// this door has to answer all four too. Answer only the version and the same character
+		// started from the assistant is played by a different persona, sent on a different
+		// connection and built from a different preset than the same character started from
+		// the composer, with nothing on either screen saying why.
 		const persona = entry('persona', 'Stranger');
 		const character = entry('character', 'Aria', {
 			defaultPersonaId: persona.id,
@@ -161,6 +159,28 @@ describe("the assistant's create_chat", () => {
 		const chatId = run(createChat, { characterId: character.id }).chatId;
 
 		expect(chatRow(chatId).characterVersionId).toBe(pinned);
+		expect(blobOf(chatId)).toMatchObject({
+			persona: persona.id,
+			connection: 'conn-own',
+			preset: 'preset-own'
+		});
+	});
+
+	test('a character naming one default claims that one and nothing else', () => {
+		const character = entry('character', 'Aria', { defaultPresetId: 'preset-own' });
+
+		expect(blobOf(run(createChat, { characterId: character.id }).chatId)).toMatchObject({
+			connection: null,
+			persona: null,
+			preset: 'preset-own'
+		});
+	});
+
+	test('a character naming no default is born claiming nothing at all', () => {
+		// NULL rather than a blob of nulls: "claims nothing" has to stay a state the row can be
+		// in, or every chat the assistant makes reads as having been decided about.
+		const chatId = run(createChat, { characterId: entry('character', 'Aria').id }).chatId;
+
 		expect(chatRow(chatId).featureState).toBeNull();
 	});
 

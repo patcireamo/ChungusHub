@@ -79,6 +79,24 @@ function defaultChatTitle(name: string, when: number): string {
  * starts on. Two answers here and a chat the assistant made plays a different variant than
  * the same chat started from the composer.
  */
+/**
+ * The claims a new chat is born carrying: the character's own New Chat Defaults, the same
+ * three the composer stamps (src/lib/stores/chat.svelte.ts `createChat`). A character
+ * carrying none of them leaves the blob NULL rather than storing a row of nulls, which is
+ * what keeps "claims nothing" a state the row can actually be in.
+ *
+ * Only the claim keys are written. Every other field of the blob has a default the reader
+ * fills in, so mirroring the client's whole shape would be a second copy of it to keep in
+ * step for no change in what anything reads.
+ */
+function birthClaims(entry: RawLibraryEntry): string | null {
+	const connection = entry.defaultConnectionId ?? null;
+	const persona = entry.defaultPersonaId ?? null;
+	const preset = entry.defaultPresetId ?? null;
+	if (!connection && !persona && !preset) return null;
+	return JSON.stringify({ connection, persona, preset });
+}
+
 function chatVersionSeed(entry: RawLibraryEntry): string | null {
 	const versions = serverDb.getCharacterVersionsByEntry(entry.id) as { id: string }[];
 	const seed = entry.defaultVersionId;
@@ -92,9 +110,11 @@ function chatVersionSeed(entry: RawLibraryEntry): string | null {
  * here, so the invariants are hand-honored: chat row first with null root/leaf
  * (messages.chat_id is a real FK), greeting rows parent-first as ROOT SIBLINGS
  * stored RAW ({{char}}/{{user}} literal; they resolve live at display/generation),
- * then the root/leaf pointers, all in one transaction; the chat pins to the character's
- * chat-default version at birth. It stamps no persona and no connection, like every door
- * but the two that carry a real choice. The greeting LIST itself is not replicated:
+ * then the root/leaf pointers, all in one transaction; the chat is born on all four of the
+ * character's New Chat Defaults, exactly as the composer mints it: the version pinned, and
+ * the persona, connection and preset claimed where the character names them. Answering
+ * fewer of them here would play the same character, started two different ways, as two
+ * different stories with nothing on either screen saying why. The greeting LIST itself is not replicated:
  * `chatGreetingsOf` is the db module's own, and `refreshSeededGreetings` recognises a
  * still-unwritten chat by exactly the rows it produces.
  */
@@ -144,6 +164,7 @@ export const createChat: Capability = {
 				settings: null,
 				characterId: entry.id,
 				characterVersionId: versionId,
+				featureState: birthClaims(entry),
 				isFavorite: false
 			});
 			// What the card handed this chat: a chat still holding exactly it is a mirror the
