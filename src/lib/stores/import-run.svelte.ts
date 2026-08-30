@@ -53,6 +53,7 @@ import {
 import { db } from '$lib/services/database';
 import { isReachable, onReachabilityChange } from '$lib/services/transport';
 import { characterLibraryStore } from './characterLibrary.svelte';
+import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { failureText, toastStore } from './toast.svelte';
 import { SvelteSet } from 'svelte/reactivity';
 
@@ -75,14 +76,18 @@ class ImportRunStore {
 	 * Which claims still stand.
 	 *
 	 * **A claim that names what it became is only worth as much as that thing still existing.**
-	 * Cards and personas record their library entry, so one the reader has since deleted by hand
-	 * stops counting and the file is offered again: skipping it would be the card stating
-	 * something about the library that is not true any more, with the reader's own deletion as
-	 * the reason. The kinds that record nothing (lorebooks, backgrounds, chats, sprites) cannot
-	 * be asked, so their claims stand and the checkbox below stays the way back to them.
+	 * Cards and personas record their library entry and world files record their lorebook, so one
+	 * the reader has since deleted by hand stops counting and the file is offered again: skipping
+	 * it would be the card stating something about the library that is not true any more, with
+	 * the reader's own deletion as the reason. The kinds that record nothing (backgrounds, chats,
+	 * sprites) cannot be asked, so their claims stand and the checkbox below stays the way back
+	 * to them.
 	 */
 	private known = $derived.by(() => {
-		const live = new Set(characterLibraryStore.entries.map((entry) => entry.id));
+		const live = new Set<string>(characterLibraryStore.entries.map((entry) => entry.id));
+		// One set for two shelves: an `entity_id` names a library entry or a lorebook, and the
+		// only question asked of it is whether that thing is still there.
+		for (const book of lorebookStore.books) live.add(book.id);
 		const keys = new Set<string>();
 		for (const claim of this.claims) {
 			if (claim.entityId && !live.has(claim.entityId)) continue;

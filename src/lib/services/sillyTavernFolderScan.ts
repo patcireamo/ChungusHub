@@ -164,6 +164,19 @@ export function cardStemFromKey(key: string): string | null {
 }
 
 /**
+ * The world file's stem, for a key that names one, else null.
+ *
+ * SillyTavern names a world file after the book inside it, and a card links to that book by the
+ * same name (`extensions.world`), so this is what lets a LATER run bind a card to a book an
+ * earlier run already brought over instead of shelving the card's own copy beside it.
+ */
+export function worldStemFromKey(key: string): string | null {
+	const parts = key.replace(/^sillytavern:/, '').split('/');
+	if (parts.length !== 2 || parts[0] !== 'worlds') return null;
+	return stemOf(parts[1]).toLowerCase();
+}
+
+/**
  * The same bundle with a set of source keys taken out. Sprite folders left empty by the filter
  * are dropped whole, so a character whose pack is entirely gone is not visited at all.
  *
@@ -262,7 +275,11 @@ export interface PlanLabels {
 }
 
 /**
- * A bundle spelled out as the rows somebody can switch off, in the order the import writes them.
+ * A bundle spelled out as the rows somebody can switch off.
+ *
+ * The rows read the way somebody thinks about a profile, which is not the order the run writes
+ * them in: lorebooks land first there, so a card can bind to the book it names rather than
+ * shelving its own copy of it.
  *
  * **Every label but one comes off a path**, so a card is never opened and a lorebook is never
  * parsed to draw this: SillyTavern names a card's file after the character, folders sprites and

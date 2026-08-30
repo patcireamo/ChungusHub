@@ -7,7 +7,8 @@ import {
 	scanSillyTavernFolder,
 	sourceKey,
 	strandedByChoice,
-	withoutKeys
+	withoutKeys,
+	worldStemFromKey
 } from './sillyTavernFolderScan';
 
 /** A picked file, spelled the way the browser hands one over: a flat list, each entry carrying
@@ -143,6 +144,15 @@ describe('the import ledger', () => {
 		expect(cardStemFromKey('sillytavern:characters/Jason/joy.png')).toBeNull();
 		expect(cardStemFromKey('sillytavern:chats/Jason/2026.jsonl')).toBeNull();
 		expect(cardStemFromKey('sillytavern:backgrounds/tavern.jpg')).toBeNull();
+	});
+
+	// A world file is named after the book in it, and a card links to that book by the same
+	// name, so this is what binds a later run's cards to a book already on the shelf.
+	it('reads a world key back as the name a card would link to', () => {
+		expect(worldStemFromKey('sillytavern:worlds/Kingdom.json')).toBe('kingdom');
+		expect(worldStemFromKey('sillytavern:worlds/A Long Name.json')).toBe('a long name');
+		expect(worldStemFromKey('sillytavern:characters/Kingdom.json')).toBeNull();
+		expect(worldStemFromKey('sillytavern:worlds/nested/Kingdom.json')).toBeNull();
 	});
 });
 

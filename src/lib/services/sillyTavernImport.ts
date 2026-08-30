@@ -59,6 +59,13 @@ export interface ImportResult {
 	imageFile: File | null;
 	/** Embedded character_book (SillyTavern lorebook), parsed into a standalone book. */
 	lorebook: Lorebook | null;
+	/**
+	 * The world info book this card LINKS to, under SillyTavern's own name for it
+	 * (`extensions.world`). That name is a world file's name, so only an importer holding a
+	 * `worlds/` folder can resolve it; a card picked on its own has nothing to resolve it
+	 * against and leaves it alone.
+	 */
+	worldName: string | null;
 	/** Character versions from a ChungusHub v2 export, in order, recreated with fresh
 	 *  ids on import. Exactly one carries `active`. Absent for SillyTavern cards and v1. */
 	versions?: { name: string; data: LibraryEntryData; active: boolean }[];
@@ -109,8 +116,10 @@ async function importChungusExport(entry: ExportedLibraryEntry): Promise<ImportR
 		character,
 		entryType: entry.type === 'persona' ? 'persona' : 'character',
 		imageFile,
-		// Embedded lorebooks don't travel in our export (only ids), so nothing to bring in here.
+		// Embedded lorebooks don't travel in our export (only ids), so nothing to bring in here,
+		// and nothing here names a SillyTavern world either.
 		lorebook: null,
+		worldName: null,
 		...(versions ? { versions } : {})
 	};
 }
@@ -158,6 +167,18 @@ function mapSillyTavernToCharacter(stChar: SillyTavernCharacter): LibrarySeed {
 		tags: charData.tags || [],
 		...(alternateGreetings.length ? { alternateGreetings } : {})
 	};
+}
+
+/**
+ * The world info book the card links to, by name.
+ *
+ * The one card field read outside `mapSillyTavernToCharacter`, and it is not a trait: it names
+ * a file in the same profile rather than describing the character, so it stays a claim about
+ * the folder for whoever holds one to resolve.
+ */
+function readWorldName(stChar: SillyTavernCharacter): string | null {
+	const world = stChar.data?.extensions?.world ?? stChar.extensions?.world;
+	return typeof world === 'string' && world.trim() ? world.trim() : null;
 }
 
 /**
@@ -234,5 +255,5 @@ export async function importSillyTavernCard(file: File): Promise<ImportResult> {
 			? lorebookFromCharacterBook(rawBook, `${character.name || 'Character'} Lorebook`)
 			: null;
 
-	return { character, entryType: 'character', imageFile, lorebook };
+	return { character, entryType: 'character', imageFile, lorebook, worldName: readWorldName(stChar) };
 }

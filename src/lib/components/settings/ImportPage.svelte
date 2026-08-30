@@ -52,7 +52,14 @@
 					{ label: 'Sprites', result: report.sprites },
 					{ label: 'Personas', result: report.personas },
 					{ label: 'Chats', result: report.chats },
-					{ label: 'Lorebooks', result: report.worlds },
+					{
+						label: 'Lorebooks',
+						result: report.worlds,
+						// The books a card carried have no row on the confirm card, since they are
+						// not files in the folder, so the count is the only place they are named.
+						extra:
+							report.worlds.fromCards > 0 ? `${report.worlds.fromCards} from cards` : undefined
+					},
 					{ label: 'Backgrounds', result: report.backgrounds }
 				]
 			: []
@@ -156,12 +163,23 @@
 							<li>
 								<span class="report-label">{line.label}</span>
 								<span class="report-count">{line.result.imported} imported</span>
+								{#if line.extra}
+									<span class="report-extra">{line.extra}</span>
+								{/if}
 								{#if line.result.failed.length > 0}
 									<span class="report-fail">{line.result.failed.length} failed</span>
 								{/if}
 							</li>
 						{/each}
 					</ul>
+
+					{#if report.worlds.linked > 0}
+						<p class="note font-ui">
+							{report.worlds.linked}
+							{report.worlds.linked === 1 ? 'character was' : 'characters were'} linked to a lorebook
+							that was already here, instead of a second copy of it.
+						</p>
+					{/if}
 
 					{#if report.chats.skippedNoCharacter.length > 0}
 						<p class="note font-ui">
@@ -276,7 +294,10 @@
 	.report-list li {
 		display: flex;
 		align-items: baseline;
-		gap: 0.6rem;
+		/* A line can carry a breakdown and a failure count beside its own, which is more than a
+		   phone's width holds. */
+		flex-wrap: wrap;
+		gap: 0.15rem 0.6rem;
 		font-size: 0.8rem;
 	}
 
@@ -288,6 +309,11 @@
 
 	.report-count {
 		color: var(--color-text-primary);
+	}
+
+	.report-extra {
+		color: var(--color-text-muted);
+		font-size: 0.74rem;
 	}
 
 	.report-fail {

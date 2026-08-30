@@ -8,6 +8,8 @@
 	import { workspaceFocus } from '$lib/stores/workspaceFocus.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { importSillyTavernCard } from '$lib/services/sillyTavernImport';
+	import { createBookIndex } from '$lib/lorebook/identity';
+	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -458,11 +460,15 @@
 		importing = true;
 		let successCount = 0;
 		let lastEntry: typeof characterLibraryStore.entries[0] | null = null;
+		// Built once for the batch: a series of cards ships the same book in every one of them,
+		// and one shelf row with a link from each character is what the reader asked for.
+		const bookIndex = createBookIndex(lorebookStore.books);
 
 		for (const item of items) {
 			try {
-				const entry = await characterLibraryStore.importFromSillyTavern(item.result, {
-					importLorebook: item.importBook
+				const { entry } = await characterLibraryStore.importFromSillyTavern(item.result, {
+					importLorebook: item.importBook,
+					bookIndex
 				});
 				lastEntry = entry;
 				successCount++;

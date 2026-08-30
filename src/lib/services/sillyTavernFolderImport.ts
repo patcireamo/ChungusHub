@@ -15,8 +15,11 @@
  *   chats/<name>/      → chatStore.importSillyTavernChat, bound to the matching character
  *   settings.json      → persona names + descriptions
  *
- * Characters are imported before their sprites and their chats, both of which bind to the
- * character their folder names.
+ * The order the phases run in is the binding order, not a preference. Lorebooks land first
+ * because a card names its own book (`extensions.world`) and carries a copy of it besides, and
+ * a book that is already on the shelf is linked rather than shelved again. Characters land
+ * next, before their sprites and their chats, both of which bind to the character their folder
+ * names.
  *
  * Reading is two steps, and the split is what lets the reader point at the folder they know the
  * name of. [`sillyTavernFolderScan.ts`](./sillyTavernFolderScan.ts) resolves the pick down to
@@ -27,6 +30,7 @@
 import { imageService } from '$lib/services/imageService';
 import { importSillyTavernCard } from '$lib/services/sillyTavernImport';
 import { readLorebookFile } from '$lib/lorebook/io';
+import { createBookIndex } from '$lib/lorebook/identity';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 import { chatStore } from '$lib/stores/chat.svelte';
@@ -38,6 +42,7 @@ import {
 	readPersonaSettings,
 	sourceKey,
 	stemOf,
+	worldStemFromKey,
 	type FolderScan,
 	type ImportedSource,
 	type PersonaSettings
@@ -62,7 +67,15 @@ export interface ImportReport {
 		/** Sprite folders that matched no library entry. */
 		skippedNoCharacter: string[];
 	};
-	worlds: CategoryResult;
+	worlds: CategoryResult & {
+		/** How many of the books that landed came out of a character card rather than a
+		 *  `worlds/` file. Said on screen because those books have no row on the confirm card:
+		 *  they are not files, so nothing in the pick announces them. */
+		fromCards: number;
+		/** Characters bound to a book that was already here instead of shelving a copy of it.
+		 *  The count is what proves the binding ran, since its whole effect is an absence. */
+		linked: number;
+	};
 	backgrounds: CategoryResult;
 	personas: CategoryResult;
 	chats: CategoryResult & {
@@ -141,7 +154,7 @@ export async function importSillyTavernFolder(
 	const report: ImportReport = {
 		characters: emptyCategory(),
 		sprites: { ...emptyCategory(), skippedNoCharacter: [] },
-		worlds: emptyCategory(),
+		worlds: { ...emptyCategory(), fromCards: 0, linked: 0 },
 		backgrounds: emptyCategory(),
 		personas: emptyCategory(),
 		chats: { ...emptyCategory(), skippedNoCharacter: [] },
@@ -160,6 +173,42 @@ export async function importSillyTavernFolder(
 			personaSettings = readPersonaSettings(await scan.settingsFile.text());
 		} catch (e) {
 			report.personas.failed.push(`settings.json: ${reason(e)}`);
+		}
+	}
+
+	// ---- Lorebooks (worlds/, before the cards that name them) ----
+	// One shelf-wide answer to "have we got this book", built from the books that are here now
+	// and grown as this run lands more. A card meets the same book as a `worlds/` file and as its
+	// own embedded copy, and every card sharing a book meets it again, so without this a profile
+	// shelves one book per card that uses it.
+	const bookIndex = createBookIndex(lorebookStore.books);
+	// What earlier runs shelved, by the SillyTavern world name a card would link to. A claim
+	// pointing at a book that is gone is left out, exactly as a card's claim is: it would bind
+	// this run's characters to nothing.
+	const liveBooks = new Set(lorebookStore.books.map((book) => book.id));
+	for (const claimed of claims) {
+		const world = worldStemFromKey(claimed.key);
+		if (world && claimed.entityId && liveBooks.has(claimed.entityId)) {
+			bookIndex.bindWorldName(world, claimed.entityId);
+		}
+	}
+
+	for (let i = 0; i < worlds.length; i++) {
+		if (stopped()) break;
+		const file = worlds[i];
+		onProgress?.({ phase: 'Lorebooks', done: i, total: worlds.length });
+		try {
+			const book = await readLorebookFile(file);
+			await lorebookStore.addBook(book);
+			bookIndex.add(book);
+			// The file's own name is the world name a card links to.
+			bookIndex.bindWorldName(stemOf(file.name), book.id);
+			report.worlds.imported++;
+			// Claimed WITH what it became, the same as a card: it is what a later run's cards bind
+			// to by name, and a book deleted by hand stops counting so the file is offered again.
+			await ledger.claim(file, book.id);
+		} catch (e) {
+			report.worlds.failed.push(`${file.name}: ${reason(e)}`);
 		}
 	}
 
@@ -189,8 +238,22 @@ export async function importSillyTavernFolder(
 		onProgress?.({ phase: 'Characters', done: i, total: characters.length });
 		try {
 			const result = await importSillyTavernCard(file);
-			// Full migration: bring embedded character books along and link them.
-			const entry = await characterLibraryStore.importFromSillyTavern(result, { importLorebook: true });
+			// SillyTavern's own link first: the card names its book and that book is a file in
+			// this same folder, already shelved above. Its embedded copy is the one SillyTavern
+			// itself stops reading once that world exists, so a resolved link stands in for it.
+			const linkBookId = result.worldName ? bookIndex.byWorldName(result.worldName) : null;
+			// Full migration: bring the card's book along and link it.
+			const { entry, book } = await characterLibraryStore.importFromSillyTavern(result, {
+				importLorebook: true,
+				bookIndex,
+				linkBookId
+			});
+			if (book?.created) {
+				report.worlds.imported++;
+				report.worlds.fromCards++;
+			} else if (book) {
+				report.worlds.linked++;
+			}
 			charByFileStem.set(stemOf(file.name).toLowerCase(), entry.id);
 			report.characters.imported++;
 			await ledger.claim(file, entry.id);
@@ -242,21 +305,6 @@ export async function importSillyTavernFolder(
 			for (const file of files) await ledger.claim(file);
 		} catch (e) {
 			report.sprites.failed.push(`${folder}/: ${reason(e)}`);
-		}
-	}
-
-	// ---- Worlds (standalone lorebooks) ----
-	for (let i = 0; i < worlds.length; i++) {
-		if (stopped()) break;
-		const file = worlds[i];
-		onProgress?.({ phase: 'Lorebooks', done: i, total: worlds.length });
-		try {
-			const book = await readLorebookFile(file);
-			await lorebookStore.addBook(book);
-			report.worlds.imported++;
-			await ledger.claim(file);
-		} catch (e) {
-			report.worlds.failed.push(`${file.name}: ${reason(e)}`);
 		}
 	}
 

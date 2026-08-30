@@ -13,6 +13,7 @@ import type {
 import { createEmptyCharacter, createEmptyPersona } from '$lib/types/library';
 import type { ImportResult } from '$lib/services/sillyTavernImport';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
+import type { BookIndex } from '$lib/lorebook/identity';
 import { toastStore } from '$lib/stores/toast.svelte';
 import { DebouncedWriter } from '$lib/utils/debounced-write';
 import {
@@ -458,10 +459,28 @@ class CharacterLibraryStore {
 		return entry;
 	}
 
+	/**
+	 * Land one parsed SillyTavern card, and answer with the book it ended up on so the caller
+	 * can say whether that book arrived or was already here.
+	 *
+	 * **A card's lorebook is a link, not a copy, wherever one can be resolved.** One book shared
+	 * by twenty cards is one book on the shelf and twenty links to it; without that, importing a
+	 * profile shelves it twenty times (architecture/sillytavern-interchange.md).
+	 */
 	async importFromSillyTavern(
 		importResult: ImportResult,
-		options: { importLorebook?: boolean } = {}
-	): Promise<LibraryEntry> {
+		options: {
+			importLorebook?: boolean;
+			/** Where "have we got this book already" is answered, over the shelf as it stood when
+			 *  the run started plus everything the run has landed since. Without one, every card
+			 *  in a batch shelves its own copy of the book they share. */
+			bookIndex?: BookIndex;
+			/** The book SillyTavern's own `world` link names, resolved by the caller against the
+			 *  profile folder. It wins over the card's embedded copy, which is the copy
+			 *  SillyTavern itself stops reading once that world exists. */
+			linkBookId?: string | null;
+		} = {}
+	): Promise<{ entry: LibraryEntry; book: { id: string; created: boolean } | null }> {
 		const character = { ...importResult.character };
 		const isPersona = importResult.entryType === 'persona';
 
@@ -504,15 +523,27 @@ class CharacterLibraryStore {
 			await this.persistEntry(entry);
 		}
 
-		// An embedded character_book becomes a standalone lorebook linked to the new
-		// character, but only when the caller opted in (import is user-confirmed).
-		if (options.importLorebook && importResult.lorebook && importResult.lorebook.entries.length > 0) {
-			await lorebookStore.addBook(importResult.lorebook);
-			entry.data.lorebookIds = [...(entry.data.lorebookIds ?? []), importResult.lorebook.id];
-			await this.persistEntry(entry);
+		// The card's lorebook, but only when the caller opted in (import is user-confirmed).
+		// A book already on the shelf is linked; only one nothing here matches is shelved.
+		let book: { id: string; created: boolean } | null = null;
+		if (options.importLorebook) {
+			const embedded = importResult.lorebook;
+			const shelved = embedded && embedded.entries.length > 0 ? embedded : null;
+			const existing = options.linkBookId ?? (shelved ? options.bookIndex?.same(shelved) : null) ?? null;
+			if (existing) {
+				book = { id: existing, created: false };
+			} else if (shelved) {
+				await lorebookStore.addBook(shelved);
+				options.bookIndex?.add(shelved);
+				book = { id: shelved.id, created: true };
+			}
+			if (book) {
+				entry.data.lorebookIds = [...(entry.data.lorebookIds ?? []), book.id];
+				await this.persistEntry(entry);
+			}
 		}
 
-		return entry;
+		return { entry, book };
 	}
 
 	// ==================== Update ====================
