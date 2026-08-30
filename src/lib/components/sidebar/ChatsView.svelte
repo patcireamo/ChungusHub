@@ -46,7 +46,6 @@
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { chatCastStore, type ChatCastMember } from '$lib/stores/chatCast.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
-	import { personaStore } from '$lib/stores/persona.svelte';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 
 	type SortKey = 'activity' | 'created' | 'messages' | 'title';

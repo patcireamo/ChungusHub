@@ -965,7 +965,8 @@ describe('per-chat setup (architecture/ui-shell-settings.md)', () => {
 	// persona's, just not this story's.
 	test('nothing that renders or assembles a chat reads the app persona directly', () => {
 		// Everything app-wide by nature: boot, cross-device reload, the Library's own view of
-		// which persona new chats start as, and the resolver that owns the fallback.
+		// which persona new chats start as, the store itself, and the resolver that owns the
+		// fallback.
 		const APP_WIDE = [
 			'src/lib/components/layout/AppShell.svelte',
 			'src/lib/components/layout/WelcomeDialog.svelte',
@@ -973,12 +974,16 @@ describe('per-chat setup (architecture/ui-shell-settings.md)', () => {
 			'src/lib/components/library/PersonaEditor.svelte',
 			'src/lib/components/library/PersonasView.svelte',
 			'src/lib/services/sync.ts',
+			'src/lib/stores/persona.svelte.ts',
 			'src/lib/utils/chat-setup.ts'
 		];
+		// The bare NAME, not `personaStore.`: an import specifier is the reach itself, and a
+		// scan that only counted call sites let a chat surface keep the import after its last
+		// use went away, leaving the next edit one line from reading the app's persona again.
 		const readers = [
 			...new Set(
 				codeLines(join(ROOT, 'src'), (n) => n.endsWith('.ts') || n.endsWith('.svelte'))
-					.filter((l) => l.text.includes('personaStore.'))
+					.filter((l) => l.text.includes('personaStore'))
 					.map((l) => l.file.slice(l.file.indexOf('src/')))
 			)
 		].filter((f) => !f.endsWith('.test.ts'));
