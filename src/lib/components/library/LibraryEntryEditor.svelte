@@ -63,6 +63,15 @@
 			.catch((error) => toastStore.failed('save who new chats with this character start as', error));
 	}
 
+	// The seed names a persona that has since been deleted. Nothing sweeps it (deleting a
+	// persona moves the app's pointer and touches no character), and it is deliberately not
+	// swept here either: the select keeps showing that something IS set, so the state is a
+	// line the reader can read and fix rather than a silent blank.
+	let seedPersonaMissing = $derived(
+		!!entry?.defaultPersonaId &&
+			!characterLibraryStore.personas.some((p) => p.id === entry?.defaultPersonaId)
+	);
+
 	const typeLabel = 'Character';
 	const typeLabelLower = 'character';
 
@@ -281,29 +290,56 @@
 					onSpriteRemove={handleSpriteRemove}
 			/>
 
-			<!-- The seed, not a claim: it stamps a chat's own persona at birth and has no say
-			     afterwards, so changing it never touches a story already under way. -->
-			<div class="px-6 pb-6 max-w-md">
-				<label
-					for="default-persona-{entryId}"
-					class="block text-sm font-ui font-medium text-text-primary mb-1.5"
-				>
-					Play as
-				</label>
-				<Select
-					id="default-persona-{entryId}"
-					value={entry.defaultPersonaId ?? ''}
-					onchange={(e) =>
-						handleDefaultPersonaChange((e.currentTarget as HTMLSelectElement).value || null)}
-				>
-					<option value="">Whoever new chats start as</option>
-					{#each characterLibraryStore.personas as persona (persona.id)}
-						<option value={persona.id}>{persona.identity.name || 'Unnamed persona'}</option>
-					{/each}
-				</Select>
-				<p class="mt-1.5 text-xs font-ui text-text-muted">
-					New chats with this character start as this persona. Chats already going keep theirs.
-				</p>
+			<!-- Seeds, not claims: each one stamps a chat at birth and has no say afterwards, so
+			     changing anything here never touches a story already under way.
+			     It wears the settings card recipe rather than the editor's own section headings
+			     because that is the difference a reader has to see at a glance: everything above
+			     is the character and travels with them, everything here is how this install
+			     starts chats with them. A second default is one more row and nothing else. -->
+			<div class="px-6 pb-6">
+				<section class="card max-w-[40rem]">
+					<div class="card-head">
+						<span class="card-title">New Chat Defaults</span>
+					</div>
+
+					<div class="card-body">
+						<div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+							<div class="flex-[1_1_12rem] min-w-0">
+								<label for="default-persona-{entryId}" class="slider-label block">Play as</label>
+								<p class="mt-0.5 text-xs font-ui text-text-muted">
+									Only new chats. The ones already going keep theirs.
+								</p>
+								{#if seedPersonaMissing}
+									<p class="mt-1 text-xs font-ui text-warning">
+										That persona is no longer in your library, so new chats start as the app's.
+									</p>
+								{/if}
+							</div>
+							<!-- Both halves grow, so the control is never narrower than the text above it
+							     once the row wraps onto two lines on a narrow screen. -->
+							<div class="flex-[1_1_14rem]">
+								<Select
+									id="default-persona-{entryId}"
+									value={entry.defaultPersonaId ?? ''}
+									onchange={(e) =>
+										handleDefaultPersonaChange((e.currentTarget as HTMLSelectElement).value || null)}
+								>
+									<option value="">Whoever new chats start as</option>
+									{#if seedPersonaMissing}
+										<option value={entry.defaultPersonaId}>Deleted persona</option>
+									{/if}
+									{#each characterLibraryStore.personas as persona (persona.id)}
+										<option value={persona.id}>{persona.identity.name || 'Unnamed persona'}</option>
+									{/each}
+								</Select>
+							</div>
+						</div>
+					</div>
+
+					<p class="mt-3.5 pt-2.5 border-t border-border-subtle/60 text-xs font-ui text-text-muted">
+						Stays in your library. None of it is written into an exported card.
+					</p>
+				</section>
 			</div>
 		</div>
 

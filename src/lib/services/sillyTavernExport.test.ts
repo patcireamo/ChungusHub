@@ -143,6 +143,17 @@ describe('SillyTavern card export', () => {
 		expect(block.activeVersionId).toBe('v2');
 	});
 
+	// The editor's New Chat Defaults card tells the reader in as many words that nothing in it
+	// is written into an exported card. Only the explicit shape `buildExportBlock` copies keeps
+	// that true, so this searches the whole serialized card rather than a list of fields: a
+	// second default added beside `data` would otherwise ride out silently and make the line lie.
+	test('a chat default never leaves with the card', () => {
+		const card = buildSillyTavernCard(makeEntry({ defaultPersonaId: 'persona-7' }), [], 'all');
+		const serialized = JSON.stringify(card);
+		expect(serialized).not.toContain('persona-7');
+		expect(serialized).not.toContain('defaultPersonaId');
+	});
+
 	test('a specific version surfaces only that version and embeds no version list', () => {
 		const versions: CharacterVersion[] = [
 			{ id: 'v1', entryId: 'entry-1', name: 'Original', data: makeData({ description: 'Old bio.' }), createdAt: 1, updatedAt: 1 },
