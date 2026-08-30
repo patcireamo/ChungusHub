@@ -20,6 +20,7 @@
 	 * only once something is odd is a control nobody knows exists.
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import InfoTip from '$lib/components/ui/InfoTip.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { connectionStore } from '$lib/stores/connections.svelte';
@@ -59,7 +60,9 @@
 		value: string;
 		/** This story differs from what the app would hand it now. ONE rule for all three
 		 *  rows, and the same one the Connections page's chip uses, so the pill answers
-		 *  "has this story broken away" and never "was something written here once". */
+		 *  "has this story broken away" and never "was something written here once". The
+		 *  wording differs by where the reader stands: active here, where the row IS the
+		 *  chat's answer, and passive on a settings page, where it is the app's. */
 		diverged: boolean;
 		/** Said when the claim names something that no longer exists, or null. The story runs
 		 *  on the app's value, and this is what stops the row pretending it was never
@@ -294,6 +297,24 @@
 
 		{#if open}
 			<div role="menu" class="setup-panel absolute bottom-full left-0 mb-2 z-20 surface-float rounded-lg shadow-md">
+				<!-- One header for both levels: the panel's title, or the category drilled into
+				     and the way back out. -->
+				<div class="setup-head" class:is-root={!active}>
+					{#if active}
+						<button type="button" class="setup-back" onclick={goBack} aria-label="Back">
+							<Icon name="chevronLeft" class="w-3.5 h-3.5" />
+						</button>
+						<span class="setup-head-label">{active.label}</span>
+					{:else}
+						<span class="setup-head-label">Chat Overrides</span>
+						<!-- The character step is invisible from here and cannot be inferred from the
+						     rows, since a seeded claim looks exactly like one made by hand. -->
+						<InfoTip
+							text="This chat first, then the app. A character only decides how its new chats start."
+						/>
+					{/if}
+				</div>
+
 				{#if !active}
 					<!-- Level 1: one row per category, whatever each of them holds. -->
 					{#each categories as category (category.id)}
@@ -307,20 +328,13 @@
 							<span class="setup-summary-label">{category.label}</span>
 							<span class="setup-summary-value">{category.value}</span>
 							{#if category.diverged}
-								<span class="scope-chip font-ui">This chat</span>
+								<span class="scope-chip font-ui">Overrides the app</span>
 							{/if}
 							<Icon name="chevronRight" class="w-3.5 h-3.5 setup-summary-chevron" />
 						</button>
 					{/each}
 				{:else}
 					<!-- Level 2: the same panel, one category's list. -->
-					<div class="setup-head">
-						<button type="button" class="setup-back" onclick={goBack} aria-label="Back">
-							<Icon name="chevronLeft" class="w-3.5 h-3.5" />
-						</button>
-						<span class="setup-head-label">{active.label}</span>
-					</div>
-
 					{#if active.lost}
 						<p class="setup-note">{active.lost}</p>
 					{/if}
@@ -465,6 +479,49 @@
 		--brw-h: 1.9rem;
 	}
 
+	/* ===== The header, both levels ===== */
+
+	.setup-head {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		padding: 0 0.5rem 0.35rem;
+		border-bottom: 1px solid var(--color-border-subtle);
+		margin-bottom: 0.35rem;
+	}
+
+	/* With no back button in front of it the title would sit short of the rows below. */
+	.setup-head.is-root {
+		padding-left: 0.75rem;
+	}
+
+	.setup-head-label {
+		font-family: var(--font-ui);
+		font-size: 10px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--color-text-muted);
+	}
+
+	.setup-back {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.4rem;
+		height: 1.4rem;
+		border: 0;
+		border-radius: var(--radius-sm);
+		background: transparent;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		transition: background-color 120ms ease, color 120ms ease;
+	}
+
+	.setup-back:hover {
+		background: color-mix(in srgb, var(--color-bg-tertiary) 85%, transparent);
+		color: var(--color-text-primary);
+	}
+
 	/* ===== Level 1 ===== */
 
 	.setup-summary {
@@ -526,42 +583,6 @@
 	}
 
 	/* ===== Level 2 ===== */
-
-	.setup-head {
-		display: flex;
-		align-items: center;
-		gap: 0.25rem;
-		padding: 0 0.5rem 0.35rem;
-		border-bottom: 1px solid var(--color-border-subtle);
-		margin-bottom: 0.35rem;
-	}
-
-	.setup-back {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 1.4rem;
-		height: 1.4rem;
-		border: 0;
-		border-radius: var(--radius-sm);
-		background: transparent;
-		color: var(--color-text-muted);
-		cursor: pointer;
-		transition: background-color 120ms ease, color 120ms ease;
-	}
-
-	.setup-back:hover {
-		background: color-mix(in srgb, var(--color-bg-tertiary) 85%, transparent);
-		color: var(--color-text-primary);
-	}
-
-	.setup-head-label {
-		font-family: var(--font-ui);
-		font-size: 10px;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--color-text-muted);
-	}
 
 	.setup-search {
 		padding: 0 0.5rem 0.35rem;

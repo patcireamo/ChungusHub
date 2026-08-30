@@ -129,7 +129,7 @@
 		<Icon name={point.icon} class="w-4 h-4 route-icon" strokeWidth={1.75} />
 		<span class="route-label">{point.label}</span>
 		{#if point.id === 'primary' && storyOnItsOwn}
-			<span class="scope-chip font-ui">This chat</span>
+			<span class="scope-chip font-ui">Overridden by this chat</span>
 		{/if}
 		<Select
 			variant="compact"

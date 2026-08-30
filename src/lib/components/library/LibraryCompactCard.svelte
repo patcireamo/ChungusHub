@@ -167,7 +167,7 @@
 		<span class="font-ui font-medium text-[13px] text-text-primary truncate">{getName()}</span>
 		{#if active}
 			<span class="shrink-0 ml-auto text-[10px] font-ui px-1.5 py-0.5 rounded-full bg-accent/14 text-accent border border-accent/30">
-				New chats
+				Default
 			</span>
 		{/if}
 	</div>
