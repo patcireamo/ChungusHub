@@ -7,7 +7,7 @@
 	import MessageAvatar from './MessageAvatar.svelte';
 	import MessageMeta from './MessageMeta.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
-	import { chatPreset } from '$lib/utils/chat-setup';
+	import { openChatSetup } from '$lib/stores/openChatSetup.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { themeStore } from '$lib/stores/theme.svelte';
 
@@ -41,7 +41,7 @@
 	// the moment a reply lands.
 	// Resolved on its own line: `displayContent` recomputes per streamed token, and resolving
 	// a preset parses the chat's feature-state blob.
-	const displayPreset = $derived(chatPreset(chatStore.activeChat));
+	const displayPreset = $derived(openChatSetup.preset);
 	let displayContent = $derived(regexRulesStore.forDisplay(content, 'assistant', 0, displayPreset));
 	let bodyHtml = $derived(renderMarkdown(displayContent));
 	// Counts the raw stream, not the display transform: it estimates what the model emits.

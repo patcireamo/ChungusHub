@@ -21,7 +21,7 @@
 	import { copyText } from '$lib/utils/clipboard';
 	import { previewContinuation } from '$lib/utils/continuation';
 	import { expandSelfRefs } from '$lib/macros';
-	import { chatPersonaEntry, chatPreset } from '$lib/utils/chat-setup';
+	import { openChatSetup } from '$lib/stores/openChatSetup.svelte';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { memoryStore } from '$lib/memory/store.svelte';
@@ -140,11 +140,12 @@
 		characterLibraryStore.entries.find((e) => e.id === chatStore.activeChat?.characterId)?.identity
 			.name || 'Character'
 	);
-	const selfRefUser = $derived(chatPersonaEntry(chatStore.activeChat)?.identity.name || 'You');
-	// The preset whose display rules this transcript is read under. Hoisted beside the
-	// self-refs rather than left inside `bodyHtml`: that one recomputes per streamed token,
-	// and resolving a preset parses the chat's feature-state blob.
-	const displayPreset = $derived(chatPreset(chatStore.activeChat));
+	// Both come off the open chat's ONE resolution rather than this turn's own: the claims
+	// belong to the chat, so a per-message copy parsed the same blob and walked the same
+	// library once per turn on screen. Also keeps them out of `bodyHtml`, which recomputes
+	// per streamed token.
+	const selfRefUser = $derived(openChatSetup.persona?.identity.name || 'You');
+	const displayPreset = $derived(openChatSetup.preset);
 
 	$effect(() => {
 		if (showDeleteMenu && deleteMenuElement) {

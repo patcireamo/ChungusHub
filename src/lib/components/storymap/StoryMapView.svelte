@@ -11,7 +11,7 @@
 	import { viewport } from '$lib/stores/viewport.svelte';
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
-	import { chatPersonaEntry } from '$lib/utils/chat-setup';
+	import { openChatSetup } from '$lib/stores/openChatSetup.svelte';
 	import { memoryStore } from '$lib/memory/store.svelte';
 	import { themeStore } from '$lib/stores/theme.svelte';
 	import { formatMessageTime, relativeClock } from '$lib/utils/time-format.svelte';
@@ -96,7 +96,7 @@
 	let selfRefChar = $derived(
 		characterLibraryStore.entries.find((e) => e.id === chat?.characterId)?.identity.name || 'Story'
 	);
-	let selfRefUser = $derived(chatPersonaEntry(chatStore.activeChat)?.identity.name || 'You');
+	let selfRefUser = $derived(openChatSetup.persona?.identity.name || 'You');
 
 	function roleLabel(role: StoryMapNode['role']): string {
 		return role === 'user' ? 'You' : role === 'assistant' ? selfRefChar : 'System';
