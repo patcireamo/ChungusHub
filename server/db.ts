@@ -492,6 +492,40 @@ const MIGRATIONS: Migration[] = [
 			FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
 		);
 		`
+	},
+	{
+		version: 44,
+		name: 'backfill_chat_default_version',
+		sql: `
+		-- What a new chat with a character is born pinned to is that character's own
+		-- defaultVersionId, falling back to the FIRST variant ever made. No entry written
+		-- before that field existed carries one, so without this a reader who forked a
+		-- character months ago and moved the library onto the fork silently gets new chats
+		-- on the original again. Their active pointer is the only honest record of the
+		-- answer they had been getting, so it becomes the seed.
+		--
+		-- A row that already names a default is skipped: this never overwrites one, so a row
+		-- that is already correct is untouched and a second run changes nothing. Skipped too:
+		-- an unversioned character (nothing to pin), and one whose active pointer names a
+		-- version that is gone, where the seed's own fallback is the truer answer than
+		-- reviving a dead id. A data_json the JSON functions cannot parse is left exactly as
+		-- it is; the library read is what fails loud on it.
+		--
+		-- The CASE guards are not decoration: json_extract RAISES on malformed JSON, and the
+		-- order AND terms are evaluated in belongs to the query planner, so a bare
+		-- json_valid() term beside them would be a boot that dies on somebody's torn row.
+		UPDATE character_library
+		SET data_json = json_set(data_json, '$.defaultVersionId', json_extract(data_json, '$.activeVersionId'))
+		WHERE type = 'character'
+		  AND json_valid(data_json)
+		  AND CASE WHEN json_valid(data_json) THEN json_extract(data_json, '$.defaultVersionId') END IS NULL
+		  AND EXISTS (
+		    SELECT 1 FROM character_versions v
+		    WHERE v.entry_id = character_library.id
+		      AND v.id = CASE WHEN json_valid(character_library.data_json)
+		                      THEN json_extract(character_library.data_json, '$.activeVersionId') END
+		  );
+		`
 	}
 ];
 
