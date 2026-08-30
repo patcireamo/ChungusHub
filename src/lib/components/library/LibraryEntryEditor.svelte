@@ -75,6 +75,10 @@
 		label: string;
 		/** The neutral option: what a new chat gets while this row is left alone. */
 		fallback: string;
+		/** Heading over the real things below the neutral option. The neutral one answers with
+		 *  something the app decides, so it must not read as one more row of the library: a
+		 *  connection can be NAMED Default, and a flat list makes the two look alike. */
+		group: string;
 		options: { id: string; name: string }[];
 		/** Said when the stored id names something that no longer exists. */
 		gone: string;
@@ -90,6 +94,7 @@
 				// The word the library badges the app's own persona with, so the option points at
 				// something the reader can go and look at.
 				fallback: 'Default',
+				group: 'Personas',
 				options: characterLibraryStore.personas.map((p) => ({
 					id: p.id,
 					name: p.identity.name || 'Unnamed persona'
@@ -102,6 +107,7 @@
 				// Not "Default" here: a connection can BE named Default (a fresh install's is), and
 				// an option naming one of the rows under it is a trap.
 				fallback: 'Global',
+				group: 'Connections',
 				options: connectionStore.list().map((c) => ({ id: c.id, name: c.name })),
 				gone: "That connection is gone, so new chats send on the app's."
 			}
@@ -114,6 +120,7 @@
 				// Which one that is carries the Default badge in the header's version menu, rather
 				// than a name spelled out here that would go stale the moment it is renamed.
 				fallback: 'Default',
+				group: 'Versions',
 				options: versions.map((v) => ({ id: v.id, name: v.name })),
 				gone: 'That version is gone, so new chats start on the first one made.'
 			});
@@ -354,15 +361,20 @@
 											(e.currentTarget as HTMLSelectElement).value || null
 										)}
 								>
+									<!-- What the app answers with sits above the group, ungrouped: the OS picker
+									     draws the heading and indents everything under it, so the one option
+									     that is not a thing in the library never reads as one. -->
 									<option value="">{row.fallback}</option>
 									{#if lost}
 										<!-- The seed is never swept, so the control shows that something IS set
 										     rather than blanking to a value nobody chose. -->
 										<option value={stored}>No longer here</option>
 									{/if}
-									{#each row.options as option (option.id)}
-										<option value={option.id}>{option.name}</option>
-									{/each}
+									<optgroup label={row.group}>
+										{#each row.options as option (option.id)}
+											<option value={option.id}>{option.name}</option>
+										{/each}
+									</optgroup>
 								</Select>
 							</div>
 						{/each}
