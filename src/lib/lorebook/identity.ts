@@ -1,36 +1,22 @@
 /**
  * Recognising a book that is already here.
  *
- * SillyTavern keeps one shared lorebook in two places at once: as its own file under `worlds/`,
- * and embedded in the `character_book` of every card that uses it. Importing a profile therefore
- * meets the same book many times over, and with no answer to "have we got this one" every
- * meeting becomes another row on the shelf.
+ * SillyTavern keeps one shared book as a file under `worlds/` AND embedded in the
+ * `character_book` of every card that uses it, so an import meets the same book many times over
+ * (architecture/sillytavern-interchange.md). Two answers, in that order: the world name a card
+ * links to, which SillyTavern itself wrote on both sides, then the book's own substance.
  *
- * Two answers, asked in that order.
- *
- * **By name.** A card names its book through SillyTavern's own link (`extensions.world`), and
- * that name IS the world file's name, so a run that has already imported that file binds
- * straight to it. This one is not a guess: both sides of it were written by SillyTavern.
- *
- * **By substance.** Everything else falls back to a fingerprint over what the entries say. It
- * has to survive BOTH SillyTavern shapes, since a `worlds/` file and a card's `character_book`
- * are the same book written two ways and neither one's ids, order or field spellings cross to
- * the other. So the fingerprint reads the fields both parsers land on identically, order-blind,
- * and reads nothing else.
- *
- * **The fingerprint is deliberately narrow.** A miss costs one duplicate book, which is
- * annoying; a false hit binds a character to somebody else's book and drops the one that
- * arrived, and there is no way back from that. Every judgement call here goes the same way.
+ * **Every judgement here favours a miss over a hit.** A miss costs one duplicate book; a false
+ * hit binds a character to somebody else's book and drops the one that arrived, and there is no
+ * way back from that.
  */
 import type { Lorebook, LorebookEntry } from './types';
 
 /**
  * One entry's substance: what it says, what wakes it, and whether it is on.
  *
- * Every field here is one both entry parsers produce identically for the same entry, defaults
- * included (`fromNativeEntry` and `fromCharacterBookEntry` in [`sillytavern.ts`](./sillytavern.ts)),
- * which is what makes a book recognisable across the two shapes it travels in. JSON rather than
- * a joined string, so no separator has to be a character the text cannot hold.
+ * Every field here is one both entry parsers land on identically, defaults included, which is
+ * what makes a book recognisable across the two shapes it travels in.
  */
 function entryPrint(entry: LorebookEntry): string {
 	return JSON.stringify([
@@ -48,8 +34,8 @@ function entryPrint(entry: LorebookEntry): string {
  * What identifies a book, or **null** for one with no entries.
  *
  * The name is left out on purpose: the same book is called one thing as a world file and
- * another inside the card that carries it. An empty book is identified by nothing at all, so it
- * can only ever be itself.
+ * another inside the card carrying it. An empty book is identified by nothing, so it can only
+ * ever be itself.
  */
 export function bookFingerprint(book: Lorebook): string | null {
 	if (book.entries.length === 0) return null;
@@ -62,11 +48,8 @@ function nameKey(name: string): string {
 }
 
 /**
- * The books an import may bind to instead of copying.
- *
- * Built once from the shelf as it stands when a run starts, and grown as that run lands books,
- * so it is never asked a stale question: a book edited since the last import fingerprints as
- * what it says now.
+ * The books an import may bind to instead of copying. Built when a run starts and grown as it
+ * lands books, so a book edited since the last import fingerprints as what it says now.
  */
 export interface BookIndex {
 	/** The book a SillyTavern world name binds to, or null. */

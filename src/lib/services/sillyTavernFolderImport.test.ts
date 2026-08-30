@@ -141,7 +141,18 @@ const PROFILE = pick([
 	},
 	// A book made in SillyTavern and attached there: the card names it and carries no copy, so
 	// the link is the only thing that can bind it.
-	{ path: 'default-user/characters/Finn.json', body: card('Finn', { extensions: { world: 'Kingdom' } }) }
+	{ path: 'default-user/characters/Finn.json', body: card('Finn', { extensions: { world: 'Kingdom' } }) },
+	// The link resolves and the copy inside the card says something else, which is the card
+	// shipping a draft of a book its owner has since edited in SillyTavern. SillyTavern reads
+	// the world file and never that copy (`getCharacterLore` searches by world name alone), so
+	// shelving it would be shelving the stale half of a book nobody reads.
+	{
+		path: 'default-user/characters/Gwen.json',
+		body: card('Gwen', {
+			extensions: { world: 'Kingdom' },
+			character_book: characterBook('Kingdom (old)', [{ key: ['dragon'], content: 'An older draft.' }])
+		})
+	}
 ]);
 
 /** The books this run put on the shelf, which is what a fresh install would hold. */
@@ -170,8 +181,8 @@ describe('a profile whose lorebook is on disk many times over', () => {
 	});
 
 	test('says how many characters bound to a book that was already here', () => {
-		// Alice and Finn by SillyTavern's own link, Bob and Dave by what their book says.
-		expect(report.worlds.linked).toBe(4);
+		// Alice, Finn and Gwen by SillyTavern's own link, Bob and Dave by what their book says.
+		expect(report.worlds.linked).toBe(5);
 	});
 
 	test('binds every character to the one book, not to a copy of its own', () => {
@@ -185,6 +196,13 @@ describe('a profile whose lorebook is on disk many times over', () => {
 		expect(linksOf('Finn')).toEqual([kingdom]);
 	});
 
+	// The one place this drops something that is on the disk, and it is deliberate: SillyTavern
+	// reads the world file the card names and never the copy inside the card.
+	test('lets a resolved link stand in for a card copy that says something else', () => {
+		expect(linksOf('Gwen')).toEqual([shelved()[0].id]);
+		expect(shelved().some((b) => b.name === 'Kingdom (old)')).toBe(false);
+	});
+
 	// The world file is what a later run's cards bind to by name, and a book deleted by hand has
 	// to stop counting so the file is offered again.
 	test('claims a world file with the book it became', () => {
@@ -194,31 +212,30 @@ describe('a profile whose lorebook is on disk many times over', () => {
 
 	test('brings every character over regardless', () => {
 		expect(report.characters.failed).toEqual([]);
-		expect(report.characters.imported).toBe(5);
+		expect(report.characters.imported).toBe(6);
 	});
 });
 
 describe('a second run, against what the first one left', () => {
-	test('binds a card to the book an earlier run shelved, by the world it names', () => {
+	// Eve carries NO copy of the book, so nothing about her substance can bind her: only the
+	// ledger's memory of what `worlds/Kingdom.json` became can, which is the whole point of a
+	// world file claiming its book.
+	test('binds a card to the book an earlier run shelved, by the world it names', async () => {
 		const before = shelved().length;
-		return importSillyTavernFolder(
+		const second = await importSillyTavernFolder(
 			scanSillyTavernFolder(
 				pick([
 					{
 						path: 'default-user/characters/Eve.json',
-						body: card('Eve', {
-							extensions: { world: 'Kingdom' },
-							character_book: characterBook('Kingdom Lorebook', KINGDOM)
-						})
+						body: card('Eve', { extensions: { world: 'Kingdom' } })
 					}
 				])
 			)!,
 			{ claims: written.claims.map((c) => ({ key: c.key, entityId: c.entityId ?? null })) }
-		).then((second) => {
-			expect(shelved()).toHaveLength(before);
-			expect(second.worlds.linked).toBe(1);
-			expect(second.worlds.fromCards).toBe(0);
-			expect(linksOf('Eve')).toEqual([shelved()[0].id]);
-		});
+		);
+		expect(shelved()).toHaveLength(before);
+		expect(second.worlds.linked).toBe(1);
+		expect(second.worlds.fromCards).toBe(0);
+		expect(linksOf('Eve')).toEqual([shelved()[0].id]);
 	});
 });
