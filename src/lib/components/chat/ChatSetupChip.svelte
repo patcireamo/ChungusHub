@@ -22,7 +22,7 @@
 
 	// ===== You =====
 
-	let personas = $derived(characterLibraryStore.entries.filter((e) => e.type === 'persona'));
+	let personas = $derived(characterLibraryStore.personas);
 	let claimedPersona = $derived(chatPersonaClaim(chat));
 	let persona = $derived(chatPersonaEntry(chat));
 	/** The chat named a persona that no longer exists, so it is speaking as the app's. */
