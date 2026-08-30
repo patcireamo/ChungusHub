@@ -126,7 +126,7 @@
 	</button>
 
 	{#if open}
-		<div class="menu surface-float" role="listbox">
+		<div class="menu" role="listbox">
 			<!-- The app's answer, apart from the list and naming what it resolves to: the one
 			     row here that is not a thing anybody made. -->
 			<button
@@ -230,13 +230,18 @@
 		color: var(--color-text-muted);
 	}
 
+	/* Fully opaque (`--color-bg-solid`) rather than the float recipe, the same exception
+	   MockupTip takes: this list opens over the portrait and the card text, and a name read
+	   through them is a name misread. */
 	.menu {
 		position: absolute;
 		top: calc(100% + 4px);
 		left: 0;
 		right: 0;
 		padding: 0.25rem;
+		border: 1px solid var(--color-border);
 		border-radius: var(--radius-lg);
+		background: var(--color-bg-solid);
 		box-shadow: var(--shadow-md);
 		z-index: 50;
 	}
