@@ -100,9 +100,11 @@ export function chatPresetId(chat: Chat | null): string | null {
  * claim the way it carries the persona).
  *
  * A preset is one document, so this answers for all of it at once: the items assembled, the
- * controls the macros expand against, the regex rules it carries and its own prompt options.
- * Resolve any part of that separately and a chat can be metered against one preset's items
- * while another's rules rewrite what is sent, with nothing on screen saying so.
+ * controls the macros expand against, the values those controls hold, the regex rules it
+ * carries and its own prompt options. Resolve any part of that separately and a chat can be
+ * metered against one preset's items while another's rules rewrite what is sent, with
+ * nothing on screen saying so. The values live per preset for the same reason, so the id
+ * this returns is what every reader of them keys on.
  */
 export function presetForClaim(claimed: string | null): PromptPreset | null {
 	return (

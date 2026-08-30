@@ -17,7 +17,6 @@
 -->
 <script lang="ts">
 	import Icon from '$lib/components/ui/Icon.svelte';
-	import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 	import { getControlValue } from '$lib/utils/prompt-controls';
 	import type { PromptControl, PromptPresetBundle } from '$lib/types/database';
 
@@ -25,10 +24,13 @@
 		bundles: PromptPresetBundle[];
 		/** The preset's controls: what a capture reads, and what a kit is checked against. */
 		controls: PromptControl[];
+		/** THIS preset's reader values, handed in rather than reached for: values belong to a
+		 *  preset, and an editor that fetched them itself would need to know which one. */
+		values: Record<string, unknown>;
 		onChange: (bundles: PromptPresetBundle[]) => void;
 	}
 
-	let { bundles, controls, onChange }: Props = $props();
+	let { bundles, controls, values, onChange }: Props = $props();
 
 	/** Controls this kit predates: macros the preset owns now that the kit never captured.
 	 *  A reader adopting such a kit gets those controls at the author's defaults, so the
@@ -45,7 +47,7 @@
 		return (
 			missingCount(bundle) === 0 &&
 			Object.entries(bundle.values).every(
-				([macro, value]) => JSON.stringify(presetControlsStore.values[macro]) === JSON.stringify(value)
+				([macro, value]) => JSON.stringify(values[macro]) === JSON.stringify(value)
 			)
 		);
 	}
@@ -54,12 +56,12 @@
 	 *  partial: a kit that only names what the author had touched would leave the rest
 	 *  wherever the reader had them, which is not the configuration being vouched for. */
 	function capture(): Record<string, unknown> {
-		const values: Record<string, unknown> = {};
+		const captured: Record<string, unknown> = {};
 		for (const control of controls) {
 			if (!control.macro.trim()) continue;
-			values[control.macro] = getControlValue(control, presetControlsStore.values[control.macro]);
+			captured[control.macro] = getControlValue(control, values[control.macro]);
 		}
-		return values;
+		return captured;
 	}
 
 	function add(): void {

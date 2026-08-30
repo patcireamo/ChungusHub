@@ -425,12 +425,16 @@ class MemoryStore {
 		const chatMessages = ctx.leafId ? findActivePath(ctx.allMessages, ctx.leafId) : [];
 		// The persona this chat plays as, same rule and same resolver as the prompt.
 		const persona = personaEntryFor(ctx.personaId);
+		// One resolution for both halves: a preset's controls and the values they expand
+		// against belong to the same document, so reading them apart could price this chat
+		// against one preset's knobs while another's controls decide what they mean.
+		const preset = presetForClaim(ctx.presetId);
 		const base: MacroContext = {
 			resolvedCharacters: character ? [character] : [],
 			resolvedPersona: toPromptCharacter(persona),
 			chatMessages,
-			controls: presetForClaim(ctx.presetId)?.controls ?? [],
-			customFields: presetControlsStore.values,
+			controls: preset?.controls ?? [],
+			customFields: presetControlsStore.valuesFor(preset?.id ?? null),
 			memory: this.recall
 		};
 		// One scan, through the same resolver as the prompt and the meters. No budget here: a

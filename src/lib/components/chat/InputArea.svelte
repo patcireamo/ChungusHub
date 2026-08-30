@@ -266,7 +266,7 @@
 					]),
 					lorebookSettings: lorebookSettingsStore.settings,
 					controls: currentPreset.controls ?? [],
-					customFields: presetControlsStore.values,
+					customFields: presetControlsStore.valuesFor(currentPreset.id),
 					chatMessages: pricedPath,
 					recall: { text: memoryStore.recall || null, archivedIds: memoryStore.archivedMessageIds },
 					model: promptTarget.model,

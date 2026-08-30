@@ -77,7 +77,7 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 	await presetService.initialize();
 
 	// Resolve the chat's bound character, the persona it plays as, and that character's
-	// lorebook + the global preset-control values for macro expansion.
+	// lorebook + the claimed preset's own control values for macro expansion.
 	const chat = chatId ? await db.getChat(chatId) : null;
 	// The preset this story is built from: its own claim while it resolves, else the app's
 	// active one, effective either way. Read after the chat, since the chat is what answers it.
@@ -160,7 +160,7 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 		lorebookSettings: lorebookSettingsStore.settings,
 		lorebookTrigger: context.lorebookTrigger,
 		controls: preset?.controls ?? [],
-		customFields: await readPresetControlValues(),
+		customFields: await readPresetControlValues(preset?.id ?? null),
 		chatMessages,
 		recall,
 		model: promptTarget.model,

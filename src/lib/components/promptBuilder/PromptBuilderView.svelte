@@ -146,7 +146,7 @@
 		]),
 		lorebookSettings: lorebookSettingsStore.settings,
 		controls: currentPreset?.controls ?? [],
-		customFields: presetControlsStore.values,
+		customFields: presetControlsStore.valuesFor(currentPreset?.id ?? null),
 		chatMessages: chatStore.currentChatState?.activePath ?? [],
 		recall: { text: memoryStore.recall || null, archivedIds: memoryStore.archivedMessageIds },
 		model: promptTarget.model,
@@ -1015,6 +1015,7 @@
 			<BundleListEditor
 				bundles={currentPreset.bundles ?? []}
 				controls={currentPreset.controls ?? []}
+				values={presetControlsStore.valuesFor(currentPreset.id)}
 				onChange={setBundles}
 			/>
 		</section>

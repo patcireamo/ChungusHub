@@ -69,7 +69,7 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 		resolvedCharacters: character ? [character] : [],
 		chatMessages,
 		controls: preset?.controls ?? [],
-		customFields: presetControlsStore.values,
+		customFields: presetControlsStore.valuesFor(preset?.id ?? null),
 		memory: opts.memory ?? ''
 	};
 	// One scan, resolved against a context that carries no lore yet: same shape as

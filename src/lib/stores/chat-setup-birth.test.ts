@@ -157,6 +157,7 @@ const { characterLibraryStore } = await import('./characterLibrary.svelte');
 const { connectionStore } = await import('./connections.svelte');
 const { personaStore } = await import('./persona.svelte');
 const { presetService } = await import('$lib/services/presets.svelte');
+const { presetControlsStore, readPresetControlValues } = await import('./presetControls.svelte');
 const { reloadAllSyncedSettings } = await import('$lib/services/syncedSetting');
 const {
 	chatConnectionId,
@@ -578,5 +579,107 @@ describe('one blob, every feature', () => {
 		expect(held.preset).toBe(OWN_PRESET);
 		expect(held.impersonatePerspective).toBe('third');
 		expect(held.steeringHistory).toEqual(['Older note.']);
+	});
+});
+
+describe("a preset's control values", () => {
+	const VALUES_KEY = 'presetControlValuesByPreset';
+	const GLOBAL_KEY = 'presetControlValues';
+
+	/** The stored row, as the next boot and every other device read it. */
+	const row = (): string | null => server.settings.get(VALUES_KEY) ?? null;
+	const bucket = (presetId: string): Record<string, unknown> => JSON.parse(row() ?? '{}')[presetId] ?? {};
+
+	test('two presets sharing a macro name no longer share its value', async () => {
+		// The whole point. Duplicating a preset is the normal way to get two documents
+		// declaring the same macro, and while values were one flat map keyed by macro name,
+		// tuning a knob for the chat on one silently rewrote the prompt of the chat on the
+		// other, with nothing on either screen saying so.
+		await presetControlsStore.initialize();
+
+		presetControlsStore.setValue(APP_PRESET, 'tone', 'warm');
+		presetControlsStore.setValue(OWN_PRESET, 'tone', 'cold');
+
+		expect(presetControlsStore.valuesFor(APP_PRESET).tone).toBe('warm');
+		expect(presetControlsStore.valuesFor(OWN_PRESET).tone).toBe('cold');
+		// And what the send actually reads, which is the row rather than the cache.
+		expect(await readPresetControlValues(APP_PRESET)).toEqual({ tone: 'warm' });
+		expect(await readPresetControlValues(OWN_PRESET)).toEqual({ tone: 'cold' });
+	});
+
+	test('a preset nobody has tuned reads as every control on its default', async () => {
+		await presetControlsStore.initialize();
+
+		expect(presetControlsStore.valuesFor(OWN_PRESET)).toEqual({});
+		expect(await readPresetControlValues(OWN_PRESET)).toEqual({});
+	});
+
+	test('an install that had tuned knobs keeps them, on every preset it holds', async () => {
+		// The carry-over. Copying the whole flat map to each preset is what makes it exact:
+		// every preset goes on resolving each macro to the value it resolved to yesterday,
+		// and they diverge only from the next edit.
+		server.settings.set(GLOBAL_KEY, JSON.stringify({ tone: 'warm', bannedPhrases: ['slop'] }));
+
+		await presetControlsStore.initialize();
+
+		expect(bucket(APP_PRESET)).toEqual({ tone: 'warm', bannedPhrases: ['slop'] });
+		expect(bucket(OWN_PRESET)).toEqual({ tone: 'warm', bannedPhrases: ['slop'] });
+		// Never destructive: the row it read is the reader's data and an older build still
+		// reads it, so it is left exactly where it was.
+		expect(server.settings.get(GLOBAL_KEY)).toBe(JSON.stringify({ tone: 'warm', bannedPhrases: ['slop'] }));
+	});
+
+	test('running it a second time changes nothing', async () => {
+		server.settings.set(GLOBAL_KEY, JSON.stringify({ tone: 'warm' }));
+		await presetControlsStore.initialize();
+		const afterFirst = row();
+
+		await presetControlsStore.initialize();
+
+		expect(row()).toBe(afterFirst);
+	});
+
+	test('it never reaches a bucket that already exists', async () => {
+		// The failure this class of change is guarded against: a re-fire would hand every
+		// preset the old flat map again and wipe whatever the reader had tuned since.
+		server.settings.set(GLOBAL_KEY, JSON.stringify({ tone: 'warm' }));
+		await presetControlsStore.initialize();
+
+		presetControlsStore.setValue(APP_PRESET, 'tone', 'cold');
+		await presetControlsStore.syncReload();
+
+		expect(presetControlsStore.valuesFor(APP_PRESET).tone).toBe('cold');
+	});
+
+	test('a preset made after the carry-over starts on its author defaults', async () => {
+		// Writing the row IS the marker, so a preset imported later cannot inherit a
+		// stranger's tuning off a flat map that is still sitting on disk.
+		server.settings.set(GLOBAL_KEY, JSON.stringify({ tone: 'warm' }));
+		await presetControlsStore.initialize();
+
+		await presetService.createPreset('later-preset');
+		await presetControlsStore.syncReload();
+
+		expect(presetControlsStore.valuesFor('later-preset')).toEqual({});
+		await presetService.deletePreset('later-preset');
+	});
+
+	test('a fresh install carries nothing across and still marks itself', async () => {
+		await presetControlsStore.initialize();
+
+		expect(row()).toBe('{}');
+		expect(presetControlsStore.valuesFor(APP_PRESET)).toEqual({});
+	});
+
+	test("a deleted preset's tuning is kept, so restoring the preset restores it", async () => {
+		// Same rule the adopted-setup key follows: an orphan bucket sits inert rather than
+		// turning a delete into permanent loss of everything the reader had tuned.
+		await presetControlsStore.initialize();
+		presetControlsStore.setValue(OWN_PRESET, 'tone', 'cold');
+
+		await presetService.deletePreset(OWN_PRESET);
+		await presetControlsStore.syncReload();
+
+		expect(presetControlsStore.valuesFor(OWN_PRESET).tone).toBe('cold');
 	});
 });

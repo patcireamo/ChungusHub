@@ -44,6 +44,9 @@
 	// overlay is open, sync reloads, with no snapshot to go stale.
 	let activePreset = $derived(presetService.getActiveEffectivePreset());
 	let activeControls = $derived(activePreset?.controls ?? []);
+	// This preset's values, which is the only set this page may read or write: another
+	// preset's knobs are not this page's business even where they share a macro name.
+	let values = $derived(presetControlsStore.valuesFor(activePreset?.id ?? null));
 	let meta = $derived(activePreset?.meta);
 	let coverUrl = $derived(meta?.cover ? imageService.thumbnailUrl(meta.cover) : null);
 
@@ -243,25 +246,31 @@
 
 	function isModified(control: PromptControl): boolean {
 		return (
-			JSON.stringify(getControlValue(control, presetControlsStore.values[control.macro])) !==
+			JSON.stringify(getControlValue(control, values[control.macro])) !==
 			JSON.stringify(getControlValue(control, baselineRaw(control)))
 		);
 	}
 
 	let modifiedCount = $derived(activeControls.filter(isModified).length);
 
+	function setControlValue(control: PromptControl, value: unknown): void {
+		if (!activePreset) return;
+		presetControlsStore.setValue(activePreset.id, control.macro, value);
+	}
+
 	/** Put one control back on the baseline: re-write the setup's value where it names the
 	 *  macro, otherwise forget the stored value so the author's default takes over live. */
 	function resetControl(control: PromptControl): void {
+		if (!activePreset) return;
 		const raw = baselineRaw(control);
-		if (raw === undefined) presetControlsStore.clearValue(control.macro);
-		else presetControlsStore.setValue(control.macro, raw);
+		if (raw === undefined) presetControlsStore.clearValue(activePreset.id, control.macro);
+		else presetControlsStore.setValue(activePreset.id, control.macro, raw);
 	}
 
 	// --- adopting a configuration --------------------------------------------------------
 	// Clicking any chip means "become exactly this", so adopting always lands with zero
-	// drift. Only this preset's macros are touched: values are global, and another
-	// preset's are not this page's to clear.
+	// drift. Only this preset's macros are touched, and the write lands in this preset's
+	// own bucket, so no other preset's knob moves because two authors picked one name.
 
 	function adoptSetup(bundle: PromptPresetBundle): void {
 		if (!activePreset) return;
@@ -276,13 +285,13 @@
 				clears.push(control.macro);
 			}
 		}
-		presetControlsStore.applyValues(writes, clears);
+		presetControlsStore.applyValues(activePreset.id, writes, clears);
 		presetControlsStore.setAppliedSetup(activePreset.id, bundle.id);
 	}
 
 	function adoptDefaults(): void {
 		if (!activePreset) return;
-		presetControlsStore.applyValues({}, activeControls.map((c) => c.macro));
+		presetControlsStore.applyValues(activePreset.id, {}, activeControls.map((c) => c.macro));
 		presetControlsStore.setAppliedSetup(activePreset.id, null);
 	}
 
@@ -311,7 +320,7 @@
 
 	let totalTokens = $derived(
 		activeControls.reduce(
-			(sum, c) => sum + countTokens(formatControlForPrompt(c, presetControlsStore.values[c.macro]), llmService.getPrimaryModel()),
+			(sum, c) => sum + countTokens(formatControlForPrompt(c, values[c.macro]), llmService.getPrimaryModel()),
 			0
 		)
 	);
@@ -342,8 +351,9 @@
 	});
 
 	// The preset the open chat is built from, when that is not the one this panel names. Every
-	// knob below writes a value that story never reads, and a control that answers while
-	// changing nothing is the one failure a reader cannot diagnose from what is on screen.
+	// knob below then tunes a document that story is not built from, so the reader would be
+	// shaping one preset while watching the replies of another, with nothing on screen to
+	// say which one they are looking at.
 	let storyPreset = $derived.by(() => {
 		const running = chatPreset(chatStore.activeChat);
 		return running && running.id !== activePreset?.id ? running : null;
@@ -400,9 +410,9 @@
 	<div use:measureCard={control.id}>
 		<CustomControlField
 			{control}
-			raw={presetControlsStore.values[control.macro]}
+			raw={values[control.macro]}
 			baseline={baselineRaw(control)}
-			onChange={(value) => presetControlsStore.setValue(control.macro, value)}
+			onChange={(value) => setControlValue(control, value)}
 			onReset={() => resetControl(control)}
 		/>
 	</div>
