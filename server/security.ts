@@ -290,9 +290,10 @@ export function hasValidSession(cookieHeader: string | null): boolean {
 	const now = Date.now();
 	if (lastSeen === undefined || now - lastSeen > sessionIdleMs()) return false;
 	state.sessions[token] = now;
-	// Persisting every request would hammer security.json; once a minute is
-	// plenty. Worst case a restart loses under a minute of the idle window.
-	if (now - (lastPersisted.get(token) ?? 0) > PERSIST_EVERY_MS) {
+	// Persisting every request would hammer security.json; once a minute is plenty, but
+	// never longer than half the idle window: the file is what the dev gate and the next
+	// boot read, and a stamp staler than the window itself locks out a device still in use.
+	if (now - (lastPersisted.get(token) ?? 0) > Math.min(PERSIST_EVERY_MS, sessionIdleMs() / 2)) {
 		lastPersisted.set(token, now);
 		pruneSessions();
 		persist();

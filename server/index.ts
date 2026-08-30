@@ -656,9 +656,13 @@ async function handleApi(req: Request, url: URL, clientIp: string | null): Promi
 	// No socket kick: the window is read per request, so a shortened one refuses the
 	// devices it just expired on their next one.
 	if (path === '/api/security/session-idle' && req.method === 'POST') {
-		const { minutes } = (await req.json()) as { minutes?: number };
 		try {
-			security.setSessionIdleMinutes(Number(minutes));
+			const { minutes } = (await req.json()) as { minutes?: unknown };
+			// Never coerced: Number(null), Number('') and Number([]) are all 0, which is the
+			// most permissive answer this gate has, so a malformed body would quietly stop
+			// the lock from ever asking again.
+			if (typeof minutes !== 'number') throw new Error('The idle timeout must be a number.');
+			security.setSessionIdleMinutes(minutes);
 		} catch (e) {
 			return json({ error: e instanceof Error ? e.message : String(e) }, 400);
 		}

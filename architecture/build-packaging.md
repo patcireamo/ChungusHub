@@ -25,7 +25,7 @@
 
 ## Hand-kept couplings
 
-1. `vite.config.ts` dev gates ↔ `server/access.ts` / `server/security.ts` (allowlist logic, the `passwordEnabled` flag, the `sessionIdleMinutes` window and its default, cookie name).
+1. `vite.config.ts` dev gates ↔ `server/access.ts` / `server/security.ts` (allowlist logic, the `passwordEnabled` flag, the `sessionIdleMinutes` window and its default, cookie name). The window's default is asserted by [`src/lib/contracts.test.ts`](../src/lib/contracts.test.ts); the rest is read by eye.
 2. Vite proxy route list ↔ the Bun server's non-static route surface (`/api`, `/files`, `/unlock`, `/ws`). Complete even where the client goes around it: the socket takes the Bun port directly in dev, and `/ws` is proxied regardless, so :1420 is a faithful stand-in for the app's origin.
 3. `defaults/presets/`, `defaults/skills/` and `defaults/characters/` are the source of truth for what ships: `ensureDefaultPresets` seeds every `<id>.json` the first holds, `listDefaultSkills` reads the second on demand, `ensureDefaultCharacters` seeds each id in the third exactly once, and `scripts/package.ts` copies all three whole. A scratch file left in any of them is a shipped default on the next boot and in the next portable build. The first two throw when empty; the third does not, since an example character is not something the app cannot run without.
 4. `scripts/package.ts` copies an explicit list (build, defaults/presets, defaults/skills, defaults/characters, defaults/backgrounds). A new runtime-read directory must be added there or the portable build silently lacks it.

@@ -53,7 +53,7 @@ One Bun process ([`server/index.ts`](../server/index.ts)) does everything: serve
 
 1. `MUTATION_SCOPES` / `READ_METHODS` (db.ts) ↔ the client proxy methods in `src/lib/services/database.ts`. Names must match exactly. Asserted by [`src/lib/contracts.test.ts`](../src/lib/contracts.test.ts).
 2. Sync scope strings: **not hand-kept.** The vocabulary is `SyncScope` in [`shared/sync.ts`](../shared/sync.ts); `MUTATION_SCOPES`, `broadcastSync`, `AssistantContext.broadcast` and the assistant registry's `EntityDef.scope` are all typed against it, and the client's handler table is a `Record<SyncScope, …>`. A scope one side cannot handle does not compile. What the compiler can't see is a declared scope nothing ever broadcasts, dead weight in the client's table; `contracts.test.ts` asserts that half.
-3. The session idle window in security.ts ↔ the dev-proxy gate in `vite.config.ts` (`sessionIdleMinutes`, its default and its 0-means-never rule, duplicated by design).
+3. The session idle window in security.ts ↔ the dev-proxy gate in `vite.config.ts` (`sessionIdleMinutes`, its default and its 0-means-never rule, duplicated by design). The default is asserted by [`src/lib/contracts.test.ts`](../src/lib/contracts.test.ts).
 4. WS message shapes in index.ts ↔ the client transport in `src/lib/services/transport.ts` (`t` discriminators, `id` correlation). `contracts.test.ts` asserts every discriminator the client sends has a server handler.
 5. `IMAGE_CATEGORIES` in config.ts ↔ client-side category strings passed to `/api/images` and `/api/images/copy` (imageService).
 6. The `settings` table is read by BOTH client stores (via the bridge) and the server directly (assistant gates), so renaming a key is a two-sided change.

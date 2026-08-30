@@ -586,7 +586,8 @@
 							{#if idleMinutes === 0}
 								Other devices stay unlocked until the password changes.
 							{:else}
-								A device left alone this long is asked for the password again.
+								A device left alone this long is asked for the password again. Set 0 to stop
+								asking.
 							{/if}
 						</span>
 						<form
@@ -605,7 +606,7 @@
 								spellcheck="false"
 								aria-label="Minutes before an idle device is asked again"
 							/>
-							<span class="idle-unit">minutes, 0 never asks</span>
+							<span class="idle-unit">minutes</span>
 							<button
 								class="primary-btn idle-save"
 								type="submit"
