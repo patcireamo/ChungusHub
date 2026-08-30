@@ -86,8 +86,10 @@
 		const rows: ChatDefaultRow[] = [
 			{
 				key: 'defaultPersonaId',
-				label: 'Play as',
-				fallback: 'Whoever new chats start as',
+				label: 'Persona',
+				// The word the library badges the app's own persona with, so the option points at
+				// something the reader can go and look at.
+				fallback: 'Default',
 				options: characterLibraryStore.personas.map((p) => ({
 					id: p.id,
 					name: p.identity.name || 'Unnamed persona'
@@ -97,7 +99,9 @@
 			{
 				key: 'defaultConnectionId',
 				label: 'Connection',
-				fallback: 'Whatever the app is sending on',
+				// Not "Default" here: a connection can BE named Default (a fresh install's is), and
+				// an option naming one of the rows under it is a trap.
+				fallback: 'Global',
 				options: connectionStore.list().map((c) => ({ id: c.id, name: c.name })),
 				gone: "That connection is gone, so new chats send on the app's."
 			}
@@ -107,7 +111,9 @@
 			rows.push({
 				key: 'defaultVersionId',
 				label: 'Version',
-				fallback: `The first one made (${versions[0].name})`,
+				// Which one that is carries the Default badge in the header's version menu, rather
+				// than a name spelled out here that would go stale the moment it is renamed.
+				fallback: 'Default',
 				options: versions.map((v) => ({ id: v.id, name: v.name })),
 				gone: 'That version is gone, so new chats start on the first one made.'
 			});

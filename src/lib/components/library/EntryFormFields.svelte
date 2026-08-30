@@ -641,8 +641,11 @@
 		{@render identityExtra?.()}
 	</div>
 
-	<!-- Fields pane: three fixed, collapsible categories. -->
-	<div class="min-w-0 space-y-5">
+	<!-- Fields pane: three fixed, collapsible categories. The rule between the panes is drawn
+	     on this side and only once the grid is side by side; stacked, the panes follow each
+	     other down the page and a line across the middle would read as a divider between the
+	     tags and the card. -->
+	<div class="min-w-0 space-y-5 lg:border-l lg:border-border-subtle lg:pl-6">
 		<!-- Character Card: the essentials. -->
 		<div class="space-y-3">
 			{@render sectionHeading('card', 'Character Card', 'user', cardOpen)}

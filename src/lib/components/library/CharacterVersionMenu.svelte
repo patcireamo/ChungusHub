@@ -21,6 +21,10 @@
 	let entry = $derived(characterLibraryStore.entries.find((e) => e.id === entryId));
 	let versions = $derived(characterLibraryStore.versionsFor(entryId));
 	let activeVersion = $derived(versions.find((v) => v.id === entry?.activeVersionId) ?? null);
+	// The variant new chats are born on, which is the first one made until the editor's New
+	// Chat Defaults names another. Badged here because that panel's Version row calls it
+	// "Default" without naming it, and this list is where a reader finds out which one it is.
+	let defaultVersionId = $derived(characterLibraryStore.chatVersionSeed(entryId));
 
 	let open = $state(false);
 	let menuRef = $state<HTMLDivElement | null>(null);
@@ -212,6 +216,9 @@
 										<Icon name="check" class="w-3.5 h-3.5" />
 									</span>
 									<span class="version-name">{version.name}</span>
+									{#if version.id === defaultVersionId}
+										<span class="version-default">Default</span>
+									{/if}
 									{#if pinned > 0}
 										<span class="version-usage">{pinned} chat{pinned === 1 ? '' : 's'}</span>
 									{/if}
@@ -387,6 +394,18 @@
 		flex-shrink: 0;
 		font-size: 0.62rem;
 		color: var(--color-text-muted);
+	}
+
+	/* The same accent pill the library wears on the persona new chats start as, since it
+	   answers the same question about a different thing. */
+	.version-default {
+		flex-shrink: 0;
+		padding: 0.05rem 0.35rem;
+		border-radius: var(--radius-full);
+		background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+		font-size: 0.62rem;
+		font-weight: 600;
+		color: var(--color-accent);
 	}
 
 	.version-action {
