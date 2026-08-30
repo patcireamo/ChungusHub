@@ -195,6 +195,10 @@
 	// would push the composer's own controls off a narrow screen the moment one landed.
 	let personaName = $derived(persona?.identity.name?.trim() || 'You');
 	let modelName = $derived(connection?.model.split('/').pop() || 'No model');
+	// The face, not a settings glyph: who the story is played by is what a reader tracks
+	// turn to turn, and a portrait says it before the name beside it is read.
+	let personaThumb = $derived(imageService.thumbnailUrl(persona?.identity.imageUrl));
+	let personaFocus = $derived(portraitFocusStyle(persona?.identity.portraitFocus));
 
 	function close() {
 		open = false;
@@ -281,7 +285,9 @@
 </script>
 
 {#if chat}
-	<div class="relative" bind:this={menuRef}>
+	<!-- flex, not a bare block: a block wrapper around the button would reserve baseline
+	     descender space under it and float the chip above the buttons it sits beside. -->
+	<div class="relative flex" bind:this={menuRef}>
 		<button
 			type="button"
 			class="setup-chip"
@@ -291,7 +297,13 @@
 			aria-expanded={open}
 			title={`Playing as ${personaName} on ${modelName}`}
 		>
-			<Icon name="sliders" class="w-3 h-3" />
+			<span class="setup-chip-face">
+				{#if personaThumb}
+					<img src={personaThumb} alt="" style={personaFocus} />
+				{:else}
+					<Icon name="user" class="w-3 h-3" />
+				{/if}
+			</span>
 			<span class="setup-chip-label">{personaName} · {modelName}</span>
 		</button>
 
@@ -436,12 +448,17 @@
 {/if}
 
 <style>
+	/* Height, border tier and radius are the composer's icon buttons' (InputArea), including
+	   their coarse-pointer size: this chip sits in that strip and any difference reads as a
+	   misalignment rather than as a different kind of control. */
 	.setup-chip {
-		height: 1.75rem;
+		height: 1.9rem;
 		max-width: 13rem;
-		padding: 0 0.5rem;
-		border: 1px solid var(--color-border-subtle);
-		border-radius: var(--radius-sm);
+		/* Tighter on the portrait's side: a circle carries its own edge, so equal padding
+		   reads as a gap. */
+		padding: 0 0.55rem 0 0.25rem;
+		border: 1px solid var(--color-border-raised);
+		border-radius: var(--radius-md);
 		background: color-mix(in srgb, var(--color-bg-tertiary) 70%, transparent);
 		color: var(--color-text-muted);
 		display: inline-flex;
@@ -458,6 +475,35 @@
 	.setup-chip.is-open {
 		color: var(--color-text-primary);
 		border-color: color-mix(in srgb, var(--color-accent) 34%, transparent);
+	}
+
+	.setup-chip-face {
+		display: grid;
+		place-items: center;
+		width: 1.4rem;
+		height: 1.4rem;
+		flex-shrink: 0;
+		border-radius: 999px;
+		overflow: hidden;
+		background: var(--color-bg-tertiary);
+		color: var(--color-text-muted);
+	}
+
+	.setup-chip-face img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+
+	@media (pointer: coarse) {
+		.setup-chip {
+			height: 2.4rem;
+		}
+
+		.setup-chip-face {
+			width: 1.8rem;
+			height: 1.8rem;
+		}
 	}
 
 	.setup-chip-label {
