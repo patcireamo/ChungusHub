@@ -323,11 +323,7 @@
 						<span class="setup-head-label">{active.label}</span>
 					{:else}
 						<span class="setup-head-label">Chat Overrides</span>
-						<!-- The character step is invisible from here and cannot be inferred from the
-						     rows, since a seeded claim looks exactly like one made by hand. -->
-						<InfoTip
-							text="This chat first, then the app. A character only decides how its new chats start."
-						/>
+						<InfoTip text="Anything set here applies to this chat only. The rest follows the app." />
 					{/if}
 				</div>
 
