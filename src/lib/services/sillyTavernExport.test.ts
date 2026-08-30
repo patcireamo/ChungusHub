@@ -151,13 +151,19 @@ describe('SillyTavern card export', () => {
 		const entry = makeEntry({
 			defaultPersonaId: 'persona-7',
 			defaultConnectionId: 'connection-7',
+			defaultPresetId: 'preset-7',
 			defaultVersionId: 'version-7'
 		});
 		const serialized = JSON.stringify(buildSillyTavernCard(entry, [], 'all'));
-		for (const seed of ['persona-7', 'connection-7', 'version-7']) {
+		for (const seed of ['persona-7', 'connection-7', 'preset-7', 'version-7']) {
 			expect(serialized).not.toContain(seed);
 		}
-		for (const key of ['defaultPersonaId', 'defaultConnectionId', 'defaultVersionId']) {
+		for (const key of [
+			'defaultPersonaId',
+			'defaultConnectionId',
+			'defaultPresetId',
+			'defaultVersionId'
+		]) {
 			expect(serialized).not.toContain(key);
 		}
 	});

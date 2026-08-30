@@ -20,7 +20,13 @@ import { memoryStore } from '$lib/memory/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
-import { chatPersonaClaim, resolvePersonaId, resolvePromptTarget, toPromptCharacter } from './chat-setup';
+import {
+	chatPersonaClaim,
+	chatPreset,
+	resolvePersonaId,
+	resolvePromptTarget,
+	toPromptCharacter
+} from './chat-setup';
 import { assemblePrompt, type PromptRecall } from './prompt-assembly';
 
 const ACTIVE_PERSONA_KEY = 'activePersonaId';
@@ -68,13 +74,14 @@ export interface BuiltPrompt {
 export async function buildPromptMessages(context: PromptBuildContext): Promise<BuiltPrompt> {
 	const { chatId, chatMessages } = context;
 
-	// Load active preset: the effective copy (unsaved draft if there is one).
 	await presetService.initialize();
-	const preset: PromptPreset | null = presetService.getActiveEffectivePreset();
 
 	// Resolve the chat's bound character, the persona it plays as, and that character's
 	// lorebook + the global preset-control values for macro expansion.
 	const chat = chatId ? await db.getChat(chatId) : null;
+	// The preset this story is built from: its own claim while it resolves, else the app's
+	// active one, effective either way. Read after the chat, since the chat is what answers it.
+	const preset: PromptPreset | null = chatPreset(chat);
 	const libraryEntries = chat ? await db.getAllLibraryEntries() : [];
 	let character = chat?.characterId
 		? libraryEntries.find((entry) => entry.id === chat.characterId && entry.type === 'character') ?? null
@@ -159,7 +166,7 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 		model: promptTarget.model,
 		postProcessing: promptTarget.postProcessing,
 		contextBudget: promptTarget.contextBudget,
-		regexRules: regexRulesStore.effective,
+		regexRules: regexRulesStore.effectiveFor(preset),
 		continuation: context.continuation,
 		steering: resolvedSteering.length
 			? { notes: resolvedSteering, wrapper: featurePromptsStore.promptFor('steeringWrapper') }

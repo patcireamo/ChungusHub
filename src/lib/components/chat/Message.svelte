@@ -21,7 +21,7 @@
 	import { copyText } from '$lib/utils/clipboard';
 	import { previewContinuation } from '$lib/utils/continuation';
 	import { expandSelfRefs } from '$lib/macros';
-	import { chatPersonaEntry } from '$lib/utils/chat-setup';
+	import { chatPersonaEntry, chatPreset } from '$lib/utils/chat-setup';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { memoryStore } from '$lib/memory/store.svelte';
@@ -141,6 +141,10 @@
 			.name || 'Character'
 	);
 	const selfRefUser = $derived(chatPersonaEntry(chatStore.activeChat)?.identity.name || 'You');
+	// The preset whose display rules this transcript is read under. Hoisted beside the
+	// self-refs rather than left inside `bodyHtml`: that one recomputes per streamed token,
+	// and resolving a preset parses the chat's feature-state blob.
+	const displayPreset = $derived(chatPreset(chatStore.activeChat));
 
 	$effect(() => {
 		if (showDeleteMenu && deleteMenuElement) {
@@ -474,7 +478,7 @@
 	const bodyHtml = $derived(
 		renderMarkdown(
 			expandSelfRefs(
-				regexRulesStore.forDisplay(displayedContent, message.role, depth),
+				regexRulesStore.forDisplay(displayedContent, message.role, depth, displayPreset),
 				selfRefChar,
 				selfRefUser
 			)

@@ -12,7 +12,7 @@
 	 *
 	 * This is the only place in the app that ROUTES a point, and it always speaks for the
 	 * app: the Engines page shows resolution read-only (architecture/engines.md), and a chat
-	 * that has claimed its own connection says so here with a chip and changes nothing.
+	 * that has claimed its own connection is announced here and changes nothing.
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
@@ -21,6 +21,7 @@
 	import ConnectionEditor from './ConnectionEditor.svelte';
 	import { tick } from 'svelte';
 	import { connectionStore, ASSIGNMENT_IDS } from '$lib/stores/connections.svelte';
+	import ChatOverrideNotice from '$lib/components/ui/ChatOverrideNotice.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { chatConnectionId } from '$lib/utils/chat-setup';
 	import { llmService } from '$lib/services/llm/provider';
@@ -108,11 +109,13 @@
 
 	let confirmingDelete = $state<string | null>(null);
 
-	// The open chat sends somewhere else. A chip, never a switch: this row is the app's
-	// answer and stays the app's answer, and the chat's own claim is made in the chat.
-	let storyOnItsOwn = $derived.by(() => {
+	// The open chat sends somewhere else, so every Primary row below is the app's answer and
+	// not this story's. Said once at the top rather than pinned to that row: the sentence has
+	// to name the connection the chat actually rides, which the row has no way to show.
+	let storyConnection = $derived.by(() => {
 		const claimed = chatConnectionId(chatStore.activeChat);
-		return claimed !== null && claimed !== connectionStore.assignmentFor('primary');
+		if (claimed === null || claimed === connectionStore.assignmentFor('primary')) return null;
+		return connectionStore.get(claimed) ?? null;
 	});
 
 	function confirmDelete(): void {
@@ -128,9 +131,6 @@
 	<div class="route-row" class:is-key={key}>
 		<Icon name={point.icon} class="w-4 h-4 route-icon" strokeWidth={1.75} />
 		<span class="route-label">{point.label}</span>
-		{#if point.id === 'primary' && storyOnItsOwn}
-			<span class="scope-chip font-ui">Overridden by this chat</span>
-		{/if}
 		<Select
 			variant="compact"
 			class="pill-select"
@@ -150,6 +150,14 @@
 	{/key}
 {:else}
 	<div class="connections">
+		{#if storyConnection}
+			<ChatOverrideNotice
+				subject="Primary routing"
+				using={storyConnection.name}
+				instead={connectionStore.connectionFor('primary')?.name ?? 'No connection'}
+			/>
+		{/if}
+
 		<!-- Model routing: which connection serves each calling point -->
 		<section class="card" data-setting="model-routing">
 			<div class="card-head">
@@ -306,18 +314,6 @@
 	.route-row > :global(div) {
 		min-width: 0;
 		margin-left: auto;
-	}
-
-	/* Same recipe as the Interface page's governed cards wear: the open chat has taken
-	   this row for itself, and the pill beside it is still the app's answer. */
-	.scope-chip {
-		padding: 0.1rem 0.4rem;
-		border-radius: var(--radius-full);
-		background: color-mix(in srgb, var(--color-accent) 13%, transparent);
-		font-size: 0.64rem;
-		font-weight: 600;
-		color: var(--color-accent);
-		white-space: nowrap;
 	}
 
 	/* The select as a quiet pill: the routed connection and its model in one

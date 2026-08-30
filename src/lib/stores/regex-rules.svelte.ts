@@ -1,5 +1,5 @@
 import { readSetting, writeSetting, registerSettingsReload } from '$lib/services/syncedSetting';
-import { presetService } from '$lib/services/presets.svelte';
+import type { PromptPreset } from '$lib/types/database';
 import { DebouncedWriter } from '$lib/utils/debounced-write';
 import {
 	applyRegexRules,
@@ -49,10 +49,17 @@ class RegexRulesStore {
 		this.carriedOverrides = normalizeCarriedOverrides(raw?.carriedOverrides);
 	}
 
-	/** The rules the active preset ships with, switched-off ones included: what the Regex
-	 *  page lists as the preset's own group. */
-	get carried(): RegexRule[] {
-		return presetService.getActiveEffectivePreset()?.regexRules ?? [];
+	/** The rules a preset ships with, switched-off ones included: what the Regex page lists as
+	 *  that preset's own group.
+	 *
+	 *  The preset is handed in rather than reached for, and that is the whole point: once a
+	 *  chat can run a preset of its own, "the active preset" has two answers, and a store
+	 *  picking one of them silently is how a story ends up assembled from one preset's items
+	 *  while another's rules rewrite what is sent. Each caller names the preset it means: the
+	 *  chat surfaces the chat's, the Prompt Builder the one being edited, the Regex page the
+	 *  app's. */
+	carriedFrom(preset: PromptPreset | null): RegexRule[] {
+		return preset?.regexRules ?? [];
 	}
 
 	/** Whether one carried rule runs: the reader's switch where they set one, the author's
@@ -72,21 +79,21 @@ class RegexRulesStore {
 	}
 
 	/**
-	 * Every rule that actually runs: the reader's own, then the ones the active preset
-	 * carries at their effective switch positions. This is what every consumer reads (the
-	 * three `AssembleInput` construction sites and the transcript below), so a preset's
+	 * Every rule that actually runs under one preset: the reader's own, then the ones that
+	 * preset carries at their effective switch positions. This is what every consumer reads
+	 * (the three `AssembleInput` construction sites and the transcript below), so a preset's
 	 * presentation layer can never apply on one surface and not another.
 	 */
-	get effective(): RegexRule[] {
-		return rulesWithCarried(this.rules, this.carried, this.carriedOverrides);
+	effectiveFor(preset: PromptPreset | null): RegexRule[] {
+		return rulesWithCarried(this.rules, this.carriedFrom(preset), this.carriedOverrides);
 	}
 
-	/** Display-side transform for the chat transcript. Reads $state, so callers
-	 *  inside $derived re-run when the rules change. `depth` is the turn's distance
-	 *  from the newest one on screen (0 = newest), which is what a depth-bounded rule
+	/** Display-side transform for the chat transcript, under the preset the chat runs. Reads
+	 *  $state, so callers inside $derived re-run when the rules change. `depth` is the turn's
+	 *  distance from the newest one on screen (0 = newest), which is what a depth-bounded rule
 	 *  is measured against. */
-	forDisplay(text: string, role: string, depth: number): string {
-		return applyRegexRules(text, this.effective, role, 'display', depth);
+	forDisplay(text: string, role: string, depth: number, preset: PromptPreset | null): string {
+		return applyRegexRules(text, this.effectiveFor(preset), role, 'display', depth);
 	}
 
 	/** Append a fresh rule and return it (the UI opens its editor). */

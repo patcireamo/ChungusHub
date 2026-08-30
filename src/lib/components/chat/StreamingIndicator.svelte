@@ -7,6 +7,7 @@
 	import MessageAvatar from './MessageAvatar.svelte';
 	import MessageMeta from './MessageMeta.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
+	import { chatPreset } from '$lib/utils/chat-setup';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { themeStore } from '$lib/stores/theme.svelte';
 
@@ -38,7 +39,10 @@
 	// bubble IS the newest turn, so depth 0, and the turn it settles into is handed the same
 	// 0 by MessageList, which is what keeps a depth-bounded rule from changing its mind at
 	// the moment a reply lands.
-	let displayContent = $derived(regexRulesStore.forDisplay(content, 'assistant', 0));
+	// Resolved on its own line: `displayContent` recomputes per streamed token, and resolving
+	// a preset parses the chat's feature-state blob.
+	const displayPreset = $derived(chatPreset(chatStore.activeChat));
+	let displayContent = $derived(regexRulesStore.forDisplay(content, 'assistant', 0, displayPreset));
 	let bodyHtml = $derived(renderMarkdown(displayContent));
 	// Counts the raw stream, not the display transform: it estimates what the model emits.
 	let streamingTokens = $derived(countTokens(content));

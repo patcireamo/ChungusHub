@@ -111,6 +111,9 @@
 </script>
 
 <div class="picker" bind:this={rootEl}>
+	<!-- Named by `<id>-label`, never by a `<label for>` pointing here: a button is a labelable
+	     element, so the browser forwards a label click to it and the row's heading becomes a
+	     second way to open the list. -->
 	<button
 		type="button"
 		{id}
@@ -120,6 +123,7 @@
 		onclick={toggle}
 		aria-haspopup="listbox"
 		aria-expanded={open}
+		aria-labelledby="{id}-label"
 	>
 		<span class="trigger-label">{triggerText}</span>
 		<Icon name="chevronDown" class="trigger-chevron" />

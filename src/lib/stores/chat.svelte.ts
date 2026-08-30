@@ -9,7 +9,7 @@ import {
 import { db } from '$lib/services/database';
 import { llmStatus, stopGeneration } from '$lib/services/transport';
 import { findActivePath } from '$lib/utils/message-tree';
-import { chatPersonaClaim } from '$lib/utils/chat-setup';
+import { chatPersonaClaim, chatPresetClaim } from '$lib/utils/chat-setup';
 import { formatDate } from '$lib/utils/date';
 import { convertSillyTavernChat } from '$lib/services/sillyTavernChatImport';
 import { toastStore } from '$lib/stores/toast.svelte';
@@ -107,13 +107,14 @@ class ChatStore {
 		// The story keeps the exact variant it was born on, however far the character moves
 		// on afterwards.
 		const characterVersionId = characterLibraryStore.chatVersionSeed(characterId);
-		// A persona and a connection are stamped ONLY from a real choice: this character's own
-		// seed, or the picker the reader just used. Every other door leaves them null and the
-		// story follows the app, because createChat is also reached with nobody present
-		// (routeAfterDelete mints a chat as a side effect of deleting another), and stamping
-		// whatever happened to be active there would write a permanent pin nobody made.
+		// A persona, a connection and a preset are stamped ONLY from a real choice: this
+		// character's own seed, or the picker the reader just used. Every other door leaves them
+		// null and the story follows the app, because createChat is also reached with nobody
+		// present (routeAfterDelete mints a chat as a side effect of deleting another), and
+		// stamping whatever happened to be active there would write a permanent pin nobody made.
 		const personaId = options.personaId ?? entry?.defaultPersonaId ?? null;
 		const connectionId = entry?.defaultConnectionId ?? null;
+		const presetId = entry?.defaultPresetId ?? null;
 		const chat: Chat = {
 			id: crypto.randomUUID(),
 			title: this.generateChatTitle(characterId),
@@ -127,11 +128,12 @@ class ChatStore {
 			characterVersionId,
 			isFavorite: false,
 			featureState:
-				personaId || connectionId
+				personaId || connectionId || presetId
 					? JSON.stringify({
 							...DEFAULT_CHAT_FEATURE_STATE,
 							persona: personaId,
-							connection: connectionId
+							connection: connectionId,
+							preset: presetId
 						})
 					: null
 		};
@@ -488,7 +490,8 @@ class ChatStore {
 				leafId: chat.activeLeafId,
 				characterId: chat.characterId,
 				characterVersionId: chat.characterVersionId,
-				personaId: chatPersonaClaim(chat)
+				personaId: chatPersonaClaim(chat),
+				presetId: chatPresetClaim(chat)
 			});
 		} catch (e) {
 			console.error('[memory] refresh failed:', e);

@@ -37,7 +37,7 @@
 	// The active preset's own rules, listed but never edited (see the markup's note). The
 	// count reads switches, exactly like the own list's above it; a rule that is on but
 	// broken or inert says so on its own row rather than being quietly subtracted here.
-	let carried = $derived(regexRulesStore.carried);
+	let carried = $derived(regexRulesStore.carriedFrom(presetService.getActiveEffectivePreset()));
 	let carriedFrom = $derived(presetService.getActiveEffectivePreset()?.name ?? 'the active preset');
 	let carriedActive = $derived(carried.filter((r) => regexRulesStore.carriedEnabled(r)).length);
 

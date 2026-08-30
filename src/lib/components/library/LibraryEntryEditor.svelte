@@ -4,6 +4,7 @@
 	import ChatDefaultSelect from './ChatDefaultSelect.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { connectionStore } from '$lib/stores/connections.svelte';
+	import { presetService } from '$lib/services/presets.svelte';
 	import { chatPersonaEntry } from '$lib/utils/chat-setup';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import EntryFormFields from './EntryFormFields.svelte';
@@ -70,7 +71,7 @@
 	// alone, so it costs the pane nothing until somebody comes looking for it.
 	let defaultsOpen = $state(false);
 
-	/** One row of the New Chat Defaults panel. A fourth seed is one more entry here. */
+	/** One row of the New Chat Defaults panel. A fifth seed is one more entry here. */
 	interface ChatDefaultRow {
 		key: ChatDefaultKey;
 		label: string;
@@ -114,6 +115,17 @@
 				group: 'Connections',
 				options: connectionStore.list().map((c) => ({ id: c.id, name: c.name })),
 				gone: "That connection is gone, so new chats send on the app's."
+			},
+			{
+				key: 'defaultPresetId',
+				// Not "Default" either, and for the connection row's reason: a preset can be
+				// named Default, and an option naming one of the rows under it is a trap.
+				label: 'Preset',
+				fallback: 'Global',
+				detail: presetService.getActiveEffectivePreset()?.name ?? 'No preset',
+				group: 'Presets',
+				options: presetService.getAllPresets().map((p) => ({ id: p.id, name: p.name })),
+				gone: "That preset is gone, so new chats run the app's."
 			}
 		];
 		// Nothing to choose between on an unversioned character, and its chats pin nothing.
@@ -353,7 +365,7 @@
 							{@const stored = entry[row.key]}
 							{@const lost = !!stored && !row.options.some((option) => option.id === stored)}
 							<div>
-								<label for="{row.key}-{entryId}" class="slider-label block mb-1">{row.label}</label>
+								<span id="{row.key}-{entryId}-label" class="slider-label block mb-1">{row.label}</span>
 								{#if lost}
 									<p class="mb-1 text-xs font-ui text-warning">{row.gone}</p>
 								{/if}

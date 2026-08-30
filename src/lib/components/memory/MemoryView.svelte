@@ -8,7 +8,7 @@
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { memoryStore, type ChatCtx } from '$lib/memory/store.svelte';
-	import { chatPersonaClaim } from '$lib/utils/chat-setup';
+	import { chatPersonaClaim, chatPresetClaim } from '$lib/utils/chat-setup';
 	import { DEFAULT_MEMORY_CONFIG } from '$lib/memory/config';
 	import { countTokens } from '$lib/tokenizer';
 	import { rangeReset } from '$lib/actions/rangeReset';
@@ -96,7 +96,8 @@
 			leafId: state.chat.activeLeafId,
 			characterId: state.chat.characterId,
 			characterVersionId: state.chat.characterVersionId,
-			personaId: chatPersonaClaim(state.chat)
+			personaId: chatPersonaClaim(state.chat),
+			presetId: chatPresetClaim(state.chat)
 		};
 	}
 

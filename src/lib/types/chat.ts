@@ -124,6 +124,12 @@ export interface ChatFeatureState {
 	 *  something else never carries a pin nobody made. Resolved like `connection`: a deleted
 	 *  persona reads as no claim. */
 	persona: string | null;
+	/** The preset this story's prompt is built from, or null to follow the app's active one.
+	 *  A preset is one document, so the claim carries all of it: the items, the controls the
+	 *  macros expand against, the regex rules it ships and its own prompt options. Stamped at
+	 *  birth from the character's defaultPresetId seed and otherwise only from the setup chip.
+	 *  Resolved like `connection`: a deleted preset reads as no claim. */
+	preset: string | null;
 }
 
 function defaultChatFeatureState(): ChatFeatureState {
@@ -132,7 +138,8 @@ function defaultChatFeatureState(): ChatFeatureState {
 		impersonatePerspective: 'first',
 		scene: null,
 		connection: null,
-		persona: null
+		persona: null,
+		preset: null
 	};
 }
 
@@ -190,7 +197,8 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		impersonatePerspective: normalizeImpersonatePerspective(obj.impersonatePerspective),
 		scene: normalizeChatScene(obj.scene),
 		connection: normalizeClaimedId(obj.connection),
-		persona: normalizeClaimedId(obj.persona)
+		persona: normalizeClaimedId(obj.persona),
+		preset: normalizeClaimedId(obj.preset)
 	};
 }
 

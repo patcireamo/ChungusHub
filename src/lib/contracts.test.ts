@@ -1002,6 +1002,50 @@ describe('per-chat setup (architecture/ui-shell-settings.md)', () => {
 		}
 	});
 
+	// A preset is one document, and the chat's claim carries all of it: the items assembled,
+	// the controls the macros expand against, the regex rules it ships. Read the app's active
+	// preset on a chat surface and that story is metered against one document while another
+	// rewrites what it sends, with nothing on screen saying which is which.
+	test('nothing that renders or assembles a chat reads the app preset directly', () => {
+		// Everything app-wide by nature: the two surfaces whose subject IS the app's preset,
+		// the lifecycle menu under them, the library meters with no chat in hand, the seed row
+		// naming what the app answers now, and the resolver that owns the fallback.
+		const APP_WIDE = [
+			'src/lib/components/chat/ChatSetupChip.svelte',
+			'src/lib/components/library/CharacterStatsBar.svelte',
+			'src/lib/components/library/EntryFormFields.svelte',
+			'src/lib/components/library/LibraryEntryEditor.svelte',
+			'src/lib/components/library/PersonaEditor.svelte',
+			'src/lib/components/presetControls/PresetControlsView.svelte',
+			'src/lib/components/presets/PresetManager.svelte',
+			'src/lib/components/promptBuilder/PromptBuilderView.svelte',
+			'src/lib/components/settings/RegexPage.svelte',
+			'src/lib/services/presets.svelte.ts',
+			'src/lib/utils/chat-setup.ts'
+		];
+		const readers = [
+			...new Set(
+				codeLines(join(ROOT, 'src'), (n) => n.endsWith('.ts') || n.endsWith('.svelte'))
+					.filter((l) => /getActiveEffectivePreset\(|getActivePresetId\(/.test(l.text))
+					.map((l) => l.file.slice(l.file.indexOf('src/')))
+			)
+		].filter((f) => !f.endsWith('.test.ts'));
+		expect(readers.length, 'nothing reads the app preset, so this scan is stale').toBeGreaterThan(0);
+		expect(readers.filter((f) => !APP_WIDE.includes(f))).toEqual([]);
+	});
+
+	// The regex rules a preset ships apply on the transcript AND inside the prompt, so a store
+	// that picked "the active preset" for itself would rewrite a story under one preset's rules
+	// while the items came from another. Handing the preset in is what makes each caller say
+	// which one it means.
+	test('the regex store is handed its preset rather than reaching for one', () => {
+		const source = read('src', 'lib', 'stores', 'regex-rules.svelte.ts');
+		expect(source).not.toContain('presetService');
+		for (const method of ['carriedFrom(preset', 'effectiveFor(preset', 'forDisplay(text']) {
+			expect(source, `regex-rules.svelte.ts must declare ${method}…)`).toContain(method);
+		}
+	});
+
 	// The one place the persona rule is spelled twice: the assistant's chat reads run in the
 	// server process, which cannot import chat-setup.ts. A server that read the app pointer
 	// alone would tell the model that a story playing as somebody else attributes its new

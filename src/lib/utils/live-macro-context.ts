@@ -18,9 +18,8 @@ import { chatStore } from '$lib/stores/chat.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
-import { presetService } from '$lib/services/presets.svelte';
 import { presetControlsStore } from '$lib/stores/presetControls.svelte';
-import { chatPersonaEntry, resolvePromptTarget, toPromptCharacter } from './chat-setup';
+import { chatPersonaEntry, chatPreset, resolvePromptTarget, toPromptCharacter } from './chat-setup';
 import { countTokens } from '$lib/tokenizer/count';
 
 export interface LiveMacroContextOptions {
@@ -52,7 +51,7 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 			}
 		: null;
 	const chatMessages = opts.chatMessages ?? chatStore.currentChatState?.activePath ?? [];
-	const preset = presetService.getActiveEffectivePreset();
+	const preset = chatPreset(chatStore.activeChat);
 	// Same budget derivation as buildMacroContext (share of the prompt budget, counted with
 	// the active model's encoding), so these surfaces inject the same block the prompt does.
 	const lorebookSettings = lorebookSettingsStore.settings;

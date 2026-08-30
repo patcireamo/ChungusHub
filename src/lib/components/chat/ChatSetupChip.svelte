@@ -2,7 +2,8 @@
 	/**
 	 * What this story is running on, and the one place to change it.
 	 *
-	 * A chat can claim its own persona, its own connection and its own character version.
+	 * A chat can claim its own persona, its own preset, its own connection and its own
+	 * character version.
 	 * Claiming happens here, in the chat, because a chat can only claim things it can name;
 	 * the Connections page and the Library keep speaking for the app.
 	 *
@@ -21,13 +22,22 @@
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
+	import OverrideMark from '$lib/components/ui/OverrideMark.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { connectionStore } from '$lib/stores/connections.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { imageService } from '$lib/services/imageService';
+	import { presetService } from '$lib/services/presets.svelte';
 	import { portraitFocusStyle } from '$lib/utils/portrait-focus';
-	import { chatConnectionId, chatPersonaClaim, chatPersonaEntry } from '$lib/utils/chat-setup';
+	import {
+		chatConnectionId,
+		chatPersonaClaim,
+		chatPersonaEntry,
+		chatPreset,
+		chatPresetClaim,
+		chatPresetId
+	} from '$lib/utils/chat-setup';
 
 	/** Past this a portrait+name list is mostly scrolling, so the persona list flips to a
 	 *  three-across face grid: same rows of pixels, roughly twice the personas in them.
@@ -40,7 +50,7 @@
 	 *  the import plan's group filter. */
 	const SEARCH_FROM = 8;
 
-	type CategoryId = 'persona' | 'connection' | 'version';
+	type CategoryId = 'persona' | 'preset' | 'connection' | 'version';
 
 	interface SetupOption {
 		id: string;
@@ -58,11 +68,9 @@
 		noun: string;
 		/** What is in force, printed on the level 1 row. */
 		value: string;
-		/** This story differs from what the app would hand it now. ONE rule for all three
-		 *  rows, and the same one the Connections page's chip uses, so the pill answers
-		 *  "has this story broken away" and never "was something written here once". The
-		 *  wording differs by where the reader stands: active here, where the row IS the
-		 *  chat's answer, and passive on a settings page, where it is the app's. */
+		/** This story differs from what the app would hand it now. ONE rule for every row, and
+		 *  the same one the app-side notices read, so the star answers "has this story broken
+		 *  away" and never "was something written here once". */
 		diverged: boolean;
 		/** Said when the claim names something that no longer exists, or null. The story runs
 		 *  on the app's value, and this is what stops the row pretending it was never
@@ -71,10 +79,18 @@
 		options: SetupOption[];
 		/** The option wearing the check. Null = following the app. */
 		picked: string | null;
-		/** What "Follow the app" would resolve to, or null where the category cannot follow
+		/** The app's own answer as its row states it, or null where the category cannot follow
 		 *  the app at all (a chat is pinned to a character version from birth; there is no
-		 *  unpinned state to offer). */
-		appValue: string | null;
+		 *  unpinned state to offer).
+		 *
+		 *  `label` is the word for "nothing set here", and it is the SAME word the character
+		 *  editor's New Chat Defaults row uses, because the two lists offer the same choice
+		 *  over the same library and a reader meeting two names for it has to work out whether
+		 *  they mean one thing. **Default** where nothing in the list can wear that name, and
+		 *  **Global** for connections and presets, where something can and an option naming one
+		 *  of the rows under it is a trap. `detail` is what that word resolves to right now,
+		 *  which no row from the library can say. */
+		app: { label: string; detail: string } | null;
 		/** Render past the threshold as a grid of faces rather than as rows. */
 		faces: boolean;
 		pick: (id: string | null) => void;
@@ -82,12 +98,19 @@
 
 	let chat = $derived(chatStore.activeChat);
 
-	// ===== You =====
+	// ===== Persona =====
 
 	let personas = $derived(characterLibraryStore.personas);
 	let claimedPersona = $derived(chatPersonaClaim(chat));
 	let persona = $derived(chatPersonaEntry(chat));
 	let appPersona = $derived(chatPersonaEntry(null));
+
+	// ===== Preset =====
+
+	let claimedPreset = $derived(chatPresetClaim(chat));
+	let livePreset = $derived(chatPresetId(chat));
+	let preset = $derived(chatPreset(chat));
+	let appPreset = $derived(presetService.getActiveEffectivePreset());
 
 	// ===== Connection =====
 
@@ -120,7 +143,9 @@
 		const list: SetupCategory[] = [
 			{
 				id: 'persona',
-				label: 'You',
+				// The word the New Chat Defaults row uses for the same choice over the same
+				// library, so the two lists cannot read as two different things.
+				label: 'Persona',
 				noun: 'personas',
 				value: persona?.identity.name?.trim() || 'No persona',
 				diverged: !!persona && persona.id !== appPersona?.id,
@@ -135,9 +160,26 @@
 					focus: portraitFocusStyle(p.identity.portraitFocus)
 				})),
 				picked: personas.some((p) => p.id === claimedPersona) ? claimedPersona : null,
-				appValue: appPersona?.identity.name?.trim() || 'No persona',
+				app: { label: 'Default', detail: appPersona?.identity.name?.trim() || 'No persona' },
 				faces: true,
 				pick: pickPersona
+			},
+			{
+				id: 'preset',
+				label: 'Preset',
+				noun: 'presets',
+				// The effective name, so a renamed draft reads here as it does in Preset Controls.
+				value: preset?.name ?? 'No preset',
+				diverged: livePreset !== null && livePreset !== presetService.getActivePresetId(),
+				lost:
+					claimedPreset !== null && livePreset === null
+						? "The preset this chat named is gone. It is running the app's."
+						: null,
+				options: presetService.getAllPresets().map((p) => ({ id: p.id, name: p.name })),
+				picked: livePreset,
+				app: { label: 'Global', detail: appPreset?.name ?? 'No preset' },
+				faces: false,
+				pick: pickPreset
 			},
 			{
 				id: 'connection',
@@ -151,7 +193,7 @@
 						: null,
 				options: connectionStore.list().map((c) => ({ id: c.id, name: c.name })),
 				picked: liveConnection,
-				appValue: appConnection?.name ?? 'No connection',
+				app: { label: 'Global', detail: appConnection?.name ?? 'No connection' },
 				faces: false,
 				pick: pickConnection
 			}
@@ -168,7 +210,7 @@
 				lost: null,
 				options: versions.map((v) => ({ id: v.id, name: v.name })),
 				picked: pinnedVersionId,
-				appValue: null,
+				app: null,
 				faces: false,
 				pick: (id) => id && pickVersion(id)
 			});
@@ -259,6 +301,20 @@
 		}
 	}
 
+	async function pickPreset(id: string | null) {
+		if (!chat || busy) return;
+		close();
+		if (id === claimedPreset) return;
+		busy = true;
+		try {
+			await chatStore.updateChatFeatureState(chat.id, { preset: id });
+		} catch (error) {
+			toastStore.failed('change the preset this chat is built from', error);
+		} finally {
+			busy = false;
+		}
+	}
+
 	async function pickConnection(id: string | null) {
 		if (!chat || busy) return;
 		close();
@@ -322,7 +378,10 @@
 						</button>
 						<span class="setup-head-label">{active.label}</span>
 					{:else}
-						<span class="setup-head-label">Chat Overrides</span>
+						<!-- Setup, never "Overrides": most rows on most chats are following the app,
+						     and a title naming them an override describes the state the panel is
+						     usually not in. -->
+						<span class="setup-head-label">Chat Setup</span>
 						<InfoTip text="Anything set here applies to this chat only. The rest follows the app." />
 					{/if}
 				</div>
@@ -339,16 +398,21 @@
 						>
 							<span class="setup-summary-label">{category.label}</span>
 							<span class="setup-summary-value">{category.value}</span>
-							{#if category.diverged}
-								<span class="scope-chip font-ui">Overrides the app</span>
-							{/if}
+							<!-- The app's one mark for "this has left what it would inherit", the same
+							     star the lorebook and steering wear. A mark rather than the revert
+							     button those get: the row IS a button, and the way back is already the
+							     first item in the list it opens. -->
+							<OverrideMark
+								overridden={category.diverged}
+								label="Set for this chat, so the app's has no say here"
+							/>
 							<Icon name="chevronRight" class="w-3.5 h-3.5 setup-summary-chevron" />
 						</button>
 					{/each}
 				{:else}
 					<!-- Level 2: the same panel, one category's list. -->
 					{#if active.lost}
-						<p class="setup-note">{active.lost}</p>
+						<p class="setup-note is-lost">{active.lost}</p>
 					{/if}
 
 					{#if searchable}
@@ -366,27 +430,35 @@
 						</div>
 					{/if}
 
-					<div class="setup-list" class:is-grid={asFaces}>
-						<!-- The way back to the app, above the list rather than in it. It is not one
-						     of the things being searched, so it stands down while a query is typed
-						     rather than sitting unmatched inside a filtered list. -->
-						{#if active.appValue !== null && !query.trim()}
-							{@const following = active.picked === null}
-							<button
-								type="button"
-								role="menuitem"
-								class="setup-row is-follow"
-								class:is-picked={following}
-								disabled={busy}
-								onclick={() => active?.pick(null)}
-							>
-								<span class="setup-check" class:is-visible={following}>
-									<Icon name="check" class="w-3.5 h-3.5" />
-								</span>
-								<span class="setup-row-name">Follow the app ({active.appValue})</span>
-							</button>
-						{/if}
+					<!-- The app's answer and the heading over the library both sit OUTSIDE the
+					     scrolling list, the same build as the New Chat Defaults picker: the two offer
+					     the same choice over the same library, so scrolling forty personas must not
+					     scroll either of them away in one place and not the other. The app row is
+					     not one of the things being searched, so it stands down while a query is
+					     typed rather than sitting unmatched inside a filtered list. -->
+					{#if active.app && !query.trim()}
+						{@const following = active.picked === null}
+						<button
+							type="button"
+							role="menuitem"
+							class="setup-row setup-app-row"
+							class:is-picked={following}
+							disabled={busy}
+							onclick={() => active?.pick(null)}
+						>
+							<span class="setup-check" class:is-visible={following}>
+								<Icon name="check" class="w-3.5 h-3.5" />
+							</span>
+							<span class="setup-app-main">
+								<span class="setup-app-name">{active.app.label}</span>
+								<span class="setup-app-detail">{active.app.detail}</span>
+							</span>
+						</button>
+					{/if}
 
+					<p class="setup-group">{active.noun}</p>
+
+					<div class="setup-list" class:is-grid={asFaces}>
 						{#if shown.length === 0}
 							<p class="setup-note">Nothing matches that</p>
 						{:else if asFaces}
@@ -616,18 +688,6 @@
 		color: var(--color-text-muted);
 	}
 
-	/* Same recipe the Interface page's governed cards and the Connections page wear. */
-	.scope-chip {
-		flex-shrink: 0;
-		padding: 0.1rem 0.4rem;
-		border-radius: var(--radius-full);
-		background: color-mix(in srgb, var(--color-accent) 13%, transparent);
-		font-size: 0.64rem;
-		font-weight: 600;
-		color: var(--color-accent);
-		white-space: nowrap;
-	}
-
 	/* ===== Level 2 ===== */
 
 	.setup-search {
@@ -640,6 +700,12 @@
 		font-size: 10px;
 		line-height: 1.4;
 		color: var(--color-text-muted);
+	}
+
+	/* A claim naming something deleted, in the colour the New Chat Defaults row says the same
+	   thing in: one state, one reading, wherever the reader meets it. */
+	.setup-note.is-lost {
+		color: var(--color-warning);
 	}
 
 	/* The header and the search field sit outside this, so both stay put while the list
@@ -679,13 +745,49 @@
 		font-weight: 600;
 	}
 
-	/* Pinned above the list it belongs to, so scrolling forty personas never scrolls the way
-	   back to the app off the top. */
-	.setup-row.is-follow {
-		position: sticky;
-		top: 0;
-		z-index: 1;
-		background: var(--color-bg-elevated);
+	/* Above the rule and away from the group under it: the separation is what says this row is
+	   not one of them. Same recipe as the New Chat Defaults picker's own app row. */
+	.setup-app-row {
+		align-items: flex-start;
+		padding-bottom: 0.45rem;
+		margin-bottom: 0.25rem;
+		border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 60%, transparent);
+	}
+
+	.setup-app-main {
+		display: flex;
+		flex-direction: column;
+		gap: 0.05rem;
+		min-width: 0;
+	}
+
+	.setup-app-name {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	/* What the app is answering with right now. A row from the library can never carry this,
+	   which is the whole point of drawing it. */
+	.setup-app-detail {
+		font-size: 0.68rem;
+		color: var(--color-text-muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	/* Left edge shared with the rows it labels and with the search field above them, which is
+	   0.5rem here rather than the panel's own 0.75rem gutter. */
+	.setup-group {
+		padding: 0.15rem 0.5rem 0.2rem;
+		font-family: var(--font-ui);
+		font-size: 0.64rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--color-text-muted);
 	}
 
 	.setup-check {

@@ -85,15 +85,16 @@ export interface LibraryEntry {
 	 * after that, so moving one never touches a story already under way, and what a chat is
 	 * actually played with is its own state alone.
 	 *
-	 * Absent means the app answers: the persona new chats start as, and the connection
-	 * Primary routes to. `defaultVersionId` is the exception, because a version pin is not
-	 * optional the way the other two are: absent there means the first version ever made.
+	 * Absent means the app answers: the persona new chats start as, the connection Primary
+	 * routes to, the active preset. `defaultVersionId` is the exception, because a version pin
+	 * is not optional the way the others are: absent there means the first version ever made.
 	 *
-	 * All three are deliberately siblings of `data` rather than fields inside it, so they
+	 * All four are deliberately siblings of `data` rather than fields inside it, so they
 	 * never mirror into a version row and never reach a card export.
 	 */
 	defaultPersonaId?: string;
 	defaultConnectionId?: string;
+	defaultPresetId?: string;
 	defaultVersionId?: string;
 	isFavorite: boolean;
 	createdAt: number;
@@ -102,7 +103,11 @@ export interface LibraryEntry {
 
 /** One seed above, named: what the editor's New Chat Defaults rows and the store's setter
  *  pass around. */
-export type ChatDefaultKey = 'defaultPersonaId' | 'defaultConnectionId' | 'defaultVersionId';
+export type ChatDefaultKey =
+	| 'defaultPersonaId'
+	| 'defaultConnectionId'
+	| 'defaultPresetId'
+	| 'defaultVersionId';
 
 /**
  * One named variant of a character ("pirate", "castle guard", "calmer take", …).

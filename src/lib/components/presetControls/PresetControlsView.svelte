@@ -18,6 +18,7 @@
 	import { onMount } from 'svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import ChatOverrideNotice from '$lib/components/ui/ChatOverrideNotice.svelte';
 	import { isSectionIcon } from '$lib/config/section-icons';
 	import PresetManager from '$lib/components/presets/PresetManager.svelte';
 	import CustomControlField from './CustomControlField.svelte';
@@ -25,6 +26,8 @@
 	import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 	import { imageService } from '$lib/services/imageService';
 	import { uiStore } from '$lib/stores/ui.svelte';
+	import { chatStore } from '$lib/stores/chat.svelte';
+	import { chatPreset } from '$lib/utils/chat-setup';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { countTokens } from '$lib/tokenizer';
 	import { llmService } from '$lib/services/llm/provider';
@@ -338,6 +341,14 @@
 		return `${opening}, and ${some} what is sent to the model.`;
 	});
 
+	// The preset the open chat is built from, when that is not the one this panel names. Every
+	// knob below writes a value that story never reads, and a control that answers while
+	// changing nothing is the one failure a reader cannot diagnose from what is on screen.
+	let storyPreset = $derived.by(() => {
+		const running = chatPreset(chatStore.activeChat);
+		return running && running.id !== activePreset?.id ? running : null;
+	});
+
 	function openRegexRules(): void {
 		uiStore.gotoSettingsPage('regex');
 		uiStore.openSettings();
@@ -458,6 +469,14 @@
 			</div>
 		{:else}
 			<div class="pcv-sheet">
+				{#if storyPreset}
+					<ChatOverrideNotice
+						subject="the active preset"
+						using={storyPreset.name}
+						instead={activePreset.name}
+					/>
+				{/if}
+
 				<!-- The preset's own face. Shown whenever it has one; a preset that says
 				     nothing about itself skips straight to its controls. -->
 				{#if coverUrl || meta?.author || meta?.version || meta?.description || meta?.writtenFor}

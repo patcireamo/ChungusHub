@@ -44,7 +44,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			impersonatePerspective: 'third',
 			scene: null,
 			connection: null,
-			persona: null
+			persona: null,
+			preset: null
 		});
 	});
 
@@ -54,7 +55,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			impersonatePerspective: 'second' as const,
 			scene: null,
 			connection: null,
-			persona: null
+			persona: null,
+			preset: null
 		};
 		expect(normalizeChatFeatureState(value)).toEqual(value);
 	});
@@ -73,7 +75,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			impersonatePerspective: 'third',
 			scene: null,
 			connection: null,
-			persona: null
+			persona: null,
+			preset: null
 		});
 		expect('steering' in result).toBe(false);
 	});

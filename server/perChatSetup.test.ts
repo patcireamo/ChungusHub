@@ -61,7 +61,12 @@ function readBack(id: string): Record<string, unknown> {
 
 /** Every seed the New Chat Defaults card writes. Each is tested the same way because each
  *  makes the same three promises about the payload it lands in. */
-const SEED_KEYS = ['defaultPersonaId', 'defaultConnectionId', 'defaultVersionId'] as const;
+const SEED_KEYS = [
+	'defaultPersonaId',
+	'defaultConnectionId',
+	'defaultPresetId',
+	'defaultVersionId'
+] as const;
 
 for (const key of SEED_KEYS) {
 	describe(key, () => {
@@ -154,7 +159,8 @@ describe('a chat born with a claim', () => {
 			impersonatePerspective: 'second',
 			scene: null,
 			connection: 'conn-1',
-			persona: 'persona-1'
+			persona: 'persona-1',
+			preset: 'preset-1'
 		});
 		const chat = serverDb.getChat(makeChat(written)) as { featureState: string | null };
 		expect(chat.featureState).toBe(written);

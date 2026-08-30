@@ -6,7 +6,6 @@
 	import ChatPersonaDialog from './ChatPersonaDialog.svelte';
 	import TransformPanel from './TransformPanel.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
-	import { presetService } from '$lib/services/presets.svelte';
 	import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
@@ -24,7 +23,7 @@
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 	import { viewport } from '$lib/stores/viewport.svelte';
 	import { assemblePrompt } from '$lib/utils/prompt-assembly';
-	import { chatPersonaEntry, resolvePromptTarget, toPromptCharacter } from '$lib/utils/chat-setup';
+	import { chatPersonaEntry, chatPreset, resolvePromptTarget, toPromptCharacter } from '$lib/utils/chat-setup';
 	import { relativeClock } from '$lib/utils/time-format.svelte';
 	import { llmService } from '$lib/services/llm/provider';
 	import { imageService, imageRejectionReason, isImageFile } from '$lib/services/imageService';
@@ -117,9 +116,10 @@
 		personaDialogOpen = true;
 	}
 
-	// Active preset (read-only here; switching lives in the Prompt Builder)
-	let currentPresetId = $derived(presetService.getActivePresetId());
-	let currentPreset = $derived(currentPresetId ? presetService.getEffective(currentPresetId) : null);
+	// The preset this story is built from: its own claim while it resolves, else the app's
+	// active one. Read-only here; claiming lives in the setup chip, switching the app's in the
+	// Prompt Builder.
+	let currentPreset = $derived(chatPreset(chatStore.activeChat));
 
 	// The token breakdown popup opens on hover/focus-within via CSS (.token-anchor), with no
 	// JS state, so there is no race where crossing the gap to the popup dismisses it.
@@ -272,7 +272,7 @@
 					model: promptTarget.model,
 					postProcessing: promptTarget.postProcessing,
 					contextBudget: promptTarget.contextBudget,
-					regexRules: regexRulesStore.effective,
+					regexRules: regexRulesStore.effectiveFor(currentPreset),
 					steering: steeringForPrompt
 				})
 			: null

@@ -145,7 +145,12 @@ interface Migration {
  * lets a new seed land without a migration. Nothing in this process parses them except
  * `create_chat`'s version seed (server/assistant/registry/workspace.ts).
  */
-const CHAT_DEFAULT_KEYS = ['defaultPersonaId', 'defaultConnectionId', 'defaultVersionId'] as const;
+const CHAT_DEFAULT_KEYS = [
+	'defaultPersonaId',
+	'defaultConnectionId',
+	'defaultPresetId',
+	'defaultVersionId'
+] as const;
 
 /** A chat row as a caller hands it in, shared by the two doors that create one. */
 interface NewChatRow {

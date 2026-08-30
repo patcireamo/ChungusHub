@@ -1,6 +1,6 @@
 /**
- * What a chat is running on: the persona it plays as, and the connection its prompt is
- * priced, shaped and sent in.
+ * What a chat is running on: the persona it plays as, the preset its prompt is built from,
+ * and the connection that prompt is priced, shaped and sent in.
  *
  * Every surface that assembles or renders this story asks here, so one chat has one answer.
  * The rule is the whole design and it is one line: the chat's own claim when the thing it
@@ -12,12 +12,14 @@
 
 import type { Chat } from '$lib/types/chat';
 import { normalizeChatFeatureState } from '$lib/types/chat';
+import type { PromptPreset } from '$lib/types/database';
 import type { LibraryEntry } from '$lib/types/library';
 import type { CallTarget, PromptPostProcessingMode } from '$lib/types/llm';
 import type { PromptCharacter } from '$lib/macros';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 import { connectionStore } from '$lib/stores/connections.svelte';
 import { personaStore } from '$lib/stores/persona.svelte';
+import { presetService } from '$lib/services/presets.svelte';
 import { llmService } from '$lib/services/llm/provider';
 
 export interface PromptTarget {
@@ -70,6 +72,42 @@ export function resolvePromptTarget(chat: Chat | null, base: CallTarget = 'prima
  *  the resolved one to tell "follows the app" from "the persona it named is gone". */
 export function chatPersonaClaim(chat: Chat | null): string | null {
 	return chat ? normalizeChatFeatureState(chat.featureState).persona : null;
+}
+
+/** The preset id a chat claimed, before any liveness check. Read beside `chatPresetId`
+ *  wherever the difference between "follows the app" and "gone" has to be said. */
+export function chatPresetClaim(chat: Chat | null): string | null {
+	return chat ? normalizeChatFeatureState(chat.featureState).preset : null;
+}
+
+/** The preset a chat claimed for itself, or null when it follows the app. Same liveness rule
+ *  as the connection: a claim naming a preset that has since been deleted reads as no claim,
+ *  and the stored id stays put so restoring the preset restores the claim. */
+export function chatPresetId(chat: Chat | null): string | null {
+	const claimed = chatPresetClaim(chat);
+	return claimed && presetService.getEffective(claimed) ? claimed : null;
+}
+
+/**
+ * The preset a story's prompt is built from, by claim: the claimed one while it resolves, else
+ * the app's active one. Effective on both branches, so an unsaved draft is what a chat runs
+ * either way. Surfaces holding only the id ask here (the memory store's ChatCtx carries the
+ * claim the way it carries the persona).
+ *
+ * A preset is one document, so this answers for all of it at once: the items assembled, the
+ * controls the macros expand against, the regex rules it carries and its own prompt options.
+ * Resolve any part of that separately and a chat can be metered against one preset's items
+ * while another's rules rewrite what is sent, with nothing on screen saying so.
+ */
+export function presetForClaim(claimed: string | null): PromptPreset | null {
+	return (
+		(claimed ? presetService.getEffective(claimed) : null) ?? presetService.getActiveEffectivePreset()
+	);
+}
+
+/** The preset a reactive surface holding the chat builds against. */
+export function chatPreset(chat: Chat | null): PromptPreset | null {
+	return presetForClaim(chatPresetClaim(chat));
 }
 
 /**

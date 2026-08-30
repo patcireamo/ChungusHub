@@ -17,7 +17,13 @@
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import MacroReference from '$lib/components/ui/MacroReference.svelte';
 	import PresetManager from '$lib/components/presets/PresetManager.svelte';
-	import { chatPersonaEntry, resolvePromptTarget, toPromptCharacter } from '$lib/utils/chat-setup';
+	import ChatOverrideNotice from '$lib/components/ui/ChatOverrideNotice.svelte';
+	import {
+		chatPersonaEntry,
+		chatPreset,
+		resolvePromptTarget,
+		toPromptCharacter
+	} from '$lib/utils/chat-setup';
 	import { presetService } from '$lib/services/presets.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { personaStore } from '$lib/stores/persona.svelte';
@@ -147,7 +153,7 @@
 		model: promptTarget.model,
 		postProcessing: promptTarget.postProcessing,
 		contextBudget: promptTarget.contextBudget,
-		regexRules: regexRulesStore.effective
+		regexRules: regexRulesStore.effectiveFor(currentPreset)
 	});
 	let macroContext = $derived(buildMacroContext(assembleInput));
 	let activeModel = $derived(promptTarget.model);
@@ -216,6 +222,14 @@
 	let itemsWithUnboundMacros = $derived(
 		currentPreset?.items.filter((item) => unboundMacrosFor(item.content).length > 0).length ?? 0
 	);
+
+	// The preset the open chat is built from, when that is not the one on this page. Editing
+	// here then reaches every chat that follows the app and not the story on screen, and the
+	// meter above prices this preset rather than the one that story sends.
+	let storyPreset = $derived.by(() => {
+		const running = chatPreset(chatStore.activeChat);
+		return running && running.id !== currentPreset?.id ? running : null;
+	});
 
 	// The active preset can change outside the builder too (sync from another device,
 	// the service's first-boot seeding). Reload the editor whenever it does.
@@ -583,6 +597,14 @@
 			</div>
 		{/if}
 	</header>
+
+	{#if storyPreset && currentPreset}
+		<ChatOverrideNotice
+			subject="the active preset"
+			using={storyPreset.name}
+			instead={currentPreset.name}
+		/>
+	{/if}
 
 	<!-- Prompt items: the primary surface. data-setting is the Chungus Assistant's
 	     deep-link anchor (registry: settings.ts, anchor 'prompt-builder'). -->

@@ -1,6 +1,6 @@
 /**
- * What a chat runs on: the persona it plays as, and the connection its prompt is priced,
- * shaped and sent in. Run with `bun test`.
+ * What a chat runs on: the persona it plays as, the preset its prompt is built from, and the
+ * connection that prompt is priced, shaped and sent in. Run with `bun test`.
  *
  * What is under test is the agreement: the composer's meter, the Prompt Builder breakdown,
  * the transcript and the send all resolve here, so one chat can only ever have one answer.
@@ -12,17 +12,51 @@
  * a `$derived` appearing anywhere in this chain fails loudly rather than testing a stale
  * value.
  */
-import { describe, expect, test, beforeEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterAll, mock } from 'bun:test';
 
 import type { Chat } from '$lib/types/chat';
+import type { PromptPreset } from '$lib/types/database';
 import type { LibraryEntry } from '$lib/types/library';
 import { DEFAULT_GENERATION_SETTINGS, type Connection } from '$lib/types/llm';
 
 (globalThis as unknown as { $state: <T>(v?: T) => T | undefined }).$state = (v) => v;
 
+/** The preset library this file resolves against, and which of it the app is on. */
+const presets: Record<string, PromptPreset> = {};
+let appPresetId: string | null = null;
+
+/**
+ * Bun's module registry is process-wide and one run loads every test file into it, so a stub
+ * left behind here is served to every file that loads after this one. The real module is
+ * captured and the restore registered BEFORE the stub goes in, so a throw in between cannot
+ * leave one standing. Stubbed rather than seeded through the real service because the only
+ * public door onto its library writes to the server.
+ */
+const realPresets = { ...(await import('$lib/services/presets.svelte')) };
+
+afterAll(() => {
+	mock.module('$lib/services/presets.svelte', () => realPresets);
+});
+
+mock.module('$lib/services/presets.svelte', () => ({
+	...realPresets,
+	presetService: {
+		getEffective: (id: string) => presets[id] ?? null,
+		getActiveEffectivePreset: () => (appPresetId ? presets[appPresetId] ?? null : null)
+	}
+}));
+
 const { connectionStore } = await import('$lib/stores/connections.svelte');
-const { chatConnectionId, chatPersonaClaim, resolvePersonaId, resolvePromptTarget } =
-	await import('./chat-setup');
+const {
+	chatConnectionId,
+	chatPersonaClaim,
+	chatPreset,
+	chatPresetClaim,
+	chatPresetId,
+	presetForClaim,
+	resolvePersonaId,
+	resolvePromptTarget
+} = await import('./chat-setup');
 
 function connection(id: string, model: string, contextSize: number): Connection {
 	return {
@@ -52,7 +86,11 @@ function persona(id: string): LibraryEntry {
 	} as LibraryEntry;
 }
 
-function chat(claimed: string | null, claimedPersona: string | null = null): Chat {
+function chat(
+	claimed: string | null,
+	claimedPersona: string | null = null,
+	claimedPreset: string | null = null
+): Chat {
 	return {
 		id: 'chat-1',
 		title: 'A story',
@@ -65,7 +103,11 @@ function chat(claimed: string | null, claimedPersona: string | null = null): Cha
 		characterId: 'char-1',
 		characterVersionId: null,
 		isFavorite: false,
-		featureState: JSON.stringify({ connection: claimed, persona: claimedPersona })
+		featureState: JSON.stringify({
+			connection: claimed,
+			persona: claimedPersona,
+			preset: claimedPreset
+		})
 	};
 }
 
@@ -128,6 +170,56 @@ describe('resolvePromptTarget', () => {
 	test('only the story can be claimed: an engine target ignores the chat', () => {
 		const resolved = resolvePromptTarget(chat(OWN.id), { engine: 'opening-scene' });
 		expect(resolved.target).toEqual({ engine: 'opening-scene' });
+	});
+});
+
+describe('the preset a chat is built from', () => {
+	const APP_PRESET = 'app-preset';
+	const OWN_PRESET = 'own-preset';
+
+	beforeEach(() => {
+		for (const key of Object.keys(presets)) delete presets[key];
+		for (const id of [APP_PRESET, OWN_PRESET]) {
+			presets[id] = { id, name: id, items: [], controls: [] };
+		}
+		appPresetId = APP_PRESET;
+	});
+
+	test('a chat that claimed nothing is built from the app preset', () => {
+		expect(chatPreset(null)?.id).toBe(APP_PRESET);
+		expect(chatPreset(chat(null))?.id).toBe(APP_PRESET);
+		expect(chatPresetId(chat(null))).toBeNull();
+	});
+
+	test('a live claim outranks the app preset', () => {
+		const claimed = chat(null, null, OWN_PRESET);
+		expect(chatPresetClaim(claimed)).toBe(OWN_PRESET);
+		expect(chatPresetId(claimed)).toBe(OWN_PRESET);
+		expect(chatPreset(claimed)?.id).toBe(OWN_PRESET);
+	});
+
+	test('a claim naming a deleted preset is built from the app one, and the id stays put', () => {
+		// Never a throw and never a sweep, exactly like a dead connection claim: the story keeps
+		// generating, and re-importing the preset restores the claim rather than losing it.
+		delete presets[OWN_PRESET];
+		const claimed = chat(null, null, OWN_PRESET);
+		expect(chatPresetId(claimed)).toBeNull();
+		expect(chatPreset(claimed)?.id).toBe(APP_PRESET);
+		expect(chatPresetClaim(claimed)).toBe(OWN_PRESET);
+	});
+
+	test('the claim-sourced and chat-sourced resolvers give one answer', () => {
+		// The memory store holds only the id and everything else holds the chat. Two answers
+		// here and a chat extracts memory against a preset it never sends.
+		for (const claim of [null, OWN_PRESET, 'gone']) {
+			expect(presetForClaim(claim)?.id).toBe(chatPreset(chat(null, null, claim))?.id);
+		}
+	});
+
+	test('with no preset anywhere, a chat is built from none rather than throwing', () => {
+		for (const key of Object.keys(presets)) delete presets[key];
+		appPresetId = null;
+		expect(chatPreset(chat(null, null, OWN_PRESET))).toBeNull();
 	});
 });
 

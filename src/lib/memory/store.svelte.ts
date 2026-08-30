@@ -18,12 +18,11 @@ import type { LLMCompletionResult, LLMMessage } from '$lib/types/llm';
 import { llmService } from '$lib/services/llm/provider';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
-import { personaEntryFor, toPromptCharacter } from '$lib/utils/chat-setup';
+import { personaEntryFor, presetForClaim, toPromptCharacter } from '$lib/utils/chat-setup';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { resolveLorebooks } from '$lib/lorebook/engine';
 import { lorebookHistory, lorebookScanFields } from '$lib/lorebook/types';
-import { presetService } from '$lib/services/presets.svelte';
 import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
 import { findActivePath } from '$lib/utils/message-tree';
@@ -69,6 +68,11 @@ export interface ChatCtx {
 	 *  pin does. Null is "follow the app", which is what memory extracts against unless the
 	 *  chat named someone else. */
 	personaId: string | null;
+	/** The preset this chat claimed, travelling with the ctx for the same reason. It decides
+	 *  both whether {{memory}} is placed at all and the controls a template expands against,
+	 *  so reading the app's here would let the engine run for a chat whose own preset never
+	 *  injects recall. Null is "follow the app". */
+	presetId: string | null;
 }
 
 export type MemoryStatus = 'idle' | 'processing' | 'building' | 'rebuilding' | 'error';
@@ -168,7 +172,7 @@ class MemoryStore {
 	 *  nothing is extracted, the same condition prompt assembly uses to decide whether to
 	 *  filter {{chatHistory}}, so the panel, the ghosts and the prompt never disagree. */
 	macroPlaced = $derived.by(() => {
-		const p = presetService.getActiveEffectivePreset();
+		const p = presetForClaim(this.ctx?.presetId ?? null);
 		return !!p?.items?.some((it) => it.enabled && it.content.includes('{{memory}}'));
 	});
 
@@ -425,7 +429,7 @@ class MemoryStore {
 			resolvedCharacters: character ? [character] : [],
 			resolvedPersona: toPromptCharacter(persona),
 			chatMessages,
-			controls: presetService.getActiveEffectivePreset()?.controls ?? [],
+			controls: presetForClaim(ctx.presetId)?.controls ?? [],
 			customFields: presetControlsStore.values,
 			memory: this.recall
 		};
