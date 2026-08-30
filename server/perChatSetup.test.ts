@@ -1,11 +1,14 @@
 /**
- * The persona new chats with a character start as, against the REAL server database
- * (bun:sqlite).
+ * What a chat and a character store about who plays the story, against the REAL server
+ * database (bun:sqlite).
  *
- * The claim under test is a storage claim and it has two halves. It rides BESIDE `data` in
- * the entry payload, so it never mirrors into a version row and never reaches a card export;
- * and it is written only when set, so an entry that never carries one stores byte for byte
- * what it stored before the field existed, which is why none of this needs a migration.
+ * Two storage claims. The character's seed rides BESIDE `data` in the entry payload, so it
+ * never mirrors into a version row and never reaches a card export, and it is written only
+ * when set, so an entry that never carries one stores byte for byte what it stored before
+ * the field existed: that is why none of this needs a migration. And a chat born with a
+ * persona stamped on it keeps that stamp, which is a claim about the INSERT rather than
+ * about a later write, and the way it fails is silently: the row lands, the chat opens, and
+ * the persona the reader chose is simply not there.
  *
  * Same env dance as greetingRefresh.test.ts: CHUNGUS_DATA_DIR is pinned to a throwaway dir
  * before the first db call, so no test can silently write into the real user-data.
@@ -19,7 +22,7 @@ let dataDir: string;
 let serverDb: any;
 
 beforeAll(async () => {
-	dataDir = mkdtempSync(join(tmpdir(), 'chungus-default-persona-'));
+	dataDir = mkdtempSync(join(tmpdir(), 'chungus-per-chat-setup-'));
 	process.env.CHUNGUS_DATA_DIR = dataDir;
 	({ serverDb } = await import('./db'));
 	serverDb.closeForTests();
@@ -105,5 +108,49 @@ describe('defaultPersonaId', () => {
 		serverDb.updateLibraryEntry(entry);
 		const version = serverDb.getCharacterVersion(versionId) as { data: Record<string, unknown> };
 		expect(version.data).not.toHaveProperty('defaultPersonaId');
+	});
+});
+
+describe('a chat born with a claim', () => {
+	function makeChat(featureState: string | null): string {
+		clock += 1000;
+		const id = crypto.randomUUID();
+		serverDb.insertChat({
+			id,
+			title: 'A story',
+			createdAt: clock,
+			updatedAt: clock,
+			rootMessageId: null,
+			activeLeafId: null,
+			settings: null,
+			characterId: null,
+			...(featureState === null ? {} : { featureState })
+		});
+		return id;
+	}
+
+	test('keeps the persona it was stamped with at the insert', () => {
+		const id = makeChat(JSON.stringify({ persona: 'persona-1' }));
+		const chat = serverDb.getChat(id) as { featureState: string | null };
+		expect(JSON.parse(chat.featureState as string).persona).toBe('persona-1');
+	});
+
+	test('a chat born from every other door carries no blob at all', () => {
+		const chat = serverDb.getChat(makeChat(null)) as { featureState: string | null };
+		expect(chat.featureState).toBeNull();
+	});
+
+	test('the blob round-trips unparsed, exactly as written', () => {
+		// The server never reads this column (mapChat), which is what lets the client add a
+		// key to it without a schema change. A byte lost here is a claim lost.
+		const written = JSON.stringify({
+			steeringHistory: ['a note'],
+			impersonatePerspective: 'second',
+			scene: null,
+			connection: 'conn-1',
+			persona: 'persona-1'
+		});
+		const chat = serverDb.getChat(makeChat(written)) as { featureState: string | null };
+		expect(chat.featureState).toBe(written);
 	});
 });

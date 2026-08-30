@@ -150,6 +150,10 @@ interface NewChatRow {
 	settings: unknown;
 	characterId?: string | null;
 	characterVersionId?: string | null;
+	/** The chat's opaque feature-state blob, when it is born with one (a persona stamped
+	 *  from a real choice). Absent for every other door, which is a chat that follows the
+	 *  app. Never parsed here (mapChat). */
+	featureState?: string | null;
 	isFavorite?: boolean;
 }
 
@@ -695,8 +699,8 @@ class ServerDatabase {
 
 	insertChat(chat: NewChatRow): void {
 		this.execute(
-			`INSERT INTO chats (id, title, created_at, updated_at, root_message_id, active_leaf_id, canon_leaf_id, settings_json, character_id, character_version_id, is_favorite)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO chats (id, title, created_at, updated_at, root_message_id, active_leaf_id, canon_leaf_id, settings_json, character_id, character_version_id, feature_state, is_favorite)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
 				chat.id,
 				chat.title,
@@ -708,6 +712,7 @@ class ServerDatabase {
 				chat.settings ? JSON.stringify(chat.settings) : null,
 				chat.characterId ?? null,
 				chat.characterVersionId ?? null,
+				chat.featureState ?? null,
 				chat.isFavorite ? 1 : 0
 			]
 		);
