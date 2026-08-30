@@ -51,13 +51,19 @@ function isAllowed(ip: string | undefined): boolean {
 // /files and /ws request is proxied to Bun, which enforces the real gate using
 // the X-Forwarded-For the proxy attaches (xfwd below). Sessions and their
 // sliding idle window live in security.json, written only by the Bun process.
-// This just reads it per navigation. Idle window mirrors server/security.ts.
-const SESSION_IDLE_MS = 60 * 60 * 1000;
+// This just reads it per navigation. The idle window, its default and its 0-means-never
+// rule all mirror server/security.ts.
+const DEFAULT_SESSION_IDLE_MINUTES = 60;
 
 function needsUnlock(req: { headers: Record<string, string | string[] | undefined>; socket: { remoteAddress?: string } }): boolean {
 	const ip = req.socket.remoteAddress;
 	if (ip && LOOPBACK.has(normalizeIp(ip))) return false;
-	let sec: { passwordEnabled?: boolean; passwordHash?: unknown; sessions?: Record<string, number> };
+	let sec: {
+		passwordEnabled?: boolean;
+		passwordHash?: unknown;
+		sessionIdleMinutes?: unknown;
+		sessions?: Record<string, number>;
+	};
 	try {
 		sec = JSON.parse(readFileSync(SECURITY_PATH, 'utf8'));
 	} catch {
@@ -69,7 +75,14 @@ function needsUnlock(req: { headers: Record<string, string | string[] | undefine
 	const cookie = String(req.headers.cookie ?? '');
 	const token = cookie.match(/(?:^|;\s*)chungus_session=([a-f0-9]+)/)?.[1];
 	const lastSeen = token ? sec.sessions?.[token] : undefined;
-	return lastSeen === undefined || Date.now() - lastSeen > SESSION_IDLE_MS;
+	if (lastSeen === undefined) return true;
+	const minutes = sec.sessionIdleMinutes;
+	const idle =
+		typeof minutes === 'number' && Number.isSafeInteger(minutes) && minutes >= 0
+			? minutes
+			: DEFAULT_SESSION_IDLE_MINUTES;
+	if (idle === 0) return false;
+	return Date.now() - lastSeen > idle * 60_000;
 }
 
 // Dev twin of the Bun server's forbidden() page: shows the IP to allow and

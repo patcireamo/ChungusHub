@@ -99,6 +99,8 @@ export interface SecurityInfo {
 	passwordEnabled: boolean;
 	/** A password exists (the lock can be switched on without retyping one). */
 	passwordSet: boolean;
+	/** Minutes a device may go idle before it must unlock again; 0 never asks again. */
+	sessionIdleMinutes: number;
 }
 
 export async function getSecurityInfo(): Promise<SecurityInfo> {
@@ -173,6 +175,11 @@ export async function setSecurityPassword(password: string): Promise<void> {
 /** Flip the lock on/off; the stored password survives an off. */
 export async function setPasswordLockEnabled(enabled: boolean): Promise<void> {
 	await apiSend('/api/security/password/enabled', 'POST', { enabled });
+}
+
+/** How long a device may go idle before it must unlock again. 0 never asks again. */
+export async function setSessionIdleMinutes(minutes: number): Promise<void> {
+	await apiSend('/api/security/session-idle', 'POST', { minutes });
 }
 
 // ===== About =====

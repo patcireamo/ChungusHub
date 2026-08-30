@@ -613,7 +613,8 @@ async function handleApi(req: Request, url: URL, clientIp: string | null): Promi
 			networkAccessEnabled: security.isNetworkAccessEnabled(),
 			ipAllowlistEnabled: security.isIpAllowlistEnabled(),
 			passwordEnabled: security.isPasswordEnabled(),
-			passwordSet: security.hasPassword()
+			passwordSet: security.hasPassword(),
+			sessionIdleMinutes: security.getSessionIdleMinutes()
 		});
 	}
 	// The master switch, and it moves the listening socket rather than turning arrivals
@@ -649,6 +650,18 @@ async function handleApi(req: Request, url: URL, clientIp: string | null): Promi
 		const on = enabled === true;
 		security.setPasswordLockEnabled(on);
 		if (on) kickAllSockets();
+		return json({ ok: true });
+	}
+	// How long a device may go idle before it must unlock again, 0 meaning never.
+	// No socket kick: the window is read per request, so a shortened one refuses the
+	// devices it just expired on their next one.
+	if (path === '/api/security/session-idle' && req.method === 'POST') {
+		const { minutes } = (await req.json()) as { minutes?: number };
+		try {
+			security.setSessionIdleMinutes(Number(minutes));
+		} catch (e) {
+			return json({ error: e instanceof Error ? e.message : String(e) }, 400);
+		}
 		return json({ ok: true });
 	}
 

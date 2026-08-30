@@ -1481,6 +1481,21 @@ describe('theme custom properties (architecture/ui-shell-settings.md)', () => {
 	});
 });
 
+describe('dev password gate (architecture/server-core.md #3, architecture/build-packaging.md #1)', () => {
+	// Vite serves the app itself in dev and every proxied request reaches Bun as loopback,
+	// so the idle window is enforced twice from one stored value. Vite cannot import the
+	// server's state module (it writes the data dir at import), so the default is written
+	// out on both sides, and a default that moved on one alone re-locks a device in dev at
+	// a time the app it is talking to still considers it unlocked.
+	test('the dev gate mirrors the default idle window', () => {
+		const window = (where: string, ...file: string[]) =>
+			scan(read(...file), /const DEFAULT_SESSION_IDLE_MINUTES = (\d+)/g, where);
+		expect(window("the dev gate's idle window", 'vite.config.ts')).toEqual(
+			window("the server's idle window", 'server', 'security.ts')
+		);
+	});
+});
+
 describe('dev prebundle (architecture/build-packaging.md #8)', () => {
 	// An unlisted dependency is discovered while Vite transforms the module that imports it,
 	// which on a cold cache happens mid page load: the requests are held until esbuild is

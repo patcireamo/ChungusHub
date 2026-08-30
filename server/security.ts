@@ -15,7 +15,8 @@
  * login mints a random session token delivered as an HttpOnly cookie.
  * Sessions use a sliding idle window: every gated request refreshes the
  * token's last-seen time, so a device in active use is never interrupted,
- * and one left alone re-locks after SESSION_IDLE_MS. Everything persists in
+ * and one left alone re-locks once `sessionIdleMinutes` has passed (an hour
+ * by default, 0 meaning never). Everything persists in
  * security.json under the data directory. Deleting that file restores the
  * defaults (network access off, allowlist on, no password), which is also the
  * lockout recovery path. Loopback is exempt from every gate here and is the one
@@ -28,12 +29,14 @@ import { SECURITY_PATH } from './config';
 import { watchDataFile } from './watch-file';
 
 const SESSION_COOKIE = 'chungus_session';
-// Idle window: how long a device may go untouched before it must unlock again.
-// Mirrored in vite.config.ts's dev gate, so keep the two in sync.
-const SESSION_IDLE_MS = 60 * 60 * 1000; // 1 hour
-// The cookie itself outlives the idle window; the server-side last-seen check
-// is what actually decides. A dead token in a live cookie just re-prompts.
-const COOKIE_MAX_AGE_S = 7 * 24 * 60 * 60; // 7 days
+// The idle window a device gets when the file says nothing. Its default, and the rule
+// that 0 means never, are mirrored in vite.config.ts's dev gate: keep the two in sync.
+const DEFAULT_SESSION_IDLE_MINUTES = 60;
+// Deliberately the longest a browser will keep a cookie (Chrome caps it at 400 days):
+// the server-side last-seen check is the only thing that decides, and a cookie dying
+// first would re-prompt a device whose session is still good, which is exactly what an
+// idle window of "never" is set to prevent. A dead token in a live cookie just re-prompts.
+const COOKIE_MAX_AGE_S = 400 * 24 * 60 * 60;
 // last-seen writes are throttled to spare security.json a write per request.
 const PERSIST_EVERY_MS = 60_000;
 const MAX_LOGIN_FAILURES = 5;
@@ -46,6 +49,8 @@ interface SecurityState {
 	/** The lock switch, independent of the hash so toggling off keeps the password. */
 	passwordEnabled: boolean;
 	passwordHash: string | null;
+	/** How long a device may go untouched before it must unlock again. 0 = never. */
+	sessionIdleMinutes: number;
 	/** token → last-seen time (ms). Persisted so a server restart keeps active devices in. */
 	sessions: Record<string, number>;
 }
@@ -63,6 +68,17 @@ function boolField(raw: Record<string, unknown>, key: string): boolean | undefin
 	const value = raw[key];
 	if (value === undefined) return undefined;
 	if (typeof value !== 'boolean') unusable(`"${key}" must be true or false`);
+	return value;
+}
+
+/** Same stance as `boolField`: absent is "not stated", present but unusable is a broken
+ *  file. A negative or fractional window would expire every session at once instead. */
+function minutesField(raw: Record<string, unknown>, key: string): number | undefined {
+	const value = raw[key];
+	if (value === undefined) return undefined;
+	if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+		unusable(`"${key}" must be a whole number of minutes, 0 or more`);
+	}
 	return value;
 }
 
@@ -89,6 +105,7 @@ function load(): SecurityState {
 			ipAllowlistEnabled: true,
 			passwordEnabled: false,
 			passwordHash: null,
+			sessionIdleMinutes: DEFAULT_SESSION_IDLE_MINUTES,
 			sessions: {}
 		};
 	}
@@ -115,6 +132,7 @@ function load(): SecurityState {
 		// Files written before the switch existed imply "a hash means it's on".
 		passwordEnabled: boolField(raw, 'passwordEnabled') ?? passwordHash !== null,
 		passwordHash,
+		sessionIdleMinutes: minutesField(raw, 'sessionIdleMinutes') ?? DEFAULT_SESSION_IDLE_MINUTES,
 		sessions: sessionsField(raw)
 	};
 }
@@ -139,11 +157,17 @@ function persist(): void {
 // Written only when absent, so an upgrade or a restart never overwrites real settings.
 if (!existsSync(SECURITY_PATH)) persist();
 
+/** The live idle window. "Never" is Infinity rather than a flag, so every comparison
+ *  below stays one expression. */
+function sessionIdleMs(): number {
+	return state.sessionIdleMinutes === 0 ? Infinity : state.sessionIdleMinutes * 60_000;
+}
+
 function pruneSessions(): void {
 	const now = Date.now();
 	let changed = false;
 	for (const [token, lastSeen] of Object.entries(state.sessions)) {
-		if (now - lastSeen > SESSION_IDLE_MS) {
+		if (now - lastSeen > sessionIdleMs()) {
 			delete state.sessions[token];
 			changed = true;
 		}
@@ -196,6 +220,21 @@ export function setPasswordLockEnabled(enabled: boolean): void {
 	persist();
 }
 
+export function getSessionIdleMinutes(): number {
+	return state.sessionIdleMinutes;
+}
+
+export function setSessionIdleMinutes(minutes: number): void {
+	if (!Number.isSafeInteger(minutes) || minutes < 0) {
+		throw new Error('The idle timeout must be a whole number of minutes, 0 or more.');
+	}
+	state.sessionIdleMinutes = minutes;
+	// A shortened window drops what it just expired here, rather than leaving those
+	// tokens in the file until their devices come back and are refused.
+	pruneSessions();
+	persist();
+}
+
 // ===== Login =====
 
 /** ip → recent failure tracking, so the password can't be brute-forced quietly. */
@@ -240,7 +279,7 @@ const lastPersisted = new Map<string, number>();
 /**
  * Validate the session cookie and, when valid, slide its idle window forward.
  * The refresh is what makes active use never re-prompt: only a device that
- * sends no gated request for SESSION_IDLE_MS falls back to the unlock page.
+ * sends no gated request for the whole window falls back to the unlock page.
  */
 export function hasValidSession(cookieHeader: string | null): boolean {
 	if (!cookieHeader) return false;
@@ -249,7 +288,7 @@ export function hasValidSession(cookieHeader: string | null): boolean {
 	const token = match[1];
 	const lastSeen = state.sessions[token];
 	const now = Date.now();
-	if (lastSeen === undefined || now - lastSeen > SESSION_IDLE_MS) return false;
+	if (lastSeen === undefined || now - lastSeen > sessionIdleMs()) return false;
 	state.sessions[token] = now;
 	// Persisting every request would hammer security.json; once a minute is
 	// plenty. Worst case a restart loses under a minute of the idle window.
@@ -274,7 +313,13 @@ export function sessionCookie(token: string): string {
  *  slide once a minute per active device, so counting them would make this server's
  *  own writes look like somebody's edit. */
 function switchSignature(s: SecurityState): string {
-	return [s.networkAccessEnabled, s.ipAllowlistEnabled, s.passwordEnabled, s.passwordHash].join('|');
+	return [
+		s.networkAccessEnabled,
+		s.ipAllowlistEnabled,
+		s.passwordEnabled,
+		s.passwordHash,
+		s.sessionIdleMinutes
+	].join('|');
 }
 
 export interface SecurityChange {
@@ -317,10 +362,14 @@ export function watchSecurityFile(apply: (change: SecurityChange) => void): void
 		state.ipAllowlistEnabled = next.ipAllowlistEnabled;
 		state.passwordEnabled = next.passwordEnabled;
 		state.passwordHash = next.passwordHash;
+		// No kick for a shortened window: it is read per request, so the devices it
+		// just expired are refused on their next one.
+		state.sessionIdleMinutes = next.sessionIdleMinutes;
 		console.log(
 			`  security.json applied: network access ${state.networkAccessEnabled ? 'on' : 'off'}, ` +
 				`allowlist ${state.ipAllowlistEnabled ? 'on' : 'off'}, ` +
-				`password lock ${isPasswordEnabled() ? 'on' : 'off'}.`
+				`password lock ${isPasswordEnabled() ? 'on' : 'off'}, ` +
+				`idle timeout ${state.sessionIdleMinutes === 0 ? 'never' : `${state.sessionIdleMinutes}m`}.`
 		);
 		apply(change);
 	});

@@ -10,6 +10,7 @@
 		setNetworkAccessEnabled,
 		setPasswordLockEnabled,
 		setSecurityPassword,
+		setSessionIdleMinutes,
 		type AccessInfo,
 		type DeniedAttempt
 	} from '$lib/services/transport';
@@ -72,8 +73,8 @@
 	let networkOffOpen = $state(false);
 
 	// ===== Password lock =====
-	// Two states, one per `passwordSet`: no password yet → the setup form is the
-	// whole story; a password exists → an on/off switch plus a folded change form.
+	// Two states, one per `passwordSet`: no password yet → the setup form is the whole
+	// story; a password exists → an on/off switch, the idle window, a folded change form.
 	let allowlistEnabled = $state(true);
 	let passwordEnabled = $state(false);
 	let passwordSet = $state(false);
@@ -85,6 +86,14 @@
 	let securityBusy = $state(false);
 
 	let passwordValid = $derived(newPassword.length >= MIN_PASSWORD_LENGTH);
+
+	// The idle window, in minutes, 0 meaning never. The field is a draft rather than the
+	// value: the 5s poll below would otherwise overwrite a number while it is being typed,
+	// so it only follows the server while the two still agree.
+	let idleMinutes = $state(60);
+	let idleInput = $state('60');
+	let idleDirty = $derived(idleInput.trim() !== String(idleMinutes));
+	let idleValid = $derived(/^\d+$/.test(idleInput.trim()));
 
 	onMount(() => {
 		loadAccess();
@@ -121,10 +130,13 @@
 	async function loadSecurity(): Promise<void> {
 		try {
 			const info = await getSecurityInfo();
+			const idleWasClean = !idleDirty;
 			networkEnabled = info.networkAccessEnabled;
 			allowlistEnabled = info.ipAllowlistEnabled;
 			passwordEnabled = info.passwordEnabled;
 			passwordSet = info.passwordSet;
+			idleMinutes = info.sessionIdleMinutes;
+			if (idleWasClean) idleInput = String(idleMinutes);
 		} catch (e) {
 			securityError = e instanceof Error ? e.message : 'Failed to load security settings';
 		}
@@ -282,6 +294,23 @@
 			passwordEnabled = on;
 		} catch (e) {
 			securityError = e instanceof Error ? e.message : 'Failed to update password lock';
+		} finally {
+			securityBusy = false;
+		}
+	}
+
+	async function saveIdle(): Promise<void> {
+		if (!idleValid || !idleDirty || securityBusy) return;
+		securityBusy = true;
+		securityError = '';
+		const minutes = Number(idleInput.trim());
+		try {
+			await setSessionIdleMinutes(minutes);
+			idleMinutes = minutes;
+			// "060" saves as 60, and a field left spelling it the other way reads as unsaved.
+			idleInput = String(minutes);
+		} catch (e) {
+			securityError = e instanceof Error ? e.message : 'Failed to update the idle timeout';
 		} finally {
 			securityBusy = false;
 		}
@@ -486,7 +515,7 @@
 					<div class="title-row">
 						<h3 class="card-title">Password Lock</h3>
 						<InfoTip
-							text="This computer is never asked, only your other devices are, and they re-lock after an hour idle. Locked out? Delete security.json in your data folder."
+							text="This computer is never asked, only your other devices are. Locked out? Delete security.json in your data folder."
 						/>
 					</div>
 					<p class="card-sub">Other devices must enter a password before they can use the app.</p>
@@ -531,7 +560,7 @@
 						</form>
 					</div>
 				{:else}
-					<!-- Password exists: a plain on/off switch plus a folded change form. -->
+					<!-- Password exists: an on/off switch, the idle window, a folded change form. -->
 					<div class="row" use:toggleRow>
 						<div class="row-copy">
 							<span class="row-label">Require password</span>
@@ -549,6 +578,42 @@
 							label="Require password"
 							onchange={togglePassword}
 						/>
+					</div>
+
+					<div class="group">
+						<span class="row-label">Ask again when idle</span>
+						<span class="row-desc">
+							{#if idleMinutes === 0}
+								Other devices stay unlocked until the password changes.
+							{:else}
+								A device left alone this long is asked for the password again.
+							{/if}
+						</span>
+						<form
+							class="pw-form"
+							onsubmit={(e) => {
+								e.preventDefault();
+								saveIdle();
+							}}
+						>
+							<input
+								class="input-base idle-input"
+								type="text"
+								inputmode="numeric"
+								bind:value={idleInput}
+								autocomplete="off"
+								spellcheck="false"
+								aria-label="Minutes before an idle device is asked again"
+							/>
+							<span class="idle-unit">minutes, 0 never asks</span>
+							<button
+								class="primary-btn idle-save"
+								type="submit"
+								disabled={securityBusy || !idleValid || !idleDirty}
+							>
+								Save
+							</button>
+						</form>
 					</div>
 
 					<div class="group">
@@ -923,6 +988,25 @@
 		font-family: var(--font-ui);
 		font-size: 0.85rem;
 		color: var(--color-text-primary);
+	}
+
+	.idle-input {
+		flex: 0 0 4.5rem;
+		padding: 0.5rem 0.7rem;
+		font-family: var(--font-ui);
+		font-size: 0.85rem;
+		text-align: center;
+		color: var(--color-text-primary);
+	}
+
+	.idle-unit {
+		font-family: var(--font-ui);
+		font-size: 0.72rem;
+		color: var(--color-text-muted);
+	}
+
+	.idle-save {
+		margin-left: auto;
 	}
 
 	.eye-btn {
