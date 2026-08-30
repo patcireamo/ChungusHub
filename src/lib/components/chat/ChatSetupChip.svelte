@@ -31,6 +31,7 @@
 	import { presetService } from '$lib/services/presets.svelte';
 	import { portraitFocusStyle } from '$lib/utils/portrait-focus';
 	import {
+		chatConnectionClaim,
 		chatConnectionId,
 		chatPersonaClaim,
 		chatPersonaEntry,
@@ -114,7 +115,7 @@
 
 	// ===== Connection =====
 
-	let claimedConnection = $derived(chat ? chatStore.featureState(chat.id).connection : null);
+	let claimedConnection = $derived(chatConnectionClaim(chat));
 	let liveConnection = $derived(chatConnectionId(chat));
 	let appConnection = $derived(connectionStore.connectionFor('primary'));
 	let connection = $derived(
@@ -207,7 +208,13 @@
 				noun: 'versions',
 				value: versions.find((v) => v.id === pinnedVersionId)?.name ?? 'Unknown',
 				diverged: !!chat?.characterVersionId && chat.characterVersionId !== versionSeed,
-				lost: null,
+				// The one claim with no app value to fall back on, so this row says what the
+				// others cannot: the story stops sending until it is repinned, which is the
+				// throw the next send raises (utils/prompt-builder.ts) said before it happens.
+				lost:
+					!!chat?.characterVersionId && !versions.some((v) => v.id === chat.characterVersionId)
+						? 'The version this chat was pinned to is gone. It cannot send until you pick another.'
+						: null,
 				options: versions.map((v) => ({ id: v.id, name: v.name })),
 				picked: pinnedVersionId,
 				app: null,

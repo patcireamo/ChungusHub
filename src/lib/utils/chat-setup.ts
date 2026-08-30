@@ -31,6 +31,12 @@ export interface PromptTarget {
 	contextBudget: number;
 }
 
+/** The connection id a chat claimed, before any liveness check. Read beside
+ *  `chatConnectionId` wherever "follows the app" has to be told from "gone". */
+export function chatConnectionClaim(chat: Chat | null): string | null {
+	return chat ? normalizeChatFeatureState(chat.featureState).connection : null;
+}
+
 /**
  * The connection a chat claimed for itself, or null when it follows the app.
  *
@@ -40,8 +46,7 @@ export interface PromptTarget {
  * restoring the connection.
  */
 export function chatConnectionId(chat: Chat | null): string | null {
-	if (!chat) return null;
-	const claimed = normalizeChatFeatureState(chat.featureState).connection;
+	const claimed = chatConnectionClaim(chat);
 	return claimed && connectionStore.get(claimed) ? claimed : null;
 }
 
