@@ -76,7 +76,16 @@ class PresetControlsStore {
 		const global = await readGlobalValues();
 		const seeded: ValuesByPreset = {};
 		if (Object.keys(global).length > 0) {
-			for (const preset of presetService.getAllPresets()) seeded[preset.id] = { ...global };
+			const presets = presetService.getAllPresets();
+			// Values to carry and nowhere to put them means the preset service has not loaded
+			// yet, and writing the row anyway would spend the one marker this carry-over gets on
+			// an empty answer: every tuned value would stop applying and nothing could retry.
+			// Boot already orders these (architecture/preset-authoring.md), so this throws rather
+			// than degrades, and the old flat row is still on disk to run against next boot.
+			if (presets.length === 0) {
+				throw new Error('Preset control values cannot be carried over before the presets load.');
+			}
+			for (const preset of presets) seeded[preset.id] = { ...global };
 		}
 		await db.setSetting(VALUES_BY_PRESET_KEY, JSON.stringify(seeded));
 		return seeded;

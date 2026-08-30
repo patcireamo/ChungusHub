@@ -71,15 +71,6 @@ function defaultChatTitle(name: string, when: number): string {
 }
 
 /**
- * The version a chat with this character is born pinned to. Second spelling of
- * `characterLibraryStore.chatVersionSeed` (src/lib/stores/characterLibrary.svelte.ts), which
- * this process cannot import: the character's own default while that version still exists,
- * else the first one ever made, else nothing for an unversioned character. Never the active
- * version, which says which variant the LIBRARY is editing and nothing about what a story
- * starts on. Two answers here and a chat the assistant made plays a different variant than
- * the same chat started from the composer.
- */
-/**
  * The claims a new chat is born carrying: the character's own New Chat Defaults, the same
  * three the composer stamps (src/lib/stores/chat.svelte.ts `createChat`). A character
  * carrying none of them leaves the blob NULL rather than storing a row of nulls, which is
@@ -97,6 +88,15 @@ function birthClaims(entry: RawLibraryEntry): string | null {
 	return JSON.stringify({ connection, persona, preset });
 }
 
+/**
+ * The version a chat with this character is born pinned to. Second spelling of
+ * `characterLibraryStore.chatVersionSeed` (src/lib/stores/characterLibrary.svelte.ts), which
+ * this process cannot import: the character's own default while that version still exists,
+ * else the first one ever made, else nothing for an unversioned character. Never the active
+ * version, which says which variant the LIBRARY is editing and nothing about what a story
+ * starts on. Two answers here and a chat the assistant made plays a different variant than
+ * the same chat started from the composer.
+ */
 function chatVersionSeed(entry: RawLibraryEntry): string | null {
 	const versions = serverDb.getCharacterVersionsByEntry(entry.id) as { id: string }[];
 	const seed = entry.defaultVersionId;
