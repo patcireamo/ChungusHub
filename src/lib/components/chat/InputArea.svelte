@@ -25,6 +25,7 @@
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 	import { viewport } from '$lib/stores/viewport.svelte';
 	import { assemblePrompt } from '$lib/utils/prompt-assembly';
+	import { resolvePromptTarget } from '$lib/utils/chat-setup';
 	import { portraitFocusStyle } from '$lib/utils/portrait-focus';
 	import { relativeClock } from '$lib/utils/time-format.svelte';
 	import { llmService } from '$lib/services/llm/provider';
@@ -242,6 +243,10 @@
 		];
 	});
 
+	// Model, budget and prompt shape from the SAME resolver the send runs, so the meter can
+	// never price this chat against one connection while the send rides another.
+	let promptTarget = $derived(resolvePromptTarget(chatStore.activeChat));
+
 	let assembly = $derived(
 		currentPreset
 			? assemblePrompt({
@@ -264,9 +269,9 @@
 					customFields: presetControlsStore.values,
 					chatMessages: pricedPath,
 					recall: { text: memoryStore.recall || null, archivedIds: memoryStore.archivedMessageIds },
-					model: llmService.getPrimaryModel(),
-					postProcessing: { mode: llmService.getPromptPostProcessing(), placeholder: llmService.getPromptPlaceholder() },
-					contextBudget: llmService.getPromptTokenBudget(),
+					model: promptTarget.model,
+					postProcessing: promptTarget.postProcessing,
+					contextBudget: promptTarget.contextBudget,
 					regexRules: regexRulesStore.effective,
 					steering: steeringForPrompt
 				})
@@ -276,8 +281,8 @@
 	// The breakdown is a model-aware base estimate; scale it by the active model's learned
 	// calibration factor so the meter predicts the provider's real prompt_tokens. One factor
 	// applied to every bucket keeps the bar proportional and the parts summing to the total.
-	let ratio = $derived(tokenCalibration.ratioFor(llmService.getPrimaryModel()));
-	let modelLabel = $derived(llmService.getPrimaryModel());
+	let ratio = $derived(tokenCalibration.ratioFor(promptTarget.model));
+	let modelLabel = $derived(promptTarget.model);
 	let presetTokens = $derived(Math.round((assembly?.breakdown.preset ?? 0) * ratio));
 	let contextTokens = $derived(Math.round((assembly?.breakdown.context ?? 0) * ratio));
 	let memoryTokens = $derived(Math.round((assembly?.breakdown.memory ?? 0) * ratio));

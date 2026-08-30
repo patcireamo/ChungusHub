@@ -948,6 +948,47 @@ describe('provider vocabulary (architecture/llm-providers.md #1)', () => {
 	});
 });
 
+describe('prompt target (architecture/prompt-pipeline.md #10)', () => {
+	// Every surface that assembles a prompt prices and shapes it against a connection's model,
+	// context window and post-processing. Resolve those per surface and a chat can be metered
+	// against one context window while the send rides another, with the review dialog naming a
+	// third and nothing on screen saying so. `resolvePromptTarget` is the one resolution.
+	const ASSEMBLY_SITES = [
+		['src', 'lib', 'utils', 'prompt-builder.ts'],
+		['src', 'lib', 'components', 'chat', 'InputArea.svelte'],
+		['src', 'lib', 'components', 'promptBuilder', 'PromptBuilderView.svelte']
+	];
+
+	test('every AssembleInput site takes its connection terms from the resolver', () => {
+		for (const site of ASSEMBLY_SITES) {
+			const where = site.join('/');
+			const source = read(...site);
+			expect(source, `${where} must resolve a prompt target`).toContain('resolvePromptTarget(');
+			for (const field of ['model', 'postProcessing', 'contextBudget']) {
+				expect(source, `${where} must assemble with promptTarget.${field}`).toContain(
+					`${field}: promptTarget.${field}`
+				);
+			}
+		}
+	});
+
+	test('no assembling surface resolves a connection itself', () => {
+		const own = /llmService\.(getPrimaryModel|getPromptTokenBudget|getPromptPostProcessing|getPromptPlaceholder)\(/;
+		for (const site of [...ASSEMBLY_SITES, ['src', 'lib', 'utils', 'live-macro-context.ts']]) {
+			expect(own.test(read(...site)), `${site.join('/')} resolves its own connection`).toBe(false);
+		}
+	});
+
+	test('the story generations send on the connection they were assembled for', () => {
+		const calls = scan(
+			read('src', 'lib', 'stores', 'messages.svelte.ts'),
+			/llmService\.complete\(([^,]+),/g,
+			'story completion calls'
+		);
+		expect(calls.map((t) => t.trim())).toEqual(calls.map(() => 'callTarget'));
+	});
+});
+
 describe('sampling parameters (architecture/prompt-pipeline.md #2, architecture/llm-providers.md #2, #4)', () => {
 	/** The string literals of both policy type declarations, comments excluded. */
 	const policyLiterals = (...path: string[]): string[] => {

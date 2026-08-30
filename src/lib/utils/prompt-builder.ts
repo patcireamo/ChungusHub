@@ -20,9 +20,9 @@ import { readPresetControlValues } from '$lib/stores/presetControls.svelte';
 import type { PromptCharacter } from '$lib/macros';
 import { memoryStore } from '$lib/memory/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
-import { llmService } from '$lib/services/llm/provider';
 import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
+import { resolvePromptTarget } from './chat-setup';
 import { assemblePrompt, type PromptRecall } from './prompt-assembly';
 
 const ACTIVE_PERSONA_KEY = 'activePersonaId';
@@ -55,6 +55,10 @@ function toPromptCharacter(entry: LibraryEntry | null | undefined): PromptCharac
 /** A built prompt: what goes on the wire, and the lorebook scan that shaped it. */
 export interface BuiltPrompt {
 	messages: LLMMessage[];
+	/** The connection this prompt was assembled for, and the one it must be sent on. Carried
+	 *  out rather than re-derived by each caller, so the review dialog names the model the
+	 *  budget was counted against. */
+	target: CallTarget;
 	/** Stored on the turn this prompt produces, so the reply can say afterwards which entries
 	 *  were in it and why. The scan happens once, inside assembly, so this is the record of
 	 *  what was actually sent rather than a second guess at it. */
@@ -73,7 +77,7 @@ export interface BuiltPrompt {
  * preset service, then defers to the shared assembler.
  */
 export async function buildPromptMessages(context: PromptBuildContext): Promise<BuiltPrompt> {
-	const { chatId, chatMessages, target = 'primary' } = context;
+	const { chatId, chatMessages } = context;
 
 	// Load active preset: the effective copy (unsaved draft if there is one).
 	await presetService.initialize();
@@ -141,6 +145,10 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 		.filter((note) => note.mode === 'once')
 		.map((note) => ({ id: note.id, text: note.text }));
 
+	// Model, budget and prompt shape all come off this one resolution, the same one the
+	// composer's meter runs, so the price on screen is the price of the request.
+	const promptTarget = resolvePromptTarget(chat, context.target ?? 'primary');
+
 	const { messages, lorebook, continuationSent } = assemblePrompt({
 		preset,
 		resolvedCharacters: character ? [toPromptCharacter(character)!] : [],
@@ -152,17 +160,9 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 		customFields: await readPresetControlValues(),
 		chatMessages,
 		recall,
-		// model matters here now: the budget trim counts tokens with the model's encoding,
-		// so the generation path must count exactly like the meters or the trims drift.
-		// Everything resolves from the TARGET's connection: for the chat send that is
-		// primary (identical to what the meters price); Opening Scene / Continue resolve
-		// their own engine target so a pin's context window and prompt shape apply.
-		model: llmService.modelFor(target),
-		postProcessing: {
-			mode: llmService.getPromptPostProcessing(target),
-			placeholder: llmService.getPromptPlaceholder(target)
-		},
-		contextBudget: llmService.getPromptTokenBudget(target),
+		model: promptTarget.model,
+		postProcessing: promptTarget.postProcessing,
+		contextBudget: promptTarget.contextBudget,
 		regexRules: regexRulesStore.effective,
 		continuation: context.continuation,
 		steering: resolvedSteering.length
@@ -170,5 +170,5 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 			: undefined
 	});
 
-	return { messages, lorebook, continuationSent, oneShotSteering };
+	return { messages, target: promptTarget.target, lorebook, continuationSent, oneShotSteering };
 }

@@ -21,7 +21,7 @@ import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { presetService } from '$lib/services/presets.svelte';
 import { presetControlsStore } from '$lib/stores/presetControls.svelte';
-import { llmService } from '$lib/services/llm/provider';
+import { resolvePromptTarget } from './chat-setup';
 import { countTokens } from '$lib/tokenizer/count';
 
 export interface LiveMacroContextOptions {
@@ -57,12 +57,12 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 	// Same budget derivation as buildMacroContext (share of the prompt budget, counted with
 	// the active model's encoding), so these surfaces inject the same block the prompt does.
 	const lorebookSettings = lorebookSettingsStore.settings;
-	const model = llmService.getPrimaryModel();
+	const promptTarget = resolvePromptTarget(chatStore.activeChat);
 	const lorebookBudget =
 		lorebookSettings.budgetPercent > 0
 			? {
-					maxTokens: Math.floor((llmService.getPromptTokenBudget() * lorebookSettings.budgetPercent) / 100),
-					count: (text: string) => countTokens(text, model)
+					maxTokens: Math.floor((promptTarget.contextBudget * lorebookSettings.budgetPercent) / 100),
+					count: (text: string) => countTokens(text, promptTarget.model)
 				}
 			: undefined;
 	const base: MacroContext = {

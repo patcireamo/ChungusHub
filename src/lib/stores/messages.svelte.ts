@@ -155,7 +155,7 @@ class MessageStore {
 	 *  stop mid-stream still persists what streamed, so it returns an id like any other
 	 *  reply. Other failures throw. */
 	async generateResponse(chatId: string, parentId: string, prompt: BuiltPrompt): Promise<string | null> {
-		const { messages, lorebook, oneShotSteering } = prompt;
+		const { messages, target: callTarget, lorebook, oneShotSteering } = prompt;
 		this.abortController = new AbortController();
 		chatStore.startStream(chatId);
 
@@ -165,7 +165,7 @@ class MessageStore {
 			// mid-reply would otherwise have nowhere to put the answer it paid for. The leaf
 			// is named as it stands now, so a commit that lands after the reader walked to
 			// another branch leaves them where they are (architecture/chat-sessions.md).
-			const result = await llmService.complete('primary', {
+			const result = await llmService.complete(callTarget, {
 				messages,
 				source: 'chat',
 				onToken: (token) => {
@@ -743,7 +743,7 @@ class MessageStore {
 			// opening scene) continues against an empty path.
 			const path = target.parentId ? findActivePath(allMessages, target.parentId) : [];
 
-			// The primary connection, exactly like a send or a regenerate: a continuation is
+			// The chat's own connection, exactly like a send or a regenerate: a continuation is
 			// the same story turn, only picked up mid-sentence. The instruction that follows
 			// the reply is the preset's `continuePrompt`, resolved inside assembly.
 			// The trace this build produces is deliberately dropped: the turn already carries the
@@ -756,7 +756,7 @@ class MessageStore {
 				lorebookTrigger: 'continue'
 			});
 			if (!prompt) return;
-			const { messages, continuationSent, oneShotSteering } = prompt;
+			const { messages, target: callTarget, continuationSent, oneShotSteering } = prompt;
 
 			// After the review, never before it: the bubble must not sit there filling in
 			// while the request behind it is still a question.
@@ -766,7 +766,7 @@ class MessageStore {
 			// The LLM call alone, no db awaits. Continue is the one story path that still
 			// persists its own turn, so this clock is still its own to keep.
 			const startedAt = performance.now();
-			const result = await llmService.complete('primary', {
+			const result = await llmService.complete(callTarget, {
 				messages,
 				source: 'continue',
 				onToken: (token) => {
@@ -930,7 +930,7 @@ class MessageStore {
 			// {{chatHistory}} injects the direction as the one user turn. Rides the engine
 			// target: Opening Scene resolves to its own assignment on the Connections page,
 			// and assembly must follow the serving connection.
-			const { messages, lorebook, oneShotSteering } = await buildPromptMessages({
+			const { messages, target: callTarget, lorebook, oneShotSteering } = await buildPromptMessages({
 				chatId: chat.id,
 				chatMessages: [virtualUserMessage],
 				target: { engine: 'opening-scene' }
@@ -941,7 +941,7 @@ class MessageStore {
 			// root claim both resolved against fresh rows inside the commit's own transaction
 			// rather than read here and used a paragraph later. No user turn is saved: the
 			// direction was context, not something the reader said in the story.
-			const result = await llmService.complete({ engine: 'opening-scene' }, {
+			const result = await llmService.complete(callTarget, {
 				messages,
 				source: 'opening-scene',
 				onToken: (token) => {
@@ -1172,7 +1172,7 @@ class MessageStore {
 		// builder reads the note rows from the db, not the store's copy.
 		await steeringStore.flush();
 		const built = await buildPromptMessages(context);
-		const approved = await promptHoldStore.review(gate, built.messages, context.target ?? 'primary');
+		const approved = await promptHoldStore.review(gate, built.messages, built.target);
 		if (!approved) return null;
 		return { ...built, messages: approved };
 	}

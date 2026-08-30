@@ -17,7 +17,7 @@
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import MacroReference from '$lib/components/ui/MacroReference.svelte';
 	import PresetManager from '$lib/components/presets/PresetManager.svelte';
-	import { llmService } from '$lib/services/llm/provider';
+	import { resolvePromptTarget } from '$lib/utils/chat-setup';
 	import { presetService } from '$lib/services/presets.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { personaStore } from '$lib/stores/persona.svelte';
@@ -120,7 +120,9 @@
 	// Token accounting runs through the SAME assembly primitives the real prompt and the chat
 	// input meter use (buildMacroContext / resolveItem / assemblePrompt), so the numbers here
 	// match what is actually sent for the active chat: memory recall, chat history and
-	// auto-lorebook all included, instead of a separate approximation that drifts.
+	// auto-lorebook all included, instead of a separate approximation that drifts. The
+	// connection those numbers are counted in comes from the same resolver too.
+	let promptTarget = $derived(resolvePromptTarget(chatStore.activeChat));
 	let assembleInput = $derived<AssembleInput>({
 		preset: currentPreset,
 		resolvedPersona: personaStore.activeResolved,
@@ -141,13 +143,13 @@
 		customFields: presetControlsStore.values,
 		chatMessages: chatStore.currentChatState?.activePath ?? [],
 		recall: { text: memoryStore.recall || null, archivedIds: memoryStore.archivedMessageIds },
-		model: llmService.getPrimaryModel(),
-		postProcessing: { mode: llmService.getPromptPostProcessing(), placeholder: llmService.getPromptPlaceholder() },
-		contextBudget: llmService.getPromptTokenBudget(),
+		model: promptTarget.model,
+		postProcessing: promptTarget.postProcessing,
+		contextBudget: promptTarget.contextBudget,
 		regexRules: regexRulesStore.effective
 	});
 	let macroContext = $derived(buildMacroContext(assembleInput));
-	let activeModel = $derived(llmService.getPrimaryModel());
+	let activeModel = $derived(promptTarget.model);
 
 	// Offered to the carried-rule tester as a one-click sample: a rule that styles the
 	// model's own panels is only really testable against the model's own output.
