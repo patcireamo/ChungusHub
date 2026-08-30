@@ -23,7 +23,7 @@ export interface Chat {
 	/** The character version this chat plays against: the ONLY input to which variant
 	 *  every request from this chat uses, whatever the library's active version happens
 	 *  to be. Per-chat and durable: switching is an explicit, reversible act made from
-	 *  the composer's version chip. Null = follow the entry's live data (unversioned
+	 *  the composer's setup chip. Null = follow the entry's live data (unversioned
 	 *  characters and legacy chats). */
 	characterVersionId: string | null;
 	/** Starred in the chats panel, which floats favorites into their own section above
@@ -112,10 +112,16 @@ export interface ChatFeatureState {
 	impersonatePerspective: ImpersonatePerspective;
 	/** Null while this chat has never been given a scene of its own. */
 	scene: ChatScene | null;
+	/** The connection this story sends on, claimed from the composer's setup chip. A plain
+	 *  connection id, or null to follow whatever the Connections page routes Primary to.
+	 *  It covers the story's own calls and nothing else: the assistant and every engine
+	 *  stay app-wide. An id naming a connection that no longer exists resolves to the app's
+	 *  too, rather than throwing or being swept (see utils/chat-setup.ts). */
+	connection: string | null;
 }
 
 function defaultChatFeatureState(): ChatFeatureState {
-	return { steeringHistory: [], impersonatePerspective: 'first', scene: null };
+	return { steeringHistory: [], impersonatePerspective: 'first', scene: null, connection: null };
 }
 
 export const DEFAULT_CHAT_FEATURE_STATE: ChatFeatureState = defaultChatFeatureState();
@@ -127,6 +133,12 @@ function normalizeSteeringHistory(raw: unknown): string[] {
 
 function normalizeImpersonatePerspective(raw: unknown): ImpersonatePerspective {
 	return raw === 'first' || raw === 'second' || raw === 'third' ? raw : 'first';
+}
+
+/** A claimed id, or null for "follow the app". Absent in every blob written before a chat
+ *  could claim anything, which is why this needs no migration: missing reads as null. */
+function normalizeClaimedId(raw: unknown): string | null {
+	return typeof raw === 'string' && raw.length > 0 ? raw : null;
 }
 
 /** A chat with no scene of its own reads as null, which is what "follows the app's" is.
@@ -164,7 +176,8 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 	return {
 		steeringHistory: normalizeSteeringHistory(obj.steeringHistory),
 		impersonatePerspective: normalizeImpersonatePerspective(obj.impersonatePerspective),
-		scene: normalizeChatScene(obj.scene)
+		scene: normalizeChatScene(obj.scene),
+		connection: normalizeClaimedId(obj.connection)
 	};
 }
 

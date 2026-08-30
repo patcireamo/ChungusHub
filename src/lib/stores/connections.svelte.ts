@@ -233,8 +233,11 @@ class ConnectionStore {
 		this.persist();
 	}
 
-	/** The connection serving a call: a straight map lookup, nothing behind it. */
+	/** The connection serving a call: a straight map lookup, or the connection a chat
+	 *  named for itself. A named connection that no longer exists is undefined here, and
+	 *  resolvePromptTarget is what turns that back into the routed one. */
 	connectionFor(target: CallTarget): Connection | undefined {
+		if (typeof target === 'object' && 'connection' in target) return this.get(target.connection);
 		const point = typeof target === 'object' ? target.engine : target;
 		return this.get(this.assignments[point] ?? '');
 	}

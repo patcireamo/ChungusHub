@@ -42,7 +42,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 		expect(normalizeChatFeatureState(raw)).toEqual({
 			steeringHistory: ['earlier note'],
 			impersonatePerspective: 'third',
-			scene: null
+			scene: null,
+			connection: null
 		});
 	});
 
@@ -50,7 +51,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 		const value = {
 			steeringHistory: ['x'],
 			impersonatePerspective: 'second' as const,
-			scene: null
+			scene: null,
+			connection: null
 		};
 		expect(normalizeChatFeatureState(value)).toEqual(value);
 	});
@@ -67,7 +69,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 		expect(result).toEqual({
 			steeringHistory: ['earlier note'],
 			impersonatePerspective: 'third',
-			scene: null
+			scene: null,
+			connection: null
 		});
 		expect('steering' in result).toBe(false);
 	});
@@ -120,6 +123,27 @@ describe('normalizeChatFeatureState: scene', () => {
 		// because a half-written blob was read generously.
 		const scene = normalizeChatFeatureState({ scene: { background: {}, ambient: {} } }).scene;
 		expect(scene?.enabled).toBe(false);
+	});
+});
+
+describe('normalizeChatFeatureState: connection', () => {
+	test('a chat that has claimed nothing reads as null', () => {
+		// The whole reason this needs no migration: every blob written before a chat could
+		// claim a connection simply has no key, and a missing key is "follow the app".
+		expect(normalizeChatFeatureState({}).connection).toBeNull();
+		expect(normalizeChatFeatureState('{"steeringHistory":[]}').connection).toBeNull();
+	});
+
+	test('a claimed id survives the trip through the column it is stored in', () => {
+		const state = normalizeChatFeatureState({ connection: 'conn-1' });
+		expect(state.connection).toBe('conn-1');
+		expect(normalizeChatFeatureState(JSON.stringify(state))).toEqual(state);
+	});
+
+	test('anything that is not a non-empty string is no claim at all', () => {
+		expect(normalizeChatFeatureState({ connection: '' }).connection).toBeNull();
+		expect(normalizeChatFeatureState({ connection: 7 }).connection).toBeNull();
+		expect(normalizeChatFeatureState({ connection: { id: 'conn-1' } }).connection).toBeNull();
 	});
 });
 

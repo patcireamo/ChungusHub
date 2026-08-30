@@ -40,7 +40,8 @@ import { tokenCalibration } from '$lib/tokenizer';
 
 /** Human-readable call target, for fail-loud messages when nothing resolves. */
 function targetLabel(target: CallTarget): string {
-	return typeof target === 'object' ? `${target.engine} engine` : target;
+	if (typeof target !== 'object') return target;
+	return 'engine' in target ? `${target.engine} engine` : `connection ${target.connection}`;
 }
 
 /**

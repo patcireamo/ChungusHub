@@ -2,7 +2,7 @@
 	import { tick, untrack } from 'svelte';
 	import { countTokens, tokenCalibration } from '$lib/tokenizer';
 	import Icon from '$lib/components/ui/Icon.svelte';
-	import ChatVersionChip from './ChatVersionChip.svelte';
+	import ChatSetupChip from './ChatSetupChip.svelte';
 	import ChatPersonaDialog from './ChatPersonaDialog.svelte';
 	import TransformPanel from './TransformPanel.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
@@ -1493,7 +1493,7 @@
 
 					<div class="composer-feature-divider" aria-hidden="true"></div>
 
-					<ChatVersionChip />
+					<ChatSetupChip />
 				</div>
 
 				<div class="composer-right-group">

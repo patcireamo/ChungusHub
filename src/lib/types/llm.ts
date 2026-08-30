@@ -366,10 +366,15 @@ export const DEFAULT_GENERATION_SETTINGS: GenerationSettings = {
  * Who serves one model call. Routing is one flat map: every calling point
  * (`primary` = the story, `assistant` = the Chungus Assistant, plus each calling
  * engine by id) is assigned its own concrete connection in
- * `connectionStore.assignments`. There are no roles, no defaults-following, no
- * pins: what the Connections page shows is literally what each call rides.
+ * `connectionStore.assignments`. There are no roles and no defaults-following: what
+ * the Connections page shows is what the app routes each point to.
+ *
+ * `{ connection }` is the one target that names a connection outright instead of a
+ * point in that map: a chat that has claimed its own connection sends on it, and
+ * only the story's `primary` calls can be claimed that way. Resolving it is
+ * `resolvePromptTarget`'s job (utils/chat-setup.ts), so no caller builds one by hand.
  */
-export type CallTarget = 'primary' | 'assistant' | { engine: string };
+export type CallTarget = 'primary' | 'assistant' | { engine: string } | { connection: string };
 
 /**
  * A named, self-contained LLM connection: a provider, its own model, context

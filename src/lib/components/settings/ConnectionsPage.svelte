@@ -8,11 +8,11 @@
 	 * Assistant) sit slightly emphasized on top; every calling engine follows right
 	 * below in the same shape. No roles, no groups, no "follows X" inheritance,
 	 * no warnings: a fresh install routes everything to the Default connection,
-	 * and re-pointing anything is the user's own, explicit choice. What this card
-	 * shows is literally what each call rides.
+	 * and re-pointing anything is the user's own, explicit choice.
 	 *
-	 * This is the only place in the app that assigns connections: the Engines
-	 * page shows resolution read-only (architecture/engines.md).
+	 * This is the only place in the app that ROUTES a point, and it always speaks for the
+	 * app: the Engines page shows resolution read-only (architecture/engines.md), and a chat
+	 * that has claimed its own connection says so here with a chip and changes nothing.
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
@@ -21,6 +21,8 @@
 	import ConnectionEditor from './ConnectionEditor.svelte';
 	import { tick } from 'svelte';
 	import { connectionStore, ASSIGNMENT_IDS } from '$lib/stores/connections.svelte';
+	import { chatStore } from '$lib/stores/chat.svelte';
+	import { chatConnectionId } from '$lib/utils/chat-setup';
 	import { llmService } from '$lib/services/llm/provider';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { type Connection, type ProviderName } from '$lib/types/llm';
@@ -106,6 +108,13 @@
 
 	let confirmingDelete = $state<string | null>(null);
 
+	// The open chat sends somewhere else. A chip, never a switch: this row is the app's
+	// answer and stays the app's answer, and the chat's own claim is made in the chat.
+	let storyOnItsOwn = $derived.by(() => {
+		const claimed = chatConnectionId(chatStore.activeChat);
+		return claimed !== null && claimed !== connectionStore.assignmentFor('primary');
+	});
+
 	function confirmDelete(): void {
 		if (confirmingDelete) {
 			connectionStore.remove(confirmingDelete);
@@ -119,6 +128,9 @@
 	<div class="route-row" class:is-key={key}>
 		<Icon name={point.icon} class="w-4 h-4 route-icon" strokeWidth={1.75} />
 		<span class="route-label">{point.label}</span>
+		{#if point.id === 'primary' && storyOnItsOwn}
+			<span class="scope-chip font-ui">This chat</span>
+		{/if}
 		<Select
 			variant="compact"
 			class="pill-select"
@@ -294,6 +306,18 @@
 	.route-row > :global(div) {
 		min-width: 0;
 		margin-left: auto;
+	}
+
+	/* Same recipe as the Interface page's governed cards wear: the open chat has taken
+	   this row for itself, and the pill beside it is still the app's answer. */
+	.scope-chip {
+		padding: 0.1rem 0.4rem;
+		border-radius: var(--radius-full);
+		background: color-mix(in srgb, var(--color-accent) 13%, transparent);
+		font-size: 0.64rem;
+		font-weight: 600;
+		color: var(--color-accent);
+		white-space: nowrap;
 	}
 
 	/* The select as a quiet pill: the routed connection and its model in one
