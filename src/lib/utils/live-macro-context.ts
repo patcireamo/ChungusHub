@@ -19,7 +19,13 @@ import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { presetControlsStore } from '$lib/stores/presetControls.svelte';
-import { chatPersonaEntry, chatPreset, resolvePromptTarget, toPromptCharacter } from './chat-setup';
+import {
+	chatLorebookClaim,
+	chatPersonaEntry,
+	chatPreset,
+	resolvePromptTarget,
+	toPromptCharacter
+} from './chat-setup';
 import { countTokens } from '$lib/tokenizer/count';
 
 export interface LiveMacroContextOptions {
@@ -76,10 +82,10 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 	// buildMacroContext, through the same resolver, so these surfaces cannot select
 	// differently from the prompt they sit beside.
 	const lore = resolveLorebooks({
-		books: lorebookStore.booksForChat([
-			...(characterData?.lorebookIds ?? []),
-			...(persona?.data.lorebookIds ?? [])
-		]),
+		books: lorebookStore.booksForChat({
+			cards: [...(characterData?.lorebookIds ?? []), ...(persona?.data.lorebookIds ?? [])],
+			chat: chatLorebookClaim(chatStore.activeChat)
+		}),
 		messages: chatMessages.map((m) => m.content),
 		fields: lorebookScanFields(base.resolvedCharacters ?? [], base.resolvedPersona),
 		trigger: opts.lorebookTrigger,

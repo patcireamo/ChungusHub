@@ -45,7 +45,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			scene: null,
 			connection: null,
 			persona: null,
-			preset: null
+			preset: null,
+			lorebooks: []
 		});
 	});
 
@@ -56,7 +57,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			scene: null,
 			connection: null,
 			persona: null,
-			preset: null
+			preset: null,
+			lorebooks: []
 		};
 		expect(normalizeChatFeatureState(value)).toEqual(value);
 	});
@@ -76,7 +78,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			scene: null,
 			connection: null,
 			persona: null,
-			preset: null
+			preset: null,
+			lorebooks: []
 		});
 		expect('steering' in result).toBe(false);
 	});
@@ -168,6 +171,30 @@ describe('normalizeChatFeatureState: persona', () => {
 	test('anything that is not a non-empty string is no claim at all', () => {
 		expect(normalizeChatFeatureState({ persona: '' }).persona).toBeNull();
 		expect(normalizeChatFeatureState({ persona: false }).persona).toBeNull();
+	});
+});
+
+describe('normalizeChatFeatureState: lorebooks', () => {
+	// The same reason the claims above need no migration: a blob written before a chat could
+	// attach books has no key, and an absent list is a chat that adds nothing of its own.
+	test('a chat that has attached nothing reads as an empty list', () => {
+		expect(normalizeChatFeatureState({}).lorebooks).toEqual([]);
+		expect(normalizeChatFeatureState({ lorebooks: null }).lorebooks).toEqual([]);
+		expect(normalizeChatFeatureState('{"steeringHistory":[]}').lorebooks).toEqual([]);
+	});
+
+	test('attached books survive the trip through the column they are stored in', () => {
+		const state = normalizeChatFeatureState({ lorebooks: ['book-1', 'book-2'] });
+		expect(state.lorebooks).toEqual(['book-1', 'book-2']);
+		expect(normalizeChatFeatureState(JSON.stringify(state))).toEqual(state);
+	});
+
+	test('drops entries that are not non-empty strings, and keeps the order of the rest', () => {
+		expect(normalizeChatFeatureState({ lorebooks: ['a', '', 7, null, 'b'] }).lorebooks).toEqual([
+			'a',
+			'b'
+		]);
+		expect(normalizeChatFeatureState({ lorebooks: 'book-1' }).lorebooks).toEqual([]);
 	});
 });
 

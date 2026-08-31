@@ -130,6 +130,13 @@ export interface ChatFeatureState {
 	 *  birth from the character's defaultPresetId seed and otherwise only from the setup chip.
 	 *  Resolved like `connection`: a deleted preset reads as no claim. */
 	preset: string | null;
+	/** Lorebooks this story attached for itself, claimed from the setup chip. **The one claim
+	 *  that ADDS rather than replaces**: these ride on top of the books the shelf switched into
+	 *  every chat and the ones this chat's character and persona link, so an empty list is a
+	 *  chat that adds nothing and never a chat with no lore. Nothing stamps it at birth.
+	 *  Resolved like every other lorebook link: an id naming a deleted book is skipped rather
+	 *  than swept (architecture/lorebook.md). */
+	lorebooks: string[];
 }
 
 function defaultChatFeatureState(): ChatFeatureState {
@@ -139,7 +146,8 @@ function defaultChatFeatureState(): ChatFeatureState {
 		scene: null,
 		connection: null,
 		persona: null,
-		preset: null
+		preset: null,
+		lorebooks: []
 	};
 }
 
@@ -158,6 +166,13 @@ function normalizeImpersonatePerspective(raw: unknown): ImpersonatePerspective {
  *  could claim anything, which is why this needs no migration: missing reads as null. */
 function normalizeClaimedId(raw: unknown): string | null {
 	return typeof raw === 'string' && raw.length > 0 ? raw : null;
+}
+
+/** A claimed id list, empty for "adds nothing". Absent in every blob written before a chat
+ *  could attach lorebooks, which is why this needs no migration either. */
+function normalizeClaimedIds(raw: unknown): string[] {
+	if (!Array.isArray(raw)) return [];
+	return raw.filter((id): id is string => typeof id === 'string' && id.length > 0);
 }
 
 /** A chat with no scene of its own reads as null, which is what "follows the app's" is.
@@ -198,7 +213,8 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		scene: normalizeChatScene(obj.scene),
 		connection: normalizeClaimedId(obj.connection),
 		persona: normalizeClaimedId(obj.persona),
-		preset: normalizeClaimedId(obj.preset)
+		preset: normalizeClaimedId(obj.preset),
+		lorebooks: normalizeClaimedIds(obj.lorebooks)
 	};
 }
 

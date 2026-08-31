@@ -3,7 +3,8 @@
 	 * What this story is running on, and the one place to change it.
 	 *
 	 * A chat can claim its own persona, its own preset, its own connection and its own
-	 * character version.
+	 * character version, and it can attach lorebooks of its own on top of the ones its cards
+	 * already bring.
 	 * Claiming happens here, in the chat, because a chat can only claim things it can name;
 	 * the Connections page and the Library keep speaking for the app.
 	 *
@@ -30,9 +31,14 @@
 	import { imageService } from '$lib/services/imageService';
 	import { presetService } from '$lib/services/presets.svelte';
 	import { portraitFocusStyle } from '$lib/utils/portrait-focus';
+	import { foldForSearch } from '$lib/components/library/browse';
+	import { lorebookStore } from '$lib/lorebook/store.svelte';
+	import { sortLorebooks } from '$lib/lorebook/types';
+	import { lorebookViewPrefs } from '$lib/stores/lorebookViewPrefs.svelte';
 	import {
 		chatConnectionClaim,
 		chatConnectionId,
+		chatLorebookClaim,
 		chatPersonaClaim,
 		chatPersonaEntry,
 		chatPreset,
@@ -51,7 +57,7 @@
 	 *  the import plan's group filter. */
 	const SEARCH_FROM = 8;
 
-	type CategoryId = 'persona' | 'preset' | 'connection' | 'version';
+	type CategoryId = 'persona' | 'preset' | 'connection' | 'version' | 'lorebook';
 
 	interface SetupOption {
 		id: string;
@@ -59,6 +65,11 @@
 		/** Portrait thumbnail and its framing. Personas only; nothing else has art. */
 		thumb?: string | null;
 		focus?: string;
+		/** Something OTHER than this chat already brings it, named: the row wears the word,
+		 *  draws its check from it, and refuses the press unless this chat carries it too,
+		 *  since unchecking a row somebody else holds would change nothing. Multi-select
+		 *  categories only; nothing else has a second source. */
+		held?: string;
 	}
 
 	interface SetupCategory {
@@ -78,8 +89,13 @@
 		 *  claimed. It belongs at level 2, where the reader is deciding about this category. */
 		lost: string | null;
 		options: SetupOption[];
-		/** The option wearing the check. Null = following the app. */
-		picked: string | null;
+		/** What this chat claimed, so the rows can wear their checks. Empty = following the
+		 *  app, or, where the category adds rather than replaces, adding nothing. */
+		picked: Set<string>;
+		/** Several may be claimed at once, so a press toggles one row and leaves the list open.
+		 *  Such a category adds to what the app already gives this chat instead of standing in
+		 *  for it, which is why it has no app row to fall back to. */
+		multi: boolean;
 		/** The app's own answer as its row states it, or null where the category cannot follow
 		 *  the app at all (a chat is pinned to a character version from birth; there is no
 		 *  unpinned state to offer).
@@ -130,6 +146,11 @@
 		return characterLibraryStore.entries.find((e) => e.id === cid && e.type === 'character') ?? null;
 	});
 	let versions = $derived(entry ? characterLibraryStore.versionsFor(entry.id) : []);
+	/** The pin names a version that is gone. Said once: the Version row reports it, and
+	 *  nothing else in this panel may read the card THROUGH a pin like that. */
+	let versionLost = $derived(
+		!!chat?.characterVersionId && !versions.some((v) => v.id === chat.characterVersionId)
+	);
 	// A null pin on a versioned character reads as the active variant, which is exactly
 	// what generation does with it.
 	let pinnedVersionId = $derived(chat?.characterVersionId ?? entry?.activeVersionId ?? null);
@@ -138,7 +159,45 @@
 	// rather than "is the library editing another variant right now".
 	let versionSeed = $derived(entry ? characterLibraryStore.chatVersionSeed(entry.id) : null);
 
+	// ===== Lorebooks =====
+
+	let books = $derived(lorebookStore.books);
+	let claimedBooks = $derived(chatLorebookClaim(chat));
+	let claimedBookIds = $derived(new Set(claimedBooks));
+	/** The card sheet this chat PLAYS, which carries its linked books as well as its traits
+	 *  (architecture/prompt-pipeline.md 3b), or null while the pin names nothing: that read
+	 *  throws by design, and this panel is where a lost pin is repinned. */
+	let playedCard = $derived(
+		entry && !versionLost
+			? characterLibraryStore.dataForVersion(entry, chat?.characterVersionId ?? null)
+			: null
+	);
+	let characterBookIds = $derived(new Set(playedCard?.lorebookIds ?? []));
+	let personaBookIds = $derived(new Set(persona?.data.lorebookIds ?? []));
+	/** Everything this story actually plays with, through the one resolver the send runs, so
+	 *  the row states the same set the prompt carries. */
+	let booksInPlay = $derived(
+		lorebookStore.booksForChat({
+			cards: [...characterBookIds, ...personaBookIds],
+			chat: claimedBooks
+		})
+	);
+
+	/** Who brings a book if this chat had not, in the words of the door that would take it
+	 *  back off again. Undefined where only this chat carries it. */
+	function heldBy(book: { id: string; global?: boolean }): string | undefined {
+		if (book.global) return 'Every chat';
+		if (characterBookIds.has(book.id)) return 'Character';
+		if (personaBookIds.has(book.id)) return 'Persona';
+		return undefined;
+	}
+
 	// ===== The categories =====
+
+	/** A single-claim category's picked set: the one thing it claimed, or nothing. */
+	function only(id: string | null): Set<string> {
+		return new Set(id ? [id] : []);
+	}
 
 	let categories = $derived.by<SetupCategory[]>(() => {
 		const list: SetupCategory[] = [
@@ -160,7 +219,8 @@
 					thumb: imageService.thumbnailUrl(p.identity.imageUrl),
 					focus: portraitFocusStyle(p.identity.portraitFocus)
 				})),
-				picked: personas.some((p) => p.id === claimedPersona) ? claimedPersona : null,
+				picked: only(personas.some((p) => p.id === claimedPersona) ? claimedPersona : null),
+				multi: false,
 				app: { label: 'Default', detail: appPersona?.identity.name?.trim() || 'No persona' },
 				faces: true,
 				pick: pickPersona
@@ -177,7 +237,8 @@
 						? "The preset this chat named is gone. It is running the app's."
 						: null,
 				options: presetService.getAllPresets().map((p) => ({ id: p.id, name: p.name })),
-				picked: livePreset,
+				picked: only(livePreset),
+				multi: false,
 				app: { label: 'Global', detail: appPreset?.name ?? 'No preset' },
 				faces: false,
 				pick: pickPreset
@@ -193,7 +254,8 @@
 						? "The connection this chat named is gone. It is sending on the app's."
 						: null,
 				options: connectionStore.list().map((c) => ({ id: c.id, name: c.name })),
-				picked: liveConnection,
+				picked: only(liveConnection),
+				multi: false,
 				app: { label: 'Global', detail: appConnection?.name ?? 'No connection' },
 				faces: false,
 				pick: pickConnection
@@ -211,15 +273,51 @@
 				// The one claim with no app value to fall back on, so this row says what the
 				// others cannot: the story stops sending until it is repinned, which is the
 				// throw the next send raises (utils/prompt-builder.ts) said before it happens.
-				lost:
-					!!chat?.characterVersionId && !versions.some((v) => v.id === chat.characterVersionId)
-						? 'The version this chat was pinned to is gone. It cannot send until you pick another.'
-						: null,
+				lost: versionLost
+					? 'The version this chat was pinned to is gone. It cannot send until you pick another.'
+					: null,
 				options: versions.map((v) => ({ id: v.id, name: v.name })),
-				picked: pinnedVersionId,
+				picked: only(pinnedVersionId),
+				multi: false,
 				app: null,
 				faces: false,
 				pick: (id) => id && pickVersion(id)
+			});
+		}
+		// Last, and apart from the four above it: this is the one row that ADDS to what the app
+		// hands this story rather than standing in for it, so it trails the claims that answer
+		// "instead of the app's". Hidden on an empty shelf, the rule the Version row follows
+		// too: a drill into a list of nothing.
+		if (books.length > 0) {
+			list.push({
+				id: 'lorebook',
+				label: 'Lorebooks',
+				noun: 'lorebooks',
+				// What the story really plays with, cards and globals included, since that is
+				// what "in force" means on every other row here. One book is named; several are
+				// counted, because a row that listed them would wrap.
+				value:
+					booksInPlay.length === 0
+						? 'No lorebooks'
+						: booksInPlay.length === 1
+							? booksInPlay[0].name.trim() || 'Untitled lorebook'
+							: `${booksInPlay.length} books`,
+				// Only what THIS chat added: the star says the story broke away, and a book its
+				// character carries is what every chat with that character gets.
+				diverged: lorebookStore.resolveLinks(claimedBooks).length > 0,
+				// A dangling id is inert here and swept by nobody, exactly as it is on a card
+				// (architecture/lorebook.md), so there is no lost claim to report.
+				lost: null,
+				options: sortLorebooks(books, lorebookViewPrefs.order).map((book) => ({
+					id: book.id,
+					name: book.name.trim() || 'Untitled lorebook',
+					held: heldBy(book)
+				})),
+				picked: claimedBookIds,
+				multi: true,
+				app: null,
+				faces: false,
+				pick: (id) => id && toggleLorebook(id)
 			});
 		}
 		return list;
@@ -236,9 +334,11 @@
 	let active = $derived(categories.find((c) => c.id === drilled) ?? null);
 	let shown = $derived.by(() => {
 		if (!active) return [];
-		const needle = query.trim().toLowerCase();
+		// The library's own casing rule, not a bare lowercase: the dotted/dotless I family folds
+		// together, so a name found in one list here cannot be missed in the next.
+		const needle = foldForSearch(query.trim());
 		if (!needle) return active.options;
-		return active.options.filter((o) => o.name.toLowerCase().includes(needle));
+		return active.options.filter((o) => foldForSearch(o.name).includes(needle));
 	});
 	let searchable = $derived((active?.options.length ?? 0) >= SEARCH_FROM);
 	let asFaces = $derived(!!active?.faces && active.options.length > PERSONA_GRID_THRESHOLD);
@@ -333,6 +433,19 @@
 			toastStore.failed('change the connection this chat sends on', error);
 		} finally {
 			busy = false;
+		}
+	}
+
+	/** The one pick that neither closes the panel nor takes the list out of the reader's hands:
+	 *  attaching books is a run of presses, and both a close and a busy flag would cost the
+	 *  second one. The toggle itself is computed inside the store's own queue, so two presses
+	 *  landing inside one round trip cannot drop each other. */
+	async function toggleLorebook(bookId: string) {
+		if (!chat) return;
+		try {
+			await chatStore.toggleChatLorebook(chat.id, bookId);
+		} catch (error) {
+			toastStore.failed('change the lorebooks this chat carries', error);
 		}
 	}
 
@@ -444,7 +557,7 @@
 					     not one of the things being searched, so it stands down while a query is
 					     typed rather than sitting unmatched inside a filtered list. -->
 					{#if active.app && !query.trim()}
-						{@const following = active.picked === null}
+						{@const following = active.picked.size === 0}
 						<button
 							type="button"
 							role="menuitem"
@@ -471,7 +584,7 @@
 						{:else if asFaces}
 							<div class="setup-grid">
 								{#each shown as option (option.id)}
-									{@const isPicked = option.id === active.picked}
+									{@const isPicked = active.picked.has(option.id)}
 									<button
 										type="button"
 										role="menuitem"
@@ -494,16 +607,24 @@
 							</div>
 						{:else}
 							{#each shown as option (option.id)}
-								{@const isPicked = option.id === active.picked}
+								{@const isPicked = active.picked.has(option.id)}
+								<!-- A row something else already brings is checked and inert: unchecking it
+								     here would change nothing about the story, and a press that does
+								     nothing is worse than a row that says why. -->
+								{@const heldOnly = !!option.held && !isPicked}
+								<!-- A row that toggles announces itself as one: its check is a state the press
+								     changes, not a pick that answers the panel and dismisses it. -->
 								<button
 									type="button"
-									role="menuitem"
+									role={active.multi ? 'menuitemcheckbox' : 'menuitem'}
+									aria-checked={active.multi ? isPicked || heldOnly : undefined}
 									class="setup-row"
 									class:is-picked={isPicked}
-									disabled={busy}
+									class:is-held={heldOnly}
+									disabled={busy || heldOnly}
 									onclick={() => active?.pick(option.id)}
 								>
-									<span class="setup-check" class:is-visible={isPicked}>
+									<span class="setup-check" class:is-visible={isPicked || heldOnly}>
 										<Icon name="check" class="w-3.5 h-3.5" />
 									</span>
 									{#if active.faces}
@@ -516,6 +637,9 @@
 										</span>
 									{/if}
 									<span class="setup-row-name">{option.name}</span>
+									{#if option.held}
+										<span class="setup-held">{option.held}</span>
+									{/if}
 								</button>
 							{/each}
 						{/if}
@@ -833,6 +957,24 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	/* A row held by something other than this chat: checked, because it really is in the
+	   story, and quiet, because the press belongs to whoever holds it. */
+	.setup-row.is-held {
+		cursor: default;
+		color: var(--color-text-muted);
+	}
+
+	.setup-row.is-held .setup-check {
+		color: var(--color-text-muted);
+	}
+
+	/* Who holds it, in the word for the door that would take it back off. */
+	.setup-held {
+		flex-shrink: 0;
+		font-size: 0.64rem;
+		color: var(--color-text-muted);
 	}
 
 	/* The grid needs room for three faces per row; below that it reads as a worse list.

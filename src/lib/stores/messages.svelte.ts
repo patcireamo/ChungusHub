@@ -10,7 +10,12 @@ import { promptHoldStore } from './promptHold.svelte';
 import type { HoldGate } from '$lib/config/prompt-hold';
 import { joinContinuation } from '$lib/utils/continuation';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
-import { chatPersonaClaim, chatPersonaEntry, chatPresetClaim } from '$lib/utils/chat-setup';
+import {
+	chatLorebookClaim,
+	chatPersonaClaim,
+	chatPersonaEntry,
+	chatPresetClaim
+} from '$lib/utils/chat-setup';
 import { chatCastStore } from './chatCast.svelte';
 import { resolveMacroValues, substitute } from '$lib/macros';
 import { buildLiveMacroContext } from '$lib/utils/live-macro-context';
@@ -1047,7 +1052,8 @@ class MessageStore {
 			characterId: state.chat.characterId,
 			characterVersionId: state.chat.characterVersionId,
 			personaId: chatPersonaClaim(state.chat),
-			presetId: chatPresetClaim(state.chat)
+			presetId: chatPresetClaim(state.chat),
+			lorebookIds: chatLorebookClaim(state.chat)
 		});
 	}
 

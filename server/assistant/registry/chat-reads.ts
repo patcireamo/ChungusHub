@@ -41,6 +41,20 @@ function personaEntry(id: string | null | undefined): RawLibraryEntry | null {
 }
 
 /**
+ * One claim off a chat's own setup (`chat.featureState`, whose normalizer lives in
+ * src/lib/types/chat.ts and cannot be imported here). Undefined for a chat that claims
+ * nothing and for a blob that will not parse, which is what "follows the app" reads as.
+ */
+function chatClaim(chat: RawChat, key: 'persona' | 'lorebooks'): unknown {
+	if (!chat.featureState) return undefined;
+	try {
+		return (JSON.parse(chat.featureState) as Record<string, unknown>)[key];
+	} catch {
+		return undefined;
+	}
+}
+
+/**
  * The persona a chat plays as: its own claim while that persona still exists, else the one
  * the app starts new chats as. The client resolves this in `src/lib/utils/chat-setup.ts`,
  * which the server cannot import, so the rule is spelled again here rather than reported
@@ -48,23 +62,19 @@ function personaEntry(id: string | null | undefined): RawLibraryEntry | null {
  * somebody else attributes its new turns to them.
  */
 function chatPersona(chat: RawChat): RawLibraryEntry | null {
-	let claimed: unknown = null;
-	try {
-		claimed = chat.featureState ? (JSON.parse(chat.featureState) as { persona?: unknown }).persona : null;
-	} catch {
-		claimed = null;
-	}
+	const claimed = chatClaim(chat, 'persona');
 	const own = typeof claimed === 'string' && claimed ? claimed : null;
 	return personaEntry(own) ?? personaEntry(serverDb.getSetting('activePersonaId'));
 }
 
 /**
- * Books active for a chat: every book switched into every chat, plus those linked by its
- * character and the persona it plays as.
+ * Books active for a chat: every book switched into every chat, then those linked by its
+ * character and the persona it plays as, then the ones the chat itself attached.
  *
  * The second spelling of `resolveLorebookLinks` (src/lib/lorebook/types.ts), which this side
- * cannot import. Leave the global half out and the assistant reports a scene missing the very
- * books that are in ALL of them, which is the half no card names and nothing else would reveal.
+ * cannot import. Both halves that no card names have to be here: leave the globals out and the
+ * assistant reports a scene missing the books that are in ALL of them, leave the chat's own out
+ * and it misses the lore this one story was given, and neither absence shows anywhere else.
  */
 function chatLorebooks(chat: RawChat): RawLorebookBook[] {
 	const all = serverDb.getAllLorebooks() as RawLorebookBook[];
@@ -76,6 +86,8 @@ function chatLorebooks(chat: RawChat): RawLorebookBook[] {
 		for (const id of c?.data?.lorebookIds ?? []) ids.add(id);
 	}
 	for (const id of chatPersona(chat)?.data?.lorebookIds ?? []) ids.add(id);
+	const own = chatClaim(chat, 'lorebooks');
+	if (Array.isArray(own)) for (const id of own) if (typeof id === 'string') ids.add(id);
 	for (const id of ids) {
 		if (seen.has(id)) continue;
 		const book = all.find((b) => b.id === id);

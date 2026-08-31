@@ -3,7 +3,9 @@
  *
  * A lorebook (SillyTavern: "World Info" / "character_book") is a first-class, standalone
  * record: a named collection of entries injected into the prompt when their keywords appear.
- * Characters and personas LINK to lorebooks by id (see `LibraryEntryData.lorebookIds`).
+ * Characters and personas LINK to lorebooks by id (see `LibraryEntryData.lorebookIds`), a chat
+ * can attach its own on top of those (`ChatFeatureState.lorebooks`), and a book can be switched
+ * into every chat at once (`Lorebook.global`). All three meet in `resolveLorebookLinks`.
  *
  * Entries use SillyTavern's native World Info field names VERBATIM (`key`, `keysecondary`,
  * `selectiveLogic`, `constant`, `disable`, `order`, `probability`, `caseSensitive`,
@@ -790,27 +792,49 @@ export function resolveLinkedBooks(
 }
 
 /**
- * The books a chat plays with: every book switched into every chat, then the ones these ids
- * link, in link order, deduped and dropping ids that no longer exist. The ONE implementation:
- * the meters resolve through the store's cached books and generation resolves through a fresh
- * server read, but both must produce the same list in the same order or the meter prices a
- * different prompt than the one sent (architecture/lorebook.md coupling #1).
- *
- * **A `global` book comes first and needs no link**: it is the world the story sits in, and
- * what a card links is the specific on top of it. All of them lead rather than trail, so a
- * card's own link list can never reshuffle the baseline.
- *
- * They are ordered by when they were made and never by the array they arrived in. The store's
- * cached array and the server's fresh read are the same query at two moments, so an edit that
- * moves a book in one and not the other would have the meter and the send lay lore down in a
- * different order.
+ * Every way a chat names a book, one layer per source. Both keys are required rather than
+ * optional: a surface that assembles a prompt has to answer both questions, and a key it could
+ * simply leave out is a layer it can drop in silence.
  */
-export function resolveLorebookLinks(books: Lorebook[], ids: string[] | undefined | null): Lorebook[] {
-	const globals = books
+export interface LorebookLinks {
+	/** What the cards this chat plays link: the character's list, then the persona's. */
+	cards: string[] | null | undefined;
+	/** What the chat itself attached (`ChatFeatureState.lorebooks`), from the setup chip. */
+	chat: string[] | null | undefined;
+}
+
+/**
+ * The books a chat plays with, widest layer first: every book switched into every chat, then
+ * the ones its cards link, then the ones the chat attached for itself, deduped across all
+ * three and dropping ids that no longer exist. The ONE implementation: the meters resolve
+ * through the store's cached books and generation resolves through a fresh server read, but
+ * both must produce the same list in the same order or the meter prices a different prompt
+ * than the one sent (architecture/lorebook.md coupling #1).
+ *
+ * **A `global` book comes first and needs no link**: it is the world every story sits in, what
+ * a card links is the specific on top of it, and what the chat named is the specific on top of
+ * that. Each layer trails the one it narrows, so nothing a chat or a card names can reshuffle
+ * the baseline under it.
+ *
+ * The globals are ordered by when they were made and never by the array they arrived in. The
+ * store's cached array and the server's fresh read are the same query at two moments, so an
+ * edit that moves a book in one and not the other would have the meter and the send lay lore
+ * down in a different order.
+ */
+export function resolveLorebookLinks(books: Lorebook[], links: LorebookLinks): Lorebook[] {
+	const out = books
 		.filter((b) => b.global)
 		.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-	const seen = new Set(globals.map((b) => b.id));
-	return [...globals, ...resolveLinkedBooks(books, ids).filter((b) => !seen.has(b.id))];
+	const seen = new Set(out.map((b) => b.id));
+	for (const book of [
+		...resolveLinkedBooks(books, links.cards),
+		...resolveLinkedBooks(books, links.chat)
+	]) {
+		if (seen.has(book.id)) continue;
+		seen.add(book.id);
+		out.push(book);
+	}
+	return out;
 }
 
 /** A fresh book inherits every activation setting from the global defaults. */

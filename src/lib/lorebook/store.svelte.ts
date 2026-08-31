@@ -10,7 +10,7 @@ import { db } from '$lib/services/database';
 import { imageService } from '$lib/services/imageService';
 import { DebouncedWriter } from '$lib/utils/debounced-write';
 import type { PortraitFocus } from '$lib/utils/portrait-focus';
-import type { Lorebook, LorebookEntry } from './types';
+import type { Lorebook, LorebookEntry, LorebookLinks } from './types';
 import {
 	createEmptyLorebook,
 	createEmptyLorebookEntry,
@@ -70,12 +70,13 @@ class LorebookStore {
 	}
 
 	/**
-	 * What a chat plays with: the books switched into every chat, then what these ids link.
-	 * The live token meters and the real generation path (which resolves the same way, over a
-	 * fresh server read) can never diverge, because both go through `resolveLorebookLinks`.
+	 * What a chat plays with: the books switched into every chat, then what its cards link,
+	 * then what the chat attached for itself. The live token meters and the real generation
+	 * path (which resolves the same way, over a fresh server read) can never diverge, because
+	 * both go through `resolveLorebookLinks`.
 	 */
-	booksForChat(ids: string[] | undefined | null): Lorebook[] {
-		return resolveLorebookLinks(this._books, ids);
+	booksForChat(links: LorebookLinks): Lorebook[] {
+		return resolveLorebookLinks(this._books, links);
 	}
 
 	/**

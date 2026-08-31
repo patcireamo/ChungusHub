@@ -1057,12 +1057,29 @@ describe('per-chat setup (architecture/ui-shell-settings.md)', () => {
 	// turns to whoever the app starts chats as.
 	test("the assistant's chat reads resolve the chat's own persona first", () => {
 		const source = read('server', 'assistant', 'registry', 'chat-reads.ts');
+		// Both claim readers go through the one parse of the chat's own setup blob.
+		expect(block(source, /function chatClaim\(chat: RawChat[\s\S]*?\n\}/, 'chatClaim')).toContain(
+			'chat.featureState'
+		);
 		const resolver = block(source, /function chatPersona\(chat: RawChat\)[\s\S]*?\n\}/, 'chatPersona');
-		expect(resolver).toContain('chat.featureState');
-		expect(resolver).toContain(".persona");
+		expect(resolver).toContain("chatClaim(chat, 'persona')");
 		expect(resolver).toContain("serverDb.getSetting('activePersonaId')");
 		// Every read of the app pointer in this file goes through that fallback.
 		expect(scan(source, /(serverDb\.getSetting\('activePersonaId'\))/g, 'app persona reads')).toHaveLength(1);
+	});
+
+	// The other half of the same problem: `resolveLorebookLinks` answers three layers and this
+	// side has to spell all three. Two of them reach a prompt through no card at all, so an
+	// absence here reports a scene missing books nothing else on the assistant's side names.
+	test("the assistant's chat reads carry every layer of a chat's lorebooks", () => {
+		const resolver = block(
+			read('server', 'assistant', 'registry', 'chat-reads.ts'),
+			/function chatLorebooks\(chat: RawChat\)[\s\S]*?\n\}/,
+			'chatLorebooks'
+		);
+		expect(resolver, 'the books switched into every chat').toContain('b.global');
+		expect(resolver, "the cards' own links").toContain('lorebookIds');
+		expect(resolver, "the chat's own books").toContain("chatClaim(chat, 'lorebooks')");
 	});
 });
 

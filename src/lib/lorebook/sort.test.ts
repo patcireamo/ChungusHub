@@ -130,9 +130,12 @@ describe('resolveLorebookLinks', () => {
 	const shelf = (...books: Partial<Lorebook>[]): Lorebook[] =>
 		books.map((b, i) => ({ id: `b${i}`, name: `b${i}`, createdAt: i, ...b }) as Lorebook);
 
+	/** A chat that named nothing of its own, which is every chat until somebody says otherwise. */
+	const cardsOnly = (cards: string[] | undefined) => ({ cards, chat: [] });
+
 	test('links resolve in link order, deduped, missing ids dropped', () => {
 		const books = shelf({ id: 'a' }, { id: 'b' }, { id: 'c' });
-		const out = resolveLorebookLinks(books, ['c', 'a', 'c', 'gone']);
+		const out = resolveLorebookLinks(books, cardsOnly(['c', 'a', 'c', 'gone']));
 		expect(out.map((b) => b.id)).toEqual(['c', 'a']);
 	});
 
@@ -147,17 +150,52 @@ describe('resolveLorebookLinks', () => {
 	// The whole point of the switch: no card names it, so nothing in the id list can reach it.
 	test('a global book joins a chat that links nothing at all', () => {
 		const books = shelf({ id: 'world', global: true }, { id: 'plain' });
-		expect(resolveLorebookLinks(books, []).map((b) => b.id)).toEqual(['world']);
-		expect(resolveLorebookLinks(books, undefined).map((b) => b.id)).toEqual(['world']);
+		expect(resolveLorebookLinks(books, cardsOnly([])).map((b) => b.id)).toEqual(['world']);
+		expect(resolveLorebookLinks(books, { cards: undefined, chat: null }).map((b) => b.id)).toEqual([
+			'world'
+		]);
 	});
 
 	test('globals lead, and a card cannot reshuffle them by linking one', () => {
 		const books = shelf({ id: 'w1', global: true }, { id: 'card' }, { id: 'w2', global: true });
-		expect(resolveLorebookLinks(books, ['card', 'w2']).map((b) => b.id)).toEqual([
+		expect(resolveLorebookLinks(books, cardsOnly(['card', 'w2'])).map((b) => b.id)).toEqual([
 			'w1',
 			'w2',
 			'card'
 		]);
+	});
+
+	// The three layers are widest first, so neither the cards nor the chat can move what the
+	// layer above them laid down.
+	test("a chat's own books come after the globals and the cards", () => {
+		const books = shelf({ id: 'world', global: true }, { id: 'card' }, { id: 'mine' });
+		expect(
+			resolveLorebookLinks(books, { cards: ['card'], chat: ['mine'] }).map((b) => b.id)
+		).toEqual(['world', 'card', 'mine']);
+	});
+
+	// The whole point of the chat layer: no card names it, and it still reaches the prompt.
+	test('a chat can carry a book nothing else brings', () => {
+		const books = shelf({ id: 'plain' }, { id: 'mine' });
+		expect(resolveLorebookLinks(books, { cards: [], chat: ['mine'] }).map((b) => b.id)).toEqual([
+			'mine'
+		]);
+	});
+
+	// Attaching a book the card already links must not lay its lore down twice.
+	test('a book both a card and the chat name appears once, in the card place', () => {
+		const books = shelf({ id: 'card' }, { id: 'other' });
+		expect(
+			resolveLorebookLinks(books, { cards: ['card'], chat: ['other', 'card'] }).map((b) => b.id)
+		).toEqual(['card', 'other']);
+	});
+
+	// Same rule the cards live by: nothing sweeps the id, so the resolver drops it.
+	test("a chat's link to a deleted book is dropped", () => {
+		const books = shelf({ id: 'plain' });
+		expect(
+			resolveLorebookLinks(books, { cards: [], chat: ['gone', 'plain'] }).map((b) => b.id)
+		).toEqual(['plain']);
 	});
 
 	// The two callers read the same query at two different moments, so the array order is not
@@ -165,15 +203,15 @@ describe('resolveLorebookLinks', () => {
 	test('globals come in creation order, whatever order the array is in', () => {
 		const first = { id: 'first', global: true, createdAt: 100 };
 		const second = { id: 'second', global: true, createdAt: 200 };
-		const forwards = resolveLorebookLinks(shelf(first, second), []);
-		const backwards = resolveLorebookLinks(shelf(second, first), []);
+		const forwards = resolveLorebookLinks(shelf(first, second), cardsOnly([]));
+		const backwards = resolveLorebookLinks(shelf(second, first), cardsOnly([]));
 		expect(forwards.map((b) => b.id)).toEqual(['first', 'second']);
 		expect(backwards.map((b) => b.id)).toEqual(['first', 'second']);
 	});
 
 	test('a global book a card also links appears once', () => {
 		const books = shelf({ id: 'world', global: true }, { id: 'card' });
-		expect(resolveLorebookLinks(books, ['world', 'card']).map((b) => b.id)).toEqual([
+		expect(resolveLorebookLinks(books, cardsOnly(['world', 'card'])).map((b) => b.id)).toEqual([
 			'world',
 			'card'
 		]);
@@ -181,7 +219,7 @@ describe('resolveLorebookLinks', () => {
 
 	test('never reorders the array it was handed', () => {
 		const books = shelf({ id: 'late', global: true, createdAt: 900 }, { id: 'early', global: true, createdAt: 1 });
-		resolveLorebookLinks(books, []);
+		resolveLorebookLinks(books, cardsOnly([]));
 		expect(books.map((b) => b.id)).toEqual(['late', 'early']);
 	});
 });

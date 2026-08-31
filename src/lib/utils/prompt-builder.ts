@@ -21,6 +21,7 @@ import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 import {
+	chatLorebookClaim,
 	chatPersonaClaim,
 	chatPreset,
 	resolvePersonaId,
@@ -113,17 +114,16 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 		: null;
 
 	// Active lorebooks = every book switched into every chat, then those linked by the bound
-	// character and the active persona, resolved IN LINK ORDER (deduped). The two reactive
-	// token meters run the same resolver over the store's books (lorebookStore.booksForChat),
-	// so the meter can never render a different block than is sent. Generation reads the books
-	// fresh instead of trusting the store.
-	const linkedBookIds = [
-		...(character?.data.lorebookIds ?? []),
-		...(personaEntry?.data.lorebookIds ?? [])
-	];
+	// character and the active persona, then the ones this chat attached for itself, resolved
+	// IN LINK ORDER (deduped). The two reactive token meters run the same resolver over the
+	// store's books (lorebookStore.booksForChat), so the meter can never render a different
+	// block than is sent. Generation reads the books fresh instead of trusting the store.
 	// Always asked, even with nothing linked: a book switched into every chat reaches this
 	// prompt through no id at all, so a short-circuit on an empty link list would drop it.
-	const lorebooks: Lorebook[] = resolveLorebookLinks(await db.getAllLorebooks(), linkedBookIds);
+	const lorebooks: Lorebook[] = resolveLorebookLinks(await db.getAllLorebooks(), {
+		cards: [...(character?.data.lorebookIds ?? []), ...(personaEntry?.data.lorebookIds ?? [])],
+		chat: chatLorebookClaim(chat)
+	});
 
 	const recall: PromptRecall = chatId
 		? await memoryStore.getRecall(chatId, chatMessages)

@@ -160,7 +160,8 @@ describe('a chat born with a claim', () => {
 			scene: null,
 			connection: 'conn-1',
 			persona: 'persona-1',
-			preset: 'preset-1'
+			preset: 'preset-1',
+			lorebooks: ['book-1', 'book-2']
 		});
 		const chat = serverDb.getChat(makeChat(written)) as { featureState: string | null };
 		expect(chat.featureState).toBe(written);

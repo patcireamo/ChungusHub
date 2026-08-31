@@ -23,7 +23,13 @@
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 	import { viewport } from '$lib/stores/viewport.svelte';
 	import { assemblePrompt } from '$lib/utils/prompt-assembly';
-	import { chatPersonaEntry, chatPreset, resolvePromptTarget, toPromptCharacter } from '$lib/utils/chat-setup';
+	import {
+		chatLorebookClaim,
+		chatPersonaEntry,
+		chatPreset,
+		resolvePromptTarget,
+		toPromptCharacter
+	} from '$lib/utils/chat-setup';
 	import { relativeClock } from '$lib/utils/time-format.svelte';
 	import { llmService } from '$lib/services/llm/provider';
 	import { imageService, imageRejectionReason, isImageFile } from '$lib/services/imageService';
@@ -260,10 +266,13 @@
 								}
 							]
 						: [],
-					lorebooks: lorebookStore.booksForChat([
-						...(activeCharacterData?.lorebookIds ?? []),
-						...(chatPersona?.data.lorebookIds ?? [])
-					]),
+					lorebooks: lorebookStore.booksForChat({
+						cards: [
+							...(activeCharacterData?.lorebookIds ?? []),
+							...(chatPersona?.data.lorebookIds ?? [])
+						],
+						chat: chatLorebookClaim(chatStore.activeChat)
+					}),
 					lorebookSettings: lorebookSettingsStore.settings,
 					controls: currentPreset.controls ?? [],
 					customFields: presetControlsStore.valuesFor(currentPreset.id),

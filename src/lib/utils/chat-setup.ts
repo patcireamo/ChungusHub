@@ -1,10 +1,12 @@
 /**
  * What a chat is running on: the persona it plays as, the preset its prompt is built from,
- * and the connection that prompt is priced, shaped and sent in.
+ * the connection that prompt is priced, shaped and sent in, and the lorebooks it attached.
  *
  * Every surface that assembles or renders this story asks here, so one chat has one answer.
  * The rule is the whole design and it is one line: the chat's own claim when the thing it
  * names still exists, otherwise the app's. No layer between the two, and no third state.
+ * The lorebooks are the one entry here that does not replace anything: they are a layer the
+ * link resolver adds on top of what the cards and the shelf already bring.
  *
  * The chat is handed in rather than reached for: the generation path imports this module, and
  * a reach into `chatStore` would close the import cycle documented in live-macro-context.ts.
@@ -83,6 +85,17 @@ export function chatPersonaClaim(chat: Chat | null): string | null {
  *  wherever the difference between "follows the app" and "gone" has to be said. */
 export function chatPresetClaim(chat: Chat | null): string | null {
 	return chat ? normalizeChatFeatureState(chat.featureState).preset : null;
+}
+
+/**
+ * The lorebooks a chat attached for itself, empty when it attached none.
+ *
+ * The one claim with no resolved twin beside it, because it replaces nothing: it is handed to
+ * `resolveLorebookLinks` as a layer on top of the globals and the cards, and that resolver is
+ * what drops an id whose book is gone (architecture/lorebook.md coupling 1).
+ */
+export function chatLorebookClaim(chat: Chat | null): string[] {
+	return chat ? normalizeChatFeatureState(chat.featureState).lorebooks : [];
 }
 
 /** The preset a chat claimed for itself, or null when it follows the app. Same liveness rule

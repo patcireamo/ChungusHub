@@ -456,6 +456,43 @@ describe('the version a new chat starts on', () => {
 	});
 });
 
+describe('the lorebooks a chat attaches for itself', () => {
+	const plainChat = async (): Promise<string> => chatStore.createChat({ characterId: await character() });
+
+	test('a chat is born attaching nothing, and attaching one claims only that chat', async () => {
+		const chatId = await plainChat();
+		const other = await plainChat();
+		expect(claims(chatId).lorebooks).toEqual([]);
+
+		await chatStore.toggleChatLorebook(chatId, 'book-1');
+
+		expect(claims(chatId).lorebooks).toEqual(['book-1']);
+		expect(claims(other).lorebooks).toEqual([]);
+		// The press decided one thing: what this story plays as is still the app's business.
+		expect(claims(chatId).persona).toBeNull();
+	});
+
+	test('pressing the same row again takes the book back off', async () => {
+		const chatId = await plainChat();
+		await chatStore.toggleChatLorebook(chatId, 'book-1');
+		await chatStore.toggleChatLorebook(chatId, 'book-2');
+		await chatStore.toggleChatLorebook(chatId, 'book-1');
+		expect(claims(chatId).lorebooks).toEqual(['book-2']);
+	});
+
+	// Why the toggle lives in the store rather than in the panel: computed from the caller's
+	// own copy of the list, a press would drop whatever the press before it added, and a run
+	// of presses inside one round trip is what attaching several books actually is.
+	test('two presses landing inside one round trip both take', async () => {
+		const chatId = await plainChat();
+		await Promise.all([
+			chatStore.toggleChatLorebook(chatId, 'book-1'),
+			chatStore.toggleChatLorebook(chatId, 'book-2')
+		]);
+		expect(claims(chatId).lorebooks).toEqual(['book-1', 'book-2']);
+	});
+});
+
 describe('a claim outlives the thing it names', () => {
 	async function claimedChat(): Promise<string> {
 		const entryId = await character({

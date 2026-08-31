@@ -19,6 +19,7 @@
 	import PresetManager from '$lib/components/presets/PresetManager.svelte';
 	import ChatOverrideNotice from '$lib/components/ui/ChatOverrideNotice.svelte';
 	import {
+		chatLorebookClaim,
 		chatPersonaEntry,
 		chatPreset,
 		resolvePromptTarget,
@@ -140,10 +141,10 @@
 					}
 				]
 			: [],
-		lorebooks: lorebookStore.booksForChat([
-			...(activeCharacterData?.lorebookIds ?? []),
-			...(chatPersona?.data.lorebookIds ?? [])
-		]),
+		lorebooks: lorebookStore.booksForChat({
+			cards: [...(activeCharacterData?.lorebookIds ?? []), ...(chatPersona?.data.lorebookIds ?? [])],
+			chat: chatLorebookClaim(chatStore.activeChat)
+		}),
 		lorebookSettings: lorebookSettingsStore.settings,
 		controls: currentPreset?.controls ?? [],
 		customFields: presetControlsStore.valuesFor(currentPreset?.id ?? null),

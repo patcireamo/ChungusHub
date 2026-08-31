@@ -9,7 +9,7 @@ import {
 import { db } from '$lib/services/database';
 import { llmStatus, stopGeneration } from '$lib/services/transport';
 import { findActivePath } from '$lib/utils/message-tree';
-import { chatPersonaClaim, chatPresetClaim } from '$lib/utils/chat-setup';
+import { chatLorebookClaim, chatPersonaClaim, chatPresetClaim } from '$lib/utils/chat-setup';
 import { formatDate } from '$lib/utils/date';
 import { convertSillyTavernChat } from '$lib/services/sillyTavernChatImport';
 import { toastStore } from '$lib/stores/toast.svelte';
@@ -491,7 +491,8 @@ class ChatStore {
 				characterId: chat.characterId,
 				characterVersionId: chat.characterVersionId,
 				personaId: chatPersonaClaim(chat),
-				presetId: chatPresetClaim(chat)
+				presetId: chatPresetClaim(chat),
+				lorebookIds: chatLorebookClaim(chat)
 			});
 		} catch (e) {
 			console.error('[memory] refresh failed:', e);
@@ -892,6 +893,20 @@ class ChatStore {
 			let history = current.steeringHistory;
 			for (const text of texts) history = pushSteeringHistoryEntry(history, text);
 			await this.writeFeatureState(chatId, { ...current, steeringHistory: history });
+		});
+	}
+
+	/** Attach one lorebook to this chat, or take it off again. Read-modify-write inside the
+	 *  queue, exactly like the steering history above: a toggle computed from the caller's own
+	 *  copy of the list would drop the previous one whenever two presses land inside a single
+	 *  round trip, which on a touch screen is most of them. */
+	async toggleChatLorebook(chatId: string, bookId: string): Promise<void> {
+		return this.queueFeatureStateWrite(chatId, async () => {
+			const current = await this.freshFeatureState(chatId);
+			const lorebooks = current.lorebooks.includes(bookId)
+				? current.lorebooks.filter((id) => id !== bookId)
+				: [...current.lorebooks, bookId];
+			await this.writeFeatureState(chatId, { ...current, lorebooks });
 		});
 	}
 

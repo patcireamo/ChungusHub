@@ -223,6 +223,67 @@ describe('duplicating a chat', () => {
 	});
 });
 
+describe("the lorebooks the assistant reports for a chat", () => {
+	function book(name: string, extra: Record<string, unknown> = {}): string {
+		clock += 1000;
+		const id = crypto.randomUUID();
+		serverDb.insertLorebook({
+			id,
+			name,
+			scanDepth: null,
+			recursiveScanning: null,
+			maxRecursionSteps: null,
+			caseSensitive: null,
+			matchWholeWords: null,
+			entries: [],
+			extensions: {},
+			createdAt: clock,
+			updatedAt: clock,
+			...extra
+		});
+		return id;
+	}
+
+	// The client's resolveLorebookLinks answers three layers and this side spells them again.
+	// Two of them reach the prompt through no card at all, so an absence here would have the
+	// assistant describe a scene the story is not playing.
+	test('it names every layer: the globals, the cards, and the chat itself', () => {
+		const everywhere = book('World rules', { global: true });
+		const carded = book("Aria's history");
+		const attached = book('This story alone');
+		const unrelated = book('Nobody carries me');
+		const character = entry('character', 'Aria', { data: { traits: {}, lorebookIds: [carded] } });
+		const chatId = claimedChat({
+			characterId: character.id,
+			featureState: JSON.stringify({ lorebooks: [attached] })
+		});
+		const named = run(readChatContext, { chatId }).lorebooks.map((b: any) => b.id);
+		expect(named).toEqual([everywhere, carded, attached]);
+		expect(named).not.toContain(unrelated);
+	});
+
+	test('a book two layers name is reported once', () => {
+		const shared = book('Carried twice');
+		const character = entry('character', 'Mira', { data: { traits: {}, lorebookIds: [shared] } });
+		const chatId = claimedChat({
+			characterId: character.id,
+			featureState: JSON.stringify({ lorebooks: [shared] })
+		});
+		expect(run(readChatContext, { chatId }).lorebooks.filter((b: any) => b.id === shared)).toHaveLength(1);
+	});
+
+	// Nothing sweeps a chat's ids when a book goes, exactly as nothing sweeps a card's.
+	test('a chat attaching a book that has since been deleted reports what is left', () => {
+		const kept = book('Still here');
+		const chatId = claimedChat({
+			featureState: JSON.stringify({ lorebooks: ['gone-for-good', kept] })
+		});
+		const named = run(readChatContext, { chatId }).lorebooks.map((b: any) => b.id);
+		expect(named).toContain(kept);
+		expect(named).not.toContain('gone-for-good');
+	});
+});
+
 describe('a claim outlives the row it names', () => {
 	test('deleting the claimed persona leaves the id on the chat and plays as the app one', () => {
 		// Never swept: restoring the persona restores the claim. The read has to fall back on

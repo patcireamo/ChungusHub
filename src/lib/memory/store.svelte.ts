@@ -73,6 +73,10 @@ export interface ChatCtx {
 	 *  so reading the app's here would let the engine run for a chat whose own preset never
 	 *  injects recall. Null is "follow the app". */
 	presetId: string | null;
+	/** The lorebooks this chat attached for itself, travelling for the same reason as the
+	 *  three above. They are a layer on top of what the cards link, so an empty list means
+	 *  the chat adds nothing, never that it has no lore. */
+	lorebookIds: string[];
 }
 
 export type MemoryStatus = 'idle' | 'processing' | 'building' | 'rebuilding' | 'error';
@@ -440,10 +444,10 @@ class MemoryStore {
 		// One scan, through the same resolver as the prompt and the meters. No budget here: a
 		// memory template is its own request, priced against its own engine connection.
 		const lore = resolveLorebooks({
-			books: lorebookStore.booksForChat([
-				...(data?.lorebookIds ?? []),
-				...(persona?.data.lorebookIds ?? [])
-			]),
+			books: lorebookStore.booksForChat({
+				cards: [...(data?.lorebookIds ?? []), ...(persona?.data.lorebookIds ?? [])],
+				chat: ctx.lorebookIds
+			}),
 			messages: chatMessages.map((m) => m.content),
 			fields: lorebookScanFields(base.resolvedCharacters ?? [], base.resolvedPersona),
 			history: lorebookHistory(chatMessages),
