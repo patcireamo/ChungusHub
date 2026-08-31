@@ -26,7 +26,11 @@ const SETTINGS_KEY = 'lorebookSort';
 export const LOREBOOK_SORT_OPTIONS: { id: LorebookSortOrder; label: string }[] = [
 	{ id: 'a-z', label: 'A → Z' },
 	{ id: 'z-a', label: 'Z → A' },
-	{ id: 'updated', label: 'Recently edited' }
+	{ id: 'newest', label: 'Newest' },
+	{ id: 'oldest', label: 'Oldest' },
+	{ id: 'updated', label: 'Recently edited' },
+	{ id: 'most-entries', label: 'Most entries' },
+	{ id: 'fewest-entries', label: 'Fewest entries' }
 ];
 
 const VIEW_MODES: ViewMode[] = ['grid', 'list', 'gallery'];

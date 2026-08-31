@@ -27,9 +27,9 @@ import {
 	sortLorebooks
 } from './types';
 
-/** Only the two fields the sort reads; `sortLorebooks` is typed to accept exactly this much. */
-function book(name: string, createdAt = 0) {
-	return { name, createdAt };
+/** Only the three fields the sort reads; `sortLorebooks` is typed to accept exactly this much. */
+function book(name: string, createdAt = 0, entries = 0) {
+	return { name, createdAt, entries: new Array(entries).fill(null) };
 }
 
 const names = (books: { name: string }[]) => books.map((b) => b.name);
@@ -84,9 +84,32 @@ describe('sortLorebooks', () => {
 		expect(names(sortLorebooks(shelf, 'updated'))).toEqual(['zebra', 'Apple', 'mango']);
 	});
 
+	// 'newest'/'oldest' read the creation stamp, which is what makes them a different question
+	// from 'updated': a book made last year and edited this morning is not a new book.
+	test('newest and oldest read when the book was made', () => {
+		const shelf = [book('mango', 200), book('zebra', 300), book('Apple', 100)];
+		expect(names(sortLorebooks(shelf, 'newest'))).toEqual(['zebra', 'mango', 'Apple']);
+		expect(names(sortLorebooks(shelf, 'oldest'))).toEqual(['Apple', 'mango', 'zebra']);
+	});
+
+	test('the entry counts order by how much each book holds', () => {
+		const shelf = [book('mango', 0, 3), book('zebra', 0, 12), book('Apple', 0, 0)];
+		expect(names(sortLorebooks(shelf, 'most-entries'))).toEqual(['zebra', 'mango', 'Apple']);
+		expect(names(sortLorebooks(shelf, 'fewest-entries'))).toEqual(['Apple', 'mango', 'zebra']);
+	});
+
+	// The counting orders are where the tie-break earns its place: a shelf nobody has written in
+	// yet is one long tie, and only a key that never moves keeps those rows still.
+	test('books holding the same number fall back to newest-created first', () => {
+		const shelf = [book('a', 100, 2), book('b', 300, 2), book('c', 200, 2)];
+		expect(sortLorebooks(shelf, 'most-entries').map((b) => b.createdAt)).toEqual([300, 200, 100]);
+		expect(sortLorebooks(shelf, 'fewest-entries').map((b) => b.createdAt)).toEqual([300, 200, 100]);
+	});
+
 	test('never reorders the input array', () => {
 		const shelf = [book('zebra'), book('Apple'), book('mango')];
-		for (const order of ['a-z', 'z-a', 'updated'] as const) {
+		const orders = ['a-z', 'z-a', 'newest', 'oldest', 'updated', 'most-entries', 'fewest-entries'] as const;
+		for (const order of orders) {
 			const out = sortLorebooks(shelf, order);
 			expect(out).not.toBe(shelf);
 			expect(names(shelf)).toEqual(['zebra', 'Apple', 'mango']);

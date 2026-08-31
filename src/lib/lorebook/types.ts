@@ -906,7 +906,14 @@ export function sortEntries<T extends SortableEntry>(
 }
 
 /** How a list of books orders itself on screen. Display only: no stored order moves. */
-export type LorebookSortOrder = 'updated' | 'a-z' | 'z-a';
+export type LorebookSortOrder =
+	| 'a-z'
+	| 'z-a'
+	| 'newest'
+	| 'oldest'
+	| 'updated'
+	| 'most-entries'
+	| 'fewest-entries';
 
 /**
  * Return a new array of books in the chosen display order.
@@ -915,33 +922,42 @@ export type LorebookSortOrder = 'updated' | 'a-z' | 'z-a';
  * copies. The name orders put unnamed books last in BOTH directions, because a book with no
  * name is not an "A" and Z → A would otherwise bury it twice.
  *
- * Books sharing a name break the tie on `createdAt`, newest first, and deliberately NOT on
- * `updatedAt`. Nothing dedupes names on import, so a card or a folder brought in twice leaves
+ * **Every order ends on the same tie-break, `createdAt` newest first, and deliberately NOT on
+ * `updatedAt`.** Nothing dedupes names on import, so a card or a folder brought in twice leaves
  * two rows that read identically, often down to the entry count. A last-edited tie-break makes
  * that pair swap places the moment either one is touched, with nothing on screen admitting the
  * swap, so the row you clicked yesterday opens a different book today. `createdAt` never moves
  * after the insert, so the pair's order is fixed for good; newest first because a duplicate
- * name is made BY the re-import, and the fresh copy is the one being hunted for.
+ * name is made BY the re-import, and the fresh copy is the one being hunted for. The counting
+ * orders need it most: a shelf where nothing has been written yet is one long tie.
  *
  * Never applied to `lorebookStore.books` itself: link resolution reads that order to decide
  * what reaches the prompt first, and a display preference must not move a prompt.
  */
-export function sortLorebooks<T extends Pick<Lorebook, 'name' | 'createdAt'>>(
-	books: T[],
-	order: LorebookSortOrder
-): T[] {
+export function sortLorebooks<
+	T extends { name: string; createdAt: number; entries: readonly unknown[] }
+>(books: T[], order: LorebookSortOrder): T[] {
 	if (order === 'updated') return [...books];
-	const sign = order === 'a-z' ? 1 : -1;
-	return [...books].sort((a, b) => {
-		const an = a.name.trim();
-		const bn = b.name.trim();
-		if (!an || !bn) {
-			if (!an && !bn) return b.createdAt - a.createdAt;
-			return an ? -1 : 1;
-		}
-		const cmp = an.localeCompare(bn, undefined, { sensitivity: 'base', numeric: true });
-		return cmp !== 0 ? cmp * sign : b.createdAt - a.createdAt;
-	});
+	const byAge = (a: T, b: T) => b.createdAt - a.createdAt;
+
+	if (order === 'a-z' || order === 'z-a') {
+		const sign = order === 'a-z' ? 1 : -1;
+		return [...books].sort((a, b) => {
+			const an = a.name.trim();
+			const bn = b.name.trim();
+			if (!an || !bn) {
+				if (!an && !bn) return byAge(a, b);
+				return an ? -1 : 1;
+			}
+			const cmp = an.localeCompare(bn, undefined, { sensitivity: 'base', numeric: true });
+			return cmp !== 0 ? cmp * sign : byAge(a, b);
+		});
+	}
+
+	const dated = order === 'newest' || order === 'oldest';
+	const key = (book: T) => (dated ? book.createdAt : book.entries.length);
+	const sign = order === 'newest' || order === 'most-entries' ? -1 : 1;
+	return [...books].sort((a, b) => sign * (key(a) - key(b)) || byAge(a, b));
 }
 
 /**

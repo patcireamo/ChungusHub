@@ -1,11 +1,10 @@
 <script lang="ts">
 	/**
-	 * One book on the Lorebooks shelf. The Library list row's geometry with the portrait
-	 * replaced by a square tile: it holds the book's cover where there is one and the book
-	 * glyph where there is not, so a shelf where nobody set a cover is still a list of text
-	 * rows rather than a column of empty frames. Square, not the 3:4 a cover is authored at,
-	 * because the tile's job here is recognition at a glance and every row must stay the
-	 * same height whether or not the book carries art.
+	 * One book on the Lorebooks shelf: the Library list row, to the geometry. Same 60x80
+	 * frame, so a cover is drawn in the shape it was authored and framed in, and so the two
+	 * shelves scan as one list rather than as a tall one and a short one. It holds the book
+	 * glyph where there is no cover, which is most books, and the row's height is the frame's
+	 * either way.
 	 *
 	 * The meta line answers the two questions a shelf is scanned for: how big the book is,
 	 * and whether anything carries it. It deliberately does NOT price the book in tokens:
@@ -58,12 +57,14 @@
 	onclick={press}
 	onkeydown={(e) => e.key === 'Enter' && e.target === e.currentTarget && press()}
 	aria-pressed={selectionMode ? selected : undefined}
-	class="group flex items-center gap-3 px-4 py-2.5 rounded-[var(--radius-md)] cursor-pointer transition-colors {selected
+	class="group flex items-center gap-3 px-4 py-3 rounded-[var(--radius-md)] cursor-pointer transition-colors {selected
 		? 'bg-accent/10 hover:bg-accent/15'
 		: 'hover:bg-bg-tertiary/55'}"
 >
+	<!-- The cover, in the character row's own frame: 3:4, which is the shape it was authored
+	     and framed in. -->
 	<div
-		class="relative w-10 h-10 shrink-0 grid place-items-center rounded-[var(--radius-md)] bg-bg-tertiary text-text-muted overflow-hidden"
+		class="relative w-[60px] h-20 shrink-0 grid place-items-center rounded-[var(--radius-md)] bg-bg-tertiary text-text-muted overflow-hidden"
 	>
 		{#if cover}
 			<img
@@ -74,24 +75,26 @@
 				loading="lazy"
 			/>
 		{:else}
-			<Icon name="bookOpen" class="w-5 h-5" strokeWidth={1.5} />
+			<Icon name="bookOpen" class="w-7 h-7" strokeWidth={1} />
 		{/if}
 		{#if selectionMode}
 			<!-- Selection checkbox; the whole row toggles, this is just the indicator. -->
 			<div class="absolute inset-0 grid place-items-center bg-black/35">
 				<div
-					class="w-5 h-5 rounded-[var(--radius-sm)] flex items-center justify-center border-2 transition-colors
+					class="w-6 h-6 rounded-[var(--radius-md)] flex items-center justify-center border-2 transition-colors
 						   {selected
 						? 'bg-accent border-accent text-white'
 						: 'bg-black/40 border-white/80 text-transparent'}"
 				>
-					<Icon name="check" class="w-3.5 h-3.5" />
+					<Icon name="check" class="w-4 h-4" />
 				</div>
 			</div>
 		{/if}
 	</div>
 
-	<div class="min-w-0 flex-1">
+	<!-- Held to the frame's height, so the name starts at the same place in every row: centred,
+	     it would sink down the row and the list would have no line to be scanned by. -->
+	<div class="min-w-0 flex-1 min-h-20 pt-1">
 		<span
 			class="block font-ui text-sm truncate {book.name
 				? 'font-medium text-text-primary'
@@ -99,7 +102,7 @@
 		>
 			{book.name || 'Untitled lorebook'}
 		</span>
-		<p class="mt-0.5 font-ui text-xs text-text-muted truncate">
+		<p class="mt-1 font-ui text-xs text-text-muted truncate">
 			{size}
 			<span class="opacity-60"> · </span>
 			{#if links > 0}
