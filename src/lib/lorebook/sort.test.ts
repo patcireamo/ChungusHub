@@ -423,6 +423,15 @@ describe('activationSummary', () => {
 		]);
 	});
 
+	// The switch that puts a book in every chat lives inside the Activation strip, so the
+	// folded line is the only place it shows: leave it off and the widest state a book can be
+	// in is hidden behind one press. It leads, and the shelf's own row can never carry it.
+	test('a book in every chat says so first, and the defaults never do', () => {
+		const parts = activationSummary(resolvedOf(), globals, true);
+		expect(parts[0]).toEqual({ text: 'every chat', set: true });
+		expect(activationSummary(globals, globals).map((p) => p.text)).not.toContain('every chat');
+	});
+
 	// While books recurse together there is ONE loop, so a book's own cap runs nothing: the
 	// line prints the global number and refuses to mark it, or the strip would name a cap the
 	// scan never reaches for.

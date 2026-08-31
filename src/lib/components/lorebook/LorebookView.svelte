@@ -16,11 +16,11 @@
 	import { holdMsForBlast } from '$lib/components/ui/HoldToConfirmButton.svelte';
 	import BrowsePopover from '$lib/components/library/BrowsePopover.svelte';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
-	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import PortraitFramingDialog from '$lib/components/library/PortraitFramingDialog.svelte';
-	import { toggleRow } from '$lib/actions/toggleRow';
+	import { anchorTo } from '$lib/actions/anchorTo';
 	import LorebookEntryRow from './LorebookEntryRow.svelte';
 	import LorebookActivationPanel from './LorebookActivationPanel.svelte';
+	import LorebookBindPicker from './LorebookBindPicker.svelte';
 	import LorebookScanTester from './LorebookScanTester.svelte';
 	import { imageService, imageRejectionReason } from '$lib/services/imageService';
 	import { portraitFocusStyle } from '$lib/utils/portrait-focus';
@@ -30,6 +30,9 @@
 	import { downloadLorebook } from '$lib/lorebook/io';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
+	import { chatStore } from '$lib/stores/chat.svelte';
+	import { viewport } from '$lib/stores/viewport.svelte';
+	import { chatLorebookClaim } from '$lib/utils/chat-setup';
 	import { workspaceFocus } from '$lib/stores/workspaceFocus.svelte';
 	import { countTokens } from '$lib/tokenizer';
 	import {
@@ -93,7 +96,7 @@
 			: 0
 	);
 
-	/** Who carries the open book. A book nothing links to never reaches a prompt. */
+	/** The cards carrying the open book. A book nothing carries never reaches a prompt. */
 	let linked = $derived(
 		selectedBook
 			? characterLibraryStore.entries.filter((en) =>
@@ -101,6 +104,95 @@
 				)
 			: []
 	);
+	/** The chats that attached it for themselves, newest first (architecture/lorebook.md). */
+	let boundChats = $derived(
+		selectedBook
+			? chatStore.sortedChats.filter((chat) => chatLorebookClaim(chat).includes(selectedBook.id))
+			: []
+	);
+
+	/** Past this the chips are a wall rather than a summary, so the rest wait behind one press. */
+	const CARRIER_LIMIT = 3;
+
+	/** Everything carrying the book, in one row of chips: the cards first, since a card link
+	 *  is the durable binding, then the chats that took it for one story. Each chip opens what
+	 *  it names, which is where the rest of that thing's setup lives. */
+	let carriers = $derived([
+		...linked.map((en) => ({
+			id: en.id,
+			name: en.identity.name || 'Unnamed',
+			icon: en.type === 'persona' ? ('user' as const) : ('users' as const),
+			// The face a card is recognised by, aimed by its own framing like every other
+			// cover-fit portrait in the app (architecture/library.md). A card with no picture
+			// keeps the glyph, in the same round frame, so a mixed row is still one shape.
+			thumb: imageService.thumbnailUrl(en.identity.imageUrl),
+			focus: portraitFocusStyle(en.identity.portraitFocus),
+			title: `Open ${en.type} editor`,
+			open: () => uiStore.openLibraryEntry(en.id, en.type, () => lorebookStore.flush())
+		})),
+		...boundChats.map((chat) => ({
+			id: chat.id,
+			name: chat.title?.trim() || 'Untitled chat',
+			icon: 'chat' as const,
+			// A chat has no portrait of its own, and borrowing its character's would read as a
+			// chip naming that character rather than this story.
+			thumb: null as string | null,
+			focus: undefined as string | undefined,
+			title: 'Open this chat',
+			open: () => openChat(chat.id)
+		}))
+	]);
+	let allCarriers = $state(false);
+	let shownCarriers = $derived(allCarriers ? carriers : carriers.slice(0, CARRIER_LIMIT));
+
+	/** The book stands over the chat, so reaching one means leaving the book: flush what is
+	 *  typed, lower the editor, and drop the Library too where it cannot dock beside the chat
+	 *  it just opened, which is the recipe the Library's own character pick follows. */
+	async function openChat(chatId: string) {
+		await lorebookStore.flush();
+		uiStore.lorebookEditorId = null;
+		await chatStore.selectChat(chatId);
+		if (!viewport.canDockSettings) uiStore.closeLibrary();
+	}
+
+	// ===== binding, from the book's side =====
+
+	let bindOpen = $state(false);
+	let bindAnchor = $state<HTMLElement | undefined>(undefined);
+	let bindPanel = $state<HTMLElement | null>(null);
+
+	// The app's popover idiom (KeyChipInput): document listeners while open, so Escape is
+	// CONSUMED here and never also reaches the view's own Escape ladder behind it. The panel
+	// sits on <body> (anchorTo), so containment is asked of it and the trigger both.
+	$effect(() => {
+		if (!bindOpen) return;
+		// The panel lives at the end of <body>, unreachable by tabbing from the trigger, so
+		// focus moves into it on open; Escape hands it back. The search field is deliberately
+		// NOT focused: on a phone that answers a press with a keyboard over the list.
+		bindPanel?.focus();
+		const onDown = (e: MouseEvent) => {
+			const target = e.target as Node;
+			if (!bindAnchor?.contains(target) && !bindPanel?.contains(target)) bindOpen = false;
+		};
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key !== 'Escape') return;
+			e.stopPropagation();
+			bindAnchor?.focus();
+			bindOpen = false;
+		};
+		document.addEventListener('mousedown', onDown, true);
+		document.addEventListener('keydown', onKey);
+		return () => {
+			document.removeEventListener('mousedown', onDown, true);
+			document.removeEventListener('keydown', onKey);
+		};
+	});
+
+	// A book closing takes its popover with it, or the next one opens with the panel already
+	// standing over a page it was never opened from.
+	$effect(() => {
+		if (!selectedBook) bindOpen = false;
+	});
 
 	// ===== the cover =====
 
@@ -161,7 +253,13 @@
 	/** The strip's collapsed line: what the open book actually runs with, not what either
 	 *  layer holds on its own. */
 	let summary = $derived(
-		selectedBook ? activationSummary(resolveBookActivation(selectedBook, globals), globals) : []
+		selectedBook
+			? activationSummary(
+					resolveBookActivation(selectedBook, globals),
+					globals,
+					!!selectedBook.global
+				)
+			: []
 	);
 
 	let searchEl = $state<HTMLInputElement | null>(null);
@@ -545,72 +643,82 @@
 						/>
 					</div>
 
-					<!-- Directly under the name, because it belongs to the same question the name
-					     answers: what this book IS on this install. It is the one thing on this page
-					     that reaches chats nothing on screen names, so it is stated where the book
-					     is identified rather than folded in with its scan settings. -->
-					<div class="lb-every" use:toggleRow>
-						<span class="lb-every-text">
-							<span class="lb-every-name">Use in every chat</span>
-							<span class="lb-every-help">
-								Every chat scans it, with no character or persona linking it
-							</span>
-						</span>
-						<Toggle
-							checked={!!selectedBook.global}
-							label="Use in every chat"
-							onchange={(next) => lorebookStore.setGlobal(selectedBook.id, next)}
-						/>
-					</div>
+					<!-- Use in every chat answers the same question from the other end and lives in
+					     the Activation strip beside the rest of what the book DOES; this is the
+					     named half of it. Binding is offered from here as well as from each card and
+					     each chat because a book is where the question is asked from most often, and
+					     it writes through those same doors, so there is one binding and not a second
+					     kind of one. -->
+					<div class="lb-bind">
+						<button
+							type="button"
+							class="lb-bind-add"
+							bind:this={bindAnchor}
+							onclick={() => (bindOpen = !bindOpen)}
+							aria-haspopup="dialog"
+							aria-expanded={bindOpen}
+							title="Attach this book to a character, a persona or a chat"
+						>
+							<Icon name="plus" class="w-3.5 h-3.5" />
+							<span>Bind to…</span>
+						</button>
 
-					<!-- One line for how big it is and whether anything carries it. The natures are
-					     spelled out only where there is more than one, since "3 entries · 3 keyword"
-					     says the same number twice. An empty book says so in the empty state below.
-					     Not linked is held back while the switch above is on, since it would read as
-					     a book reaching nothing three lines under the control that sends it
-					     everywhere. -->
-					{#if total > 0 || (linked.length === 0 && !selectedBook.global)}
-						<p class="lb-ident-meta">
-							{#if total > 0}
-								<span class="lb-stat">{total} {total === 1 ? 'entry' : 'entries'}</span>
-								{#if composition.length > 1}
-									{#each composition as part (part.kind)}
-										<span class="lb-stat">
-											<span class="lb-dot lb-dot-{part.kind}"></span>{part.count}
-											{part.kind}
-										</span>
-									{/each}
-								{/if}
-								<span class="lb-stat lb-stat--tokens">~{tokens} tokens</span>
-							{/if}
-							{#if linked.length === 0 && !selectedBook.global}
-								<span class="lb-stat lb-stat--quiet">Not linked</span>
-							{/if}
-						</p>
-					{/if}
-					<!-- Only when something carries it: an empty row spends a line saying nothing,
-					     and the line above already says it is not linked. -->
-					{#if linked.length > 0}
-						<div class="lb-bound">
+						{#if carriers.length > 0}
 							<span class="section-label">Bound to</span>
 							<div class="lb-chips">
-								{#each linked as en (en.id)}
+								{#each shownCarriers as carrier (carrier.id)}
 									<button
 										type="button"
 										class="lb-chip"
-										onclick={() =>
-											uiStore.openLibraryEntry(en.id, en.type, () => lorebookStore.flush())}
-										title="Open {en.type} editor"
+										onclick={carrier.open}
+										title={carrier.title}
 									>
-										<Icon
-											name={en.type === 'persona' ? 'user' : 'users'}
-											class="w-3 h-3 flex-shrink-0"
-										/>
-										{en.identity.name || 'Unnamed'}
+										<span class="lb-chip-face">
+											{#if carrier.thumb}
+												<img src={carrier.thumb} alt="" loading="lazy" style={carrier.focus} />
+											{:else}
+												<Icon name={carrier.icon} class="w-3 h-3" />
+											{/if}
+										</span>
+										<span class="lb-chip-name">{carrier.name}</span>
 									</button>
 								{/each}
+								<!-- The rest behind one press, and the way back beside them: a rail that
+								     grew to forty chips has lost the page it is a rail for. -->
+								{#if carriers.length > CARRIER_LIMIT}
+									<button
+										type="button"
+										class="lb-chip lb-chip--more"
+										onclick={() => (allCarriers = !allCarriers)}
+									>
+										{allCarriers ? 'Show fewer' : `+${carriers.length - CARRIER_LIMIT} more`}
+									</button>
+								{/if}
 							</div>
-						</div>
+						{:else if !selectedBook.global}
+							<!-- Held back while the switch above is on, since a book reaching every chat
+							     must not read as one reaching nothing right under the control that
+							     sends it everywhere. -->
+							<p class="lb-bind-none">Not linked</p>
+						{/if}
+					</div>
+
+					<!-- What the book is made of. The natures are spelled out only where there is
+					     more than one, since "3 entries · 3 keyword" says the same number twice; an
+					     empty book says so in the empty state below instead. -->
+					{#if total > 0}
+						<p class="lb-ident-meta">
+							<span class="lb-stat">{total} {total === 1 ? 'entry' : 'entries'}</span>
+							{#if composition.length > 1}
+								{#each composition as part (part.kind)}
+									<span class="lb-stat">
+										<span class="lb-dot lb-dot-{part.kind}"></span>{part.count}
+										{part.kind}
+									</span>
+								{/each}
+							{/if}
+							<span class="lb-stat lb-stat--tokens">~{tokens} tokens</span>
+						</p>
 					{/if}
 				</div>
 
@@ -912,6 +1020,21 @@
 	onchange={onCoverPick}
 />
 
+<!-- The bind picker, glued to its trigger and living on <body>: the rail scrolls and the
+     panel around it clips, so a panel left in flow would lose its own list. -->
+{#if bindOpen && selectedBook}
+	<div
+		class="bind-pop surface-float"
+		role="dialog"
+		aria-label="Bind this lorebook"
+		tabindex="-1"
+		bind:this={bindPanel}
+		use:anchorTo={bindAnchor}
+	>
+		<LorebookBindPicker bookId={selectedBook.id} />
+	</div>
+{/if}
+
 {#if coverPath}
 	<PortraitFramingDialog
 		open={framingOpen}
@@ -1192,47 +1315,6 @@
 		gap: 0.35rem;
 	}
 
-	/* The switch under the name. Its own quiet card so it reads as a decision about the book
-	   rather than as one more field of it, and the whole row is the switch (toggleRow): a 40px
-	   target at the far end of a rail is a long travel for a small hit box. */
-	.lb-every {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		margin-top: 0.15rem;
-		padding: 0.5rem 0.65rem;
-		border: 1px solid var(--color-border-subtle);
-		border-radius: var(--radius-md);
-		background: color-mix(in srgb, var(--color-bg-tertiary) 40%, transparent);
-		transition: border-color 140ms ease;
-	}
-
-	.lb-every:hover {
-		border-color: var(--color-border);
-	}
-
-	.lb-every-text {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.1rem;
-	}
-
-	.lb-every-name {
-		font-family: var(--font-ui);
-		font-size: 0.8125rem;
-		font-weight: 500;
-		color: var(--color-text-primary);
-	}
-
-	.lb-every-help {
-		font-family: var(--font-ui);
-		font-size: 0.6875rem;
-		line-height: 1.35;
-		color: var(--color-text-muted);
-	}
-
 	.lb-ident-meta {
 		display: flex;
 		align-items: center;
@@ -1287,11 +1369,56 @@
 
 	/* Label over the chips: in a rail there is no room to sit them side by side, and who
 	   carries the book is a list rather than a value. */
-	.lb-bound {
+	/* How the book reaches a chat: the way to bind one, then what is bound. The rule above it
+	   is what stops the block reading as one more field of the name: what the book is CALLED
+	   and what carries it are two questions, and only the first is typed into. */
+	.lb-bind {
 		display: flex;
 		flex-direction: column;
-		gap: 0.3rem;
-		margin-top: 0.35rem;
+		gap: 0.35rem;
+		margin-top: 0.5rem;
+		padding-top: 0.75rem;
+		border-top: 1px solid var(--color-border-subtle);
+	}
+
+	/* Quiet and full width: it is an add affordance in a rail, not the page's action. Its
+	   height is the composer chip's, coarse pointer included, since a thumb has to hit it. */
+	.lb-bind-add {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.35rem;
+		width: 100%;
+		height: 1.9rem;
+		border: 1px solid var(--color-border-raised);
+		border-radius: var(--radius-md);
+		background: color-mix(in srgb, var(--color-bg-tertiary) 55%, transparent);
+		color: var(--color-text-muted);
+		font-family: var(--font-ui);
+		font-size: 0.7rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
+	}
+
+	.lb-bind-add:hover,
+	.lb-bind-add[aria-expanded='true'] {
+		color: var(--color-text-primary);
+		border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+		background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+	}
+
+	@media (pointer: coarse) {
+		.lb-bind-add {
+			height: 2.4rem;
+		}
+	}
+
+	/* Nothing carries it, said where the chips would be rather than down among the counts. */
+	.lb-bind-none {
+		font-family: var(--font-ui);
+		font-size: 0.7rem;
+		color: var(--color-text-muted);
 	}
 
 	.lb-chips {
@@ -1304,9 +1431,11 @@
 	.lb-chip {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.3rem;
+		gap: 0.35rem;
 		max-width: 100%;
-		padding: 0.2rem 0.55rem;
+		/* Tighter on the face's side: a circle carries its own edge, so equal padding reads
+		   as a gap. The composer's own setup chip is built the same way. */
+		padding: 0.15rem 0.55rem 0.15rem 0.2rem;
 		border-radius: var(--radius-full);
 		border: 1px solid var(--color-border-subtle);
 		background: color-mix(in srgb, var(--color-bg-tertiary) 70%, transparent);
@@ -1320,6 +1449,69 @@
 	.lb-chip:hover {
 		color: var(--color-text-primary);
 		border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+	}
+
+	/* A chat's title is a whole sentence in a 17rem rail, so the chip truncates instead of
+	   pushing the row it sits in off the page. */
+	.lb-chip-name {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	/* One frame for both, so a card with a portrait and a chat with none read as one row of
+	   chips rather than two kinds. */
+	.lb-chip-face {
+		display: grid;
+		place-items: center;
+		width: 1.2rem;
+		height: 1.2rem;
+		flex-shrink: 0;
+		border-radius: 999px;
+		overflow: hidden;
+		background: var(--color-bg-tertiary);
+		color: var(--color-text-muted);
+	}
+
+	.lb-chip-face img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+
+	/* The count of what is folded away: it names a quantity rather than a thing, so it wears
+	   no face and takes its padding back. */
+	.lb-chip--more {
+		padding: 0.15rem 0.55rem;
+		color: var(--color-text-muted);
+		font-weight: 600;
+	}
+
+	/* The bind picker's own shell. Narrower than it is tall on purpose: it is a list of names
+	   anchored to a 17rem rail, and clamped so a phone never gets one wider than its screen. */
+	.bind-pop {
+		width: min(20rem, calc(100vw - 2rem));
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-lg);
+		z-index: 60;
+		/* What the shared .brw-search recipe sizes itself from; it is declared on the browse
+		   container there, which this panel is not inside. */
+		--brw-h: 1.9rem;
+		opacity: 0;
+		transform: translateY(-0.2rem);
+		transition: opacity 120ms ease, transform 120ms ease;
+	}
+
+	/* :global on the attribute, the way every anchored panel here writes it: the action stamps
+	   these at runtime and the compiler would prune a selector it cannot see used. */
+	.bind-pop:global([data-placement='above']) {
+		transform: translateY(0.2rem);
+	}
+
+	.bind-pop:global([data-open]) {
+		opacity: 1;
+		transform: translateY(0);
 	}
 
 	/* ===== the settings strip ===== */

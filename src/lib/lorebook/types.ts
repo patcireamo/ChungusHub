@@ -538,10 +538,15 @@ export function resolveBookActivation(
  * A part is `set` where the resolved value DIFFERS from the default it would otherwise take,
  * which is the reading the panel's stars give. The shelf passes the defaults as both, so
  * nothing is lit there: the root layer has nothing to differ from.
+ *
+ * `global` leads the line when the book is switched into every chat, and it is the one part
+ * the shelf's own row can never carry: the switch lives in this panel now, so a folded strip
+ * that did not say it would hide the widest thing a book can be doing behind one press.
  */
 export function activationSummary(
 	resolved: ResolvedActivation,
-	settings: LorebookGlobalSettings
+	settings: LorebookGlobalSettings,
+	global = false
 ): { text: string; set: boolean }[] {
 	const out = [
 		{
@@ -553,6 +558,7 @@ export function activationSummary(
 			set: resolved.recursiveScanning !== settings.recursiveScanning
 		}
 	];
+	if (global) out.unshift({ text: 'every chat', set: true });
 	if (resolved.recursiveScanning) {
 		// While books recurse together there is one shared loop, so the cap that runs is the
 		// global one; printing the book's own here would name a number the scan never uses.

@@ -10,6 +10,12 @@
 	 * In book scope every row shows the value the scan will actually use and says where it came
 	 * from, so the panel and the engine can't tell different stories (both resolve through
 	 * `resolveBookActivation`).
+	 *
+	 * Two rows live in one scope only, and neither is a cascade row: **Use in every chat** is a
+	 * decision about one book on this install, so the defaults have nothing to say about it, and
+	 * **Books recurse together** describes the whole scan, which two books cannot disagree about.
+	 * A scope that cannot offer a row simply does not draw it: a section that exists only to say
+	 * where a setting is NOT is a heading over an apology.
 	 */
 	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import OverrideMark from '$lib/components/ui/OverrideMark.svelte';
@@ -50,6 +56,13 @@
 	function setBook(patch: Parameters<typeof lorebookStore.updateBookMeta>[1]) {
 		if (!book) throw new Error('LorebookActivationPanel: book-scope write with no book');
 		lorebookStore.updateBookMeta(book.id, patch);
+	}
+
+	/** The switch, which is not a cascade row: it writes at once rather than into the typing
+	 *  debounce, because it is a discrete decision like the cover (lorebook/store.svelte.ts). */
+	function setReach(on: boolean) {
+		if (!book) throw new Error('LorebookActivationPanel: book-scope write with no book');
+		void lorebookStore.setGlobal(book.id, on);
 	}
 
 	function setGlobal(patch: Partial<LorebookGlobalSettings>) {
@@ -97,6 +110,30 @@
 			? 'This book only. What it does not set follows the defaults.'
 			: 'What every book follows where it sets nothing of its own.'}
 	</p>
+
+	<!-- Where the book applies at all, before anything about how it scans. Book scope only:
+	     it is a decision about THIS book on THIS install, so the defaults have nothing to say
+	     about it and no row to offer. -->
+	{#if book}
+		<div>
+			<span class="act-label section-label">Where it applies</span>
+			<div class="act-card">
+				<div class="act-row" use:toggleRow>
+					<span class="act-row-text">
+						<span class="act-row-name">Use in every chat</span>
+						<span class="act-row-help">
+							Every chat scans it, with no character or persona linking it
+						</span>
+					</span>
+					<Toggle
+						checked={!!book.global}
+						label="Use in every chat"
+						onchange={setReach}
+					/>
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	<!-- Scanning -->
 	<div>
@@ -278,14 +315,6 @@
 				</div>
 			</div>
 		</div>
-	{:else}
-		<div>
-			<span class="act-label section-label">Prompt budget</span>
-			<p class="act-foot act-foot--flush">
-				Lore budget is one share of the prompt for everything lore injects at once, so it is set
-				in Global Settings, on the Lorebooks shelf.
-			</p>
-		</div>
 	{/if}
 </div>
 
@@ -352,10 +381,5 @@
 		font-size: 0.75rem;
 		line-height: 1.45;
 		color: var(--color-text-muted);
-	}
-
-	/* Standing in for a card rather than trailing one. */
-	.act-foot--flush {
-		margin-top: 0;
 	}
 </style>
