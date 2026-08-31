@@ -21,6 +21,7 @@ import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { presetControlsStore } from '$lib/stores/presetControls.svelte';
 import {
 	chatLorebookClaim,
+	chatMutedLorebookClaim,
 	chatPersonaEntry,
 	chatPreset,
 	resolvePromptTarget,
@@ -84,7 +85,8 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 	const lore = resolveLorebooks({
 		books: lorebookStore.booksForChat({
 			cards: [...(characterData?.lorebookIds ?? []), ...(persona?.data.lorebookIds ?? [])],
-			chat: chatLorebookClaim(chatStore.activeChat)
+			chat: chatLorebookClaim(chatStore.activeChat),
+			muted: chatMutedLorebookClaim(chatStore.activeChat)
 		}),
 		messages: chatMessages.map((m) => m.content),
 		fields: lorebookScanFields(base.resolvedCharacters ?? [], base.resolvedPersona),

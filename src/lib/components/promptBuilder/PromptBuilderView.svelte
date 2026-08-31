@@ -20,6 +20,7 @@
 	import ChatOverrideNotice from '$lib/components/ui/ChatOverrideNotice.svelte';
 	import {
 		chatLorebookClaim,
+		chatMutedLorebookClaim,
 		chatPersonaEntry,
 		chatPreset,
 		resolvePromptTarget,
@@ -143,7 +144,8 @@
 			: [],
 		lorebooks: lorebookStore.booksForChat({
 			cards: [...(activeCharacterData?.lorebookIds ?? []), ...(chatPersona?.data.lorebookIds ?? [])],
-			chat: chatLorebookClaim(chatStore.activeChat)
+			chat: chatLorebookClaim(chatStore.activeChat),
+			muted: chatMutedLorebookClaim(chatStore.activeChat)
 		}),
 		lorebookSettings: lorebookSettingsStore.settings,
 		controls: currentPreset?.controls ?? [],

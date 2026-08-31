@@ -9,7 +9,12 @@
 import { describe, expect, test } from 'bun:test';
 
 import { effectSetting } from './ambient';
-import { DEFAULT_CHAT_FEATURE_STATE, normalizeChatFeatureState, pushSteeringHistoryEntry } from './chat';
+import {
+	DEFAULT_CHAT_FEATURE_STATE,
+	normalizeChatFeatureState,
+	pushSteeringHistoryEntry,
+	withLorebookClaim
+} from './chat';
 
 describe('normalizeChatFeatureState: degrading to defaults', () => {
 	test('null degrades to the defaults', () => {
@@ -46,7 +51,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			connection: null,
 			persona: null,
 			preset: null,
-			lorebooks: []
+			lorebooks: [],
+			mutedLorebooks: []
 		});
 	});
 
@@ -58,7 +64,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			connection: null,
 			persona: null,
 			preset: null,
-			lorebooks: []
+			lorebooks: [],
+			mutedLorebooks: []
 		};
 		expect(normalizeChatFeatureState(value)).toEqual(value);
 	});
@@ -79,7 +86,8 @@ describe('normalizeChatFeatureState: the JSON column value', () => {
 			connection: null,
 			persona: null,
 			preset: null,
-			lorebooks: []
+			lorebooks: [],
+			mutedLorebooks: []
 		});
 		expect('steering' in result).toBe(false);
 	});
@@ -195,6 +203,45 @@ describe('normalizeChatFeatureState: lorebooks', () => {
 			'b'
 		]);
 		expect(normalizeChatFeatureState({ lorebooks: 'book-1' }).lorebooks).toEqual([]);
+	});
+
+	// The other half of the claim, read the same way and needing a migration just as little:
+	// a blob written before a chat could mute anything has no key, and no key is no mute.
+	test('a chat that has muted nothing reads as an empty list', () => {
+		expect(normalizeChatFeatureState({}).mutedLorebooks).toEqual([]);
+		expect(normalizeChatFeatureState({ mutedLorebooks: 'book-1' }).mutedLorebooks).toEqual([]);
+	});
+
+	test('mutes survive the trip through the column they are stored in', () => {
+		const state = normalizeChatFeatureState({ lorebooks: ['a'], mutedLorebooks: ['b', 'c'] });
+		expect(state.mutedLorebooks).toEqual(['b', 'c']);
+		expect(normalizeChatFeatureState(JSON.stringify(state))).toEqual(state);
+	});
+});
+
+describe('withLorebookClaim', () => {
+	const state = (lorebooks: string[], mutedLorebooks: string[] = []) =>
+		normalizeChatFeatureState({ lorebooks, mutedLorebooks });
+
+	test('attaching appends without duplicating what is already there', () => {
+		expect(withLorebookClaim(state(['a']), 'b', true).lorebooks).toEqual(['a', 'b']);
+		expect(withLorebookClaim(state(['a']), 'a', true).lorebooks).toEqual(['a']);
+	});
+
+	test('detaching takes it off and leaves the rest in order', () => {
+		expect(withLorebookClaim(state(['a', 'b', 'c']), 'b', false).lorebooks).toEqual(['a', 'c']);
+	});
+
+	// The two lists answer one question from opposite ends. A book sitting in both would read on
+	// screen as attached while the resolver, which subtracts last, kept it out of every prompt.
+	test('attaching a muted book clears the mute', () => {
+		const next = withLorebookClaim(state([], ['a']), 'a', true);
+		expect(next.lorebooks).toEqual(['a']);
+		expect(next.mutedLorebooks).toEqual([]);
+	});
+
+	test('detaching leaves the mutes alone', () => {
+		expect(withLorebookClaim(state(['a'], ['b']), 'a', false).mutedLorebooks).toEqual(['b']);
 	});
 });
 

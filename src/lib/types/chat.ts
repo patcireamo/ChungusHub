@@ -137,6 +137,11 @@ export interface ChatFeatureState {
 	 *  Resolved like every other lorebook link: an id naming a deleted book is skipped rather
 	 *  than swept (architecture/lorebook.md). */
 	lorebooks: string[];
+	/** Lorebooks this story leaves out, the other half of the claim above: a book switched
+	 *  into every chat, or linked by this chat's character or persona, plays here unless its
+	 *  id sits in this list. Nothing else can exempt one story from a book the wider setup
+	 *  brings. Applied last, so it outranks every layer including the list above it. */
+	mutedLorebooks: string[];
 }
 
 function defaultChatFeatureState(): ChatFeatureState {
@@ -147,7 +152,8 @@ function defaultChatFeatureState(): ChatFeatureState {
 		connection: null,
 		persona: null,
 		preset: null,
-		lorebooks: []
+		lorebooks: [],
+		mutedLorebooks: []
 	};
 }
 
@@ -214,7 +220,8 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
 		connection: normalizeClaimedId(obj.connection),
 		persona: normalizeClaimedId(obj.persona),
 		preset: normalizeClaimedId(obj.preset),
-		lorebooks: normalizeClaimedIds(obj.lorebooks)
+		lorebooks: normalizeClaimedIds(obj.lorebooks),
+		mutedLorebooks: normalizeClaimedIds(obj.mutedLorebooks)
 	};
 }
 
@@ -223,6 +230,27 @@ export function normalizeChatFeatureState(raw: unknown): ChatFeatureState {
  *  is consumed (see chatStore.pushSteeringHistory). */
 export function pushSteeringHistoryEntry(history: string[], text: string): string[] {
 	return [text, ...history.filter((entry) => entry !== text)].slice(0, 10);
+}
+
+/**
+ * Attach one book to a chat's own claim, or take it off. Pure, so the rule below is testable
+ * without a store (see chatStore.toggleChatLorebook).
+ *
+ * **Attaching clears a mute on the same book.** The two lists answer one question from
+ * opposite ends, and an id sitting in both would read on screen as a book this story attached
+ * while the resolver, which subtracts last, left it out of every prompt.
+ */
+export function withLorebookClaim(
+	state: ChatFeatureState,
+	bookId: string,
+	on: boolean
+): ChatFeatureState {
+	if (!on) return { ...state, lorebooks: state.lorebooks.filter((id) => id !== bookId) };
+	return {
+		...state,
+		lorebooks: state.lorebooks.includes(bookId) ? state.lorebooks : [...state.lorebooks, bookId],
+		mutedLorebooks: state.mutedLorebooks.filter((id) => id !== bookId)
+	};
 }
 
 /** One file the user attached to a chat message. Images only for now; the kind

@@ -45,7 +45,7 @@ function personaEntry(id: string | null | undefined): RawLibraryEntry | null {
  * src/lib/types/chat.ts and cannot be imported here). Undefined for a chat that claims
  * nothing and for a blob that will not parse, which is what "follows the app" reads as.
  */
-function chatClaim(chat: RawChat, key: 'persona' | 'lorebooks'): unknown {
+function chatClaim(chat: RawChat, key: 'persona' | 'lorebooks' | 'mutedLorebooks'): unknown {
 	if (!chat.featureState) return undefined;
 	try {
 		return (JSON.parse(chat.featureState) as Record<string, unknown>)[key];
@@ -67,14 +67,22 @@ function chatPersona(chat: RawChat): RawLibraryEntry | null {
 	return personaEntry(own) ?? personaEntry(serverDb.getSetting('activePersonaId'));
 }
 
+/** A claimed id list off the chat's own setup blob, skipping anything that is not one. */
+function claimedIds(chat: RawChat, key: 'lorebooks' | 'mutedLorebooks'): string[] {
+	const raw = chatClaim(chat, key);
+	return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : [];
+}
+
 /**
  * Books active for a chat: every book switched into every chat, then those linked by its
- * character and the persona it plays as, then the ones the chat itself attached.
+ * character and the persona it plays as, then the ones the chat itself attached, minus the
+ * ones it muted.
  *
  * The second spelling of `resolveLorebookLinks` (src/lib/lorebook/types.ts), which this side
- * cannot import. Both halves that no card names have to be here: leave the globals out and the
+ * cannot import. Every layer no card names has to be here: leave the globals out and the
  * assistant reports a scene missing the books that are in ALL of them, leave the chat's own out
- * and it misses the lore this one story was given, and neither absence shows anywhere else.
+ * and it misses the lore this one story was given, leave the mutes out and it describes books
+ * this story took back off, and none of those absences shows anywhere else.
  */
 function chatLorebooks(chat: RawChat): RawLorebookBook[] {
 	const all = serverDb.getAllLorebooks() as RawLorebookBook[];
@@ -86,14 +94,15 @@ function chatLorebooks(chat: RawChat): RawLorebookBook[] {
 		for (const id of c?.data?.lorebookIds ?? []) ids.add(id);
 	}
 	for (const id of chatPersona(chat)?.data?.lorebookIds ?? []) ids.add(id);
-	const own = chatClaim(chat, 'lorebooks');
-	if (Array.isArray(own)) for (const id of own) if (typeof id === 'string') ids.add(id);
+	for (const id of claimedIds(chat, 'lorebooks')) ids.add(id);
 	for (const id of ids) {
 		if (seen.has(id)) continue;
 		const book = all.find((b) => b.id === id);
 		if (book) out.push(book);
 	}
-	return out;
+	// Subtracted last, as the client resolves it: a mute outranks every layer above it.
+	const muted = new Set(claimedIds(chat, 'mutedLorebooks'));
+	return muted.size ? out.filter((b) => !muted.has(b.id)) : out;
 }
 
 /**

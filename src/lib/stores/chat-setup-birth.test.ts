@@ -491,6 +491,50 @@ describe('the lorebooks a chat attaches for itself', () => {
 		]);
 		expect(claims(chatId).lorebooks).toEqual(['book-1', 'book-2']);
 	});
+
+});
+
+describe('the lorebooks a chat leaves out', () => {
+	const plainChat = async (): Promise<string> => chatStore.createChat({ characterId: await character() });
+
+	test('a chat is born muting nothing, and a mute claims only that chat', async () => {
+		const chatId = await plainChat();
+		const other = await plainChat();
+		expect(claims(chatId).mutedLorebooks).toEqual([]);
+
+		await chatStore.toggleChatLorebookMute(chatId, 'book-1');
+
+		expect(claims(chatId).mutedLorebooks).toEqual(['book-1']);
+		expect(claims(other).mutedLorebooks).toEqual([]);
+		// Muting says nothing about what this story attached: two lists, two answers.
+		expect(claims(chatId).lorebooks).toEqual([]);
+	});
+
+	test('pressing the same row again lets the book back in', async () => {
+		const chatId = await plainChat();
+		await chatStore.toggleChatLorebookMute(chatId, 'book-1');
+		await chatStore.toggleChatLorebookMute(chatId, 'book-1');
+		expect(claims(chatId).mutedLorebooks).toEqual([]);
+	});
+
+	// The one place the two lists meet, and the reason attaching writes through the shared
+	// transform: a book in both would read as attached and reach no prompt.
+	test('attaching a muted book clears the mute', async () => {
+		const chatId = await plainChat();
+		await chatStore.toggleChatLorebookMute(chatId, 'book-1');
+		await chatStore.toggleChatLorebook(chatId, 'book-1');
+		expect(claims(chatId).lorebooks).toEqual(['book-1']);
+		expect(claims(chatId).mutedLorebooks).toEqual([]);
+	});
+
+	test('two presses landing inside one round trip both take', async () => {
+		const chatId = await plainChat();
+		await Promise.all([
+			chatStore.toggleChatLorebookMute(chatId, 'book-1'),
+			chatStore.toggleChatLorebookMute(chatId, 'book-2')
+		]);
+		expect(claims(chatId).mutedLorebooks).toEqual(['book-1', 'book-2']);
+	});
 });
 
 describe('a claim outlives the thing it names', () => {

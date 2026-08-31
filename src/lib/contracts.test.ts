@@ -1068,9 +1068,10 @@ describe('per-chat setup (architecture/ui-shell-settings.md)', () => {
 		expect(scan(source, /(serverDb\.getSetting\('activePersonaId'\))/g, 'app persona reads')).toHaveLength(1);
 	});
 
-	// The other half of the same problem: `resolveLorebookLinks` answers three layers and this
-	// side has to spell all three. Two of them reach a prompt through no card at all, so an
-	// absence here reports a scene missing books nothing else on the assistant's side names.
+	// The other half of the same problem: `resolveLorebookLinks` answers four layers and this
+	// side has to spell all four. Three of them reach a prompt through no card at all, so an
+	// absence here reports a scene missing books nothing else on the assistant's side names, or
+	// holding one the story took back off.
 	test("the assistant's chat reads carry every layer of a chat's lorebooks", () => {
 		const resolver = block(
 			read('server', 'assistant', 'registry', 'chat-reads.ts'),
@@ -1079,7 +1080,8 @@ describe('per-chat setup (architecture/ui-shell-settings.md)', () => {
 		);
 		expect(resolver, 'the books switched into every chat').toContain('b.global');
 		expect(resolver, "the cards' own links").toContain('lorebookIds');
-		expect(resolver, "the chat's own books").toContain("chatClaim(chat, 'lorebooks')");
+		expect(resolver, "the chat's own books").toContain("claimedIds(chat, 'lorebooks')");
+		expect(resolver, 'the books the chat muted').toContain("claimedIds(chat, 'mutedLorebooks')");
 	});
 });
 

@@ -4,8 +4,9 @@
  * A lorebook (SillyTavern: "World Info" / "character_book") is a first-class, standalone
  * record: a named collection of entries injected into the prompt when their keywords appear.
  * Characters and personas LINK to lorebooks by id (see `LibraryEntryData.lorebookIds`), a chat
- * can attach its own on top of those (`ChatFeatureState.lorebooks`), and a book can be switched
- * into every chat at once (`Lorebook.global`). All three meet in `resolveLorebookLinks`.
+ * can attach its own on top of those (`ChatFeatureState.lorebooks`) or leave one out
+ * (`ChatFeatureState.mutedLorebooks`), and a book can be switched into every chat at once
+ * (`Lorebook.global`). All four meet in `resolveLorebookLinks`.
  *
  * Entries use SillyTavern's native World Info field names VERBATIM (`key`, `keysecondary`,
  * `selectiveLogic`, `constant`, `disable`, `order`, `probability`, `caseSensitive`,
@@ -798,8 +799,8 @@ export function resolveLinkedBooks(
 }
 
 /**
- * Every way a chat names a book, one layer per source. Both keys are required rather than
- * optional: a surface that assembles a prompt has to answer both questions, and a key it could
+ * Every way a chat names a book, one layer per source. All three keys are required rather than
+ * optional: a surface that assembles a prompt has to answer every question, and a key it could
  * simply leave out is a layer it can drop in silence.
  */
 export interface LorebookLinks {
@@ -807,6 +808,8 @@ export interface LorebookLinks {
 	cards: string[] | null | undefined;
 	/** What the chat itself attached (`ChatFeatureState.lorebooks`), from the setup chip. */
 	chat: string[] | null | undefined;
+	/** What the chat leaves out (`ChatFeatureState.mutedLorebooks`), from the same chip. */
+	muted: string[] | null | undefined;
 }
 
 /**
@@ -826,6 +829,11 @@ export interface LorebookLinks {
  * store's cached array and the server's fresh read are the same query at two moments, so an
  * edit that moves a book in one and not the other would have the meter and the send lay lore
  * down in a different order.
+ *
+ * **What the chat muted is taken out last, and it outranks every layer above it.** The three
+ * adding layers answer "what does this setup bring"; muting is the one story saying it does not
+ * want one of them, and a subtraction applied anywhere but the end would be overruled by the
+ * layer that runs after it.
  */
 export function resolveLorebookLinks(books: Lorebook[], links: LorebookLinks): Lorebook[] {
 	const out = books
@@ -840,7 +848,9 @@ export function resolveLorebookLinks(books: Lorebook[], links: LorebookLinks): L
 		seen.add(book.id);
 		out.push(book);
 	}
-	return out;
+	if (!links.muted?.length) return out;
+	const muted = new Set(links.muted);
+	return out.filter((b) => !muted.has(b.id));
 }
 
 /** A fresh book inherits every activation setting from the global defaults. */

@@ -272,6 +272,36 @@ describe("the lorebooks the assistant reports for a chat", () => {
 		expect(run(readChatContext, { chatId }).lorebooks.filter((b: any) => b.id === shared)).toHaveLength(1);
 	});
 
+	// The layer that takes away. A story muting a global book is the only exception this app
+	// has to the switch that puts one in every chat, so an assistant that missed it would
+	// describe a scene holding lore the send left out.
+	test('a muted book is left out, whichever layer brought it', () => {
+		const muted = book('Muted everywhere', { global: true });
+		const dropped = book("Aria's history");
+		const kept = book("Aria's manners");
+		const character = entry('character', 'Nadia', {
+			data: { traits: {}, lorebookIds: [dropped, kept] }
+		});
+		const chatId = claimedChat({
+			characterId: character.id,
+			featureState: JSON.stringify({ mutedLorebooks: [muted, dropped] })
+		});
+		const named = run(readChatContext, { chatId }).lorebooks.map((b: any) => b.id);
+		expect(named).not.toContain(muted);
+		expect(named).not.toContain(dropped);
+		expect(named).toContain(kept);
+	});
+
+	// Muting is applied after every adding layer, exactly as the client resolves it: run
+	// earlier, the chat's own claim would put the book straight back.
+	test('a mute outranks the chat attaching the same book', () => {
+		const both = book('Named twice');
+		const chatId = claimedChat({
+			featureState: JSON.stringify({ lorebooks: [both], mutedLorebooks: [both] })
+		});
+		expect(run(readChatContext, { chatId }).lorebooks.map((b: any) => b.id)).not.toContain(both);
+	});
+
 	// Nothing sweeps a chat's ids when a book goes, exactly as nothing sweeps a card's.
 	test('a chat attaching a book that has since been deleted reports what is left', () => {
 		const kept = book('Still here');

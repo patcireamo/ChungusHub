@@ -22,6 +22,7 @@ import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 import {
 	chatLorebookClaim,
+	chatMutedLorebookClaim,
 	chatPersonaClaim,
 	chatPreset,
 	resolvePersonaId,
@@ -122,7 +123,8 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 	// prompt through no id at all, so a short-circuit on an empty link list would drop it.
 	const lorebooks: Lorebook[] = resolveLorebookLinks(await db.getAllLorebooks(), {
 		cards: [...(character?.data.lorebookIds ?? []), ...(personaEntry?.data.lorebookIds ?? [])],
-		chat: chatLorebookClaim(chat)
+		chat: chatLorebookClaim(chat),
+		muted: chatMutedLorebookClaim(chat)
 	});
 
 	const recall: PromptRecall = chatId

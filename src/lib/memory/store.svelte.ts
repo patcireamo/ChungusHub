@@ -77,6 +77,9 @@ export interface ChatCtx {
 	 *  three above. They are a layer on top of what the cards link, so an empty list means
 	 *  the chat adds nothing, never that it has no lore. */
 	lorebookIds: string[];
+	/** The lorebooks this chat leaves out. Travels beside the list above because the resolver
+	 *  takes both: without it, memory would extract against books the story itself muted. */
+	mutedLorebookIds: string[];
 }
 
 export type MemoryStatus = 'idle' | 'processing' | 'building' | 'rebuilding' | 'error';
@@ -446,7 +449,8 @@ class MemoryStore {
 		const lore = resolveLorebooks({
 			books: lorebookStore.booksForChat({
 				cards: [...(data?.lorebookIds ?? []), ...(persona?.data.lorebookIds ?? [])],
-				chat: ctx.lorebookIds
+				chat: ctx.lorebookIds,
+				muted: ctx.mutedLorebookIds
 			}),
 			messages: chatMessages.map((m) => m.content),
 			fields: lorebookScanFields(base.resolvedCharacters ?? [], base.resolvedPersona),

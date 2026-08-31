@@ -27,7 +27,8 @@ import {
 	resolveLorebookLinks,
 	sortEntries,
 	sortLorebooks,
-	type Lorebook
+	type Lorebook,
+	type LorebookLinks
 } from './types';
 
 /** Only the three fields the sort reads; `sortLorebooks` is typed to accept exactly this much. */
@@ -130,8 +131,16 @@ describe('resolveLorebookLinks', () => {
 	const shelf = (...books: Partial<Lorebook>[]): Lorebook[] =>
 		books.map((b, i) => ({ id: `b${i}`, name: `b${i}`, createdAt: i, ...b }) as Lorebook);
 
+	/** The layers a chat brings, with anything the test does not name left empty. */
+	const links = (partial: Partial<LorebookLinks>): LorebookLinks => ({
+		cards: [],
+		chat: [],
+		muted: [],
+		...partial
+	});
+
 	/** A chat that named nothing of its own, which is every chat until somebody says otherwise. */
-	const cardsOnly = (cards: string[] | undefined) => ({ cards, chat: [] });
+	const cardsOnly = (cards: string[] | undefined) => links({ cards });
 
 	test('links resolve in link order, deduped, missing ids dropped', () => {
 		const books = shelf({ id: 'a' }, { id: 'b' }, { id: 'c' });
@@ -151,9 +160,9 @@ describe('resolveLorebookLinks', () => {
 	test('a global book joins a chat that links nothing at all', () => {
 		const books = shelf({ id: 'world', global: true }, { id: 'plain' });
 		expect(resolveLorebookLinks(books, cardsOnly([])).map((b) => b.id)).toEqual(['world']);
-		expect(resolveLorebookLinks(books, { cards: undefined, chat: null }).map((b) => b.id)).toEqual([
-			'world'
-		]);
+		expect(
+			resolveLorebookLinks(books, links({ cards: undefined, chat: null })).map((b) => b.id)
+		).toEqual(['world']);
 	});
 
 	test('globals lead, and a card cannot reshuffle them by linking one', () => {
@@ -170,14 +179,14 @@ describe('resolveLorebookLinks', () => {
 	test("a chat's own books come after the globals and the cards", () => {
 		const books = shelf({ id: 'world', global: true }, { id: 'card' }, { id: 'mine' });
 		expect(
-			resolveLorebookLinks(books, { cards: ['card'], chat: ['mine'] }).map((b) => b.id)
+			resolveLorebookLinks(books, links({ cards: ['card'], chat: ['mine'] })).map((b) => b.id)
 		).toEqual(['world', 'card', 'mine']);
 	});
 
 	// The whole point of the chat layer: no card names it, and it still reaches the prompt.
 	test('a chat can carry a book nothing else brings', () => {
 		const books = shelf({ id: 'plain' }, { id: 'mine' });
-		expect(resolveLorebookLinks(books, { cards: [], chat: ['mine'] }).map((b) => b.id)).toEqual([
+		expect(resolveLorebookLinks(books, links({ chat: ['mine'] })).map((b) => b.id)).toEqual([
 			'mine'
 		]);
 	});
@@ -186,7 +195,9 @@ describe('resolveLorebookLinks', () => {
 	test('a book both a card and the chat name appears once, in the card place', () => {
 		const books = shelf({ id: 'card' }, { id: 'other' });
 		expect(
-			resolveLorebookLinks(books, { cards: ['card'], chat: ['other', 'card'] }).map((b) => b.id)
+			resolveLorebookLinks(books, links({ cards: ['card'], chat: ['other', 'card'] })).map(
+				(b) => b.id
+			)
 		).toEqual(['card', 'other']);
 	});
 
@@ -194,7 +205,7 @@ describe('resolveLorebookLinks', () => {
 	test("a chat's link to a deleted book is dropped", () => {
 		const books = shelf({ id: 'plain' });
 		expect(
-			resolveLorebookLinks(books, { cards: [], chat: ['gone', 'plain'] }).map((b) => b.id)
+			resolveLorebookLinks(books, links({ chat: ['gone', 'plain'] })).map((b) => b.id)
 		).toEqual(['plain']);
 	});
 
@@ -221,6 +232,40 @@ describe('resolveLorebookLinks', () => {
 		const books = shelf({ id: 'late', global: true, createdAt: 900 }, { id: 'early', global: true, createdAt: 1 });
 		resolveLorebookLinks(books, cardsOnly([]));
 		expect(books.map((b) => b.id)).toEqual(['late', 'early']);
+	});
+
+	// The only way one story can stand outside a book the wider setup brings it. Without this
+	// the switch that puts a book in every chat has no exception at all.
+	test('a mute takes a global book out of this story alone', () => {
+		const books = shelf({ id: 'world', global: true }, { id: 'other', global: true });
+		expect(resolveLorebookLinks(books, links({ muted: ['world'] })).map((b) => b.id)).toEqual([
+			'other'
+		]);
+	});
+
+	test("a mute reaches a book this chat's own card links", () => {
+		const books = shelf({ id: 'card' }, { id: 'plain' });
+		expect(
+			resolveLorebookLinks(books, links({ cards: ['card', 'plain'], muted: ['card'] })).map(
+				(b) => b.id
+			)
+		).toEqual(['plain']);
+	});
+
+	// Muting is applied after every adding layer, so a book named twice still goes: a
+	// subtraction that ran earlier would be undone by whichever layer came after it.
+	test('a mute outranks every layer that names the book', () => {
+		const books = shelf({ id: 'both', global: true });
+		expect(
+			resolveLorebookLinks(books, links({ cards: ['both'], chat: ['both'], muted: ['both'] }))
+		).toEqual([]);
+	});
+
+	test('muting a book nothing brings changes nothing', () => {
+		const books = shelf({ id: 'world', global: true });
+		expect(
+			resolveLorebookLinks(books, links({ muted: ['gone', 'never-linked'] })).map((b) => b.id)
+		).toEqual(['world']);
 	});
 });
 

@@ -25,6 +25,7 @@
 	import { assemblePrompt } from '$lib/utils/prompt-assembly';
 	import {
 		chatLorebookClaim,
+		chatMutedLorebookClaim,
 		chatPersonaEntry,
 		chatPreset,
 		resolvePromptTarget,
@@ -271,7 +272,8 @@
 							...(activeCharacterData?.lorebookIds ?? []),
 							...(chatPersona?.data.lorebookIds ?? [])
 						],
-						chat: chatLorebookClaim(chatStore.activeChat)
+						chat: chatLorebookClaim(chatStore.activeChat),
+						muted: chatMutedLorebookClaim(chatStore.activeChat)
 					}),
 					lorebookSettings: lorebookSettingsStore.settings,
 					controls: currentPreset.controls ?? [],

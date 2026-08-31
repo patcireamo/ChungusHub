@@ -6,7 +6,8 @@
  * The rule is the whole design and it is one line: the chat's own claim when the thing it
  * names still exists, otherwise the app's. No layer between the two, and no third state.
  * The lorebooks are the one entry here that does not replace anything: they are a layer the
- * link resolver adds on top of what the cards and the shelf already bring.
+ * link resolver adds on top of what the cards and the shelf already bring, plus the one that
+ * takes away, which is how a story leaves out a book nothing else in this app can exempt it from.
  *
  * The chat is handed in rather than reached for: the generation path imports this module, and
  * a reach into `chatStore` would close the import cycle documented in live-macro-context.ts.
@@ -96,6 +97,15 @@ export function chatPresetClaim(chat: Chat | null): string | null {
  */
 export function chatLorebookClaim(chat: Chat | null): string[] {
 	return chat ? normalizeChatFeatureState(chat.featureState).lorebooks : [];
+}
+
+/**
+ * The lorebooks this story leaves out, the other half of the claim above. The only way one
+ * chat can exempt itself from a book the shelf switched into every chat, or one its own
+ * character carries, so it is read wherever that claim is (architecture/lorebook.md coupling 1).
+ */
+export function chatMutedLorebookClaim(chat: Chat | null): string[] {
+	return chat ? normalizeChatFeatureState(chat.featureState).mutedLorebooks : [];
 }
 
 /** The preset a chat claimed for itself, or null when it follows the app. Same liveness rule

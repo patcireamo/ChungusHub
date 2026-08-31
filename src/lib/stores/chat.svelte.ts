@@ -3,13 +3,19 @@ import {
 	DEFAULT_CHAT_FEATURE_STATE,
 	normalizeChatFeatureState,
 	pushSteeringHistoryEntry,
+	withLorebookClaim,
 	type ChatFeatureState,
 	type ImpersonatePerspective
 } from '$lib/types/chat';
 import { db } from '$lib/services/database';
 import { llmStatus, stopGeneration } from '$lib/services/transport';
 import { findActivePath } from '$lib/utils/message-tree';
-import { chatLorebookClaim, chatPersonaClaim, chatPresetClaim } from '$lib/utils/chat-setup';
+import {
+	chatLorebookClaim,
+	chatMutedLorebookClaim,
+	chatPersonaClaim,
+	chatPresetClaim
+} from '$lib/utils/chat-setup';
 import { formatDate } from '$lib/utils/date';
 import { convertSillyTavernChat } from '$lib/services/sillyTavernChatImport';
 import { toastStore } from '$lib/stores/toast.svelte';
@@ -492,7 +498,8 @@ class ChatStore {
 				characterVersionId: chat.characterVersionId,
 				personaId: chatPersonaClaim(chat),
 				presetId: chatPresetClaim(chat),
-				lorebookIds: chatLorebookClaim(chat)
+				lorebookIds: chatLorebookClaim(chat),
+				mutedLorebookIds: chatMutedLorebookClaim(chat)
 			});
 		} catch (e) {
 			console.error('[memory] refresh failed:', e);
@@ -903,10 +910,21 @@ class ChatStore {
 	async toggleChatLorebook(chatId: string, bookId: string): Promise<void> {
 		return this.queueFeatureStateWrite(chatId, async () => {
 			const current = await this.freshFeatureState(chatId);
-			const lorebooks = current.lorebooks.includes(bookId)
-				? current.lorebooks.filter((id) => id !== bookId)
-				: [...current.lorebooks, bookId];
-			await this.writeFeatureState(chatId, { ...current, lorebooks });
+			const on = !current.lorebooks.includes(bookId);
+			await this.writeFeatureState(chatId, withLorebookClaim(current, bookId, on));
+		});
+	}
+
+	/** Leave a book this story inherits out of it, or let it back in. The only door to that
+	 *  list, and it never touches the claim beside it: what a chat added and what it left out
+	 *  are two answers, and the resolver subtracts this one last. */
+	async toggleChatLorebookMute(chatId: string, bookId: string): Promise<void> {
+		return this.queueFeatureStateWrite(chatId, async () => {
+			const current = await this.freshFeatureState(chatId);
+			const mutedLorebooks = current.mutedLorebooks.includes(bookId)
+				? current.mutedLorebooks.filter((id) => id !== bookId)
+				: [...current.mutedLorebooks, bookId];
+			await this.writeFeatureState(chatId, { ...current, mutedLorebooks });
 		});
 	}
 

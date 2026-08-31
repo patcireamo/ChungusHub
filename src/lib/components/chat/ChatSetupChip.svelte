@@ -4,7 +4,7 @@
 	 *
 	 * A chat can claim its own persona, its own preset, its own connection and its own
 	 * character version, and it can attach lorebooks of its own on top of the ones its cards
-	 * already bring.
+	 * already bring, or leave out one the wider setup brings it.
 	 * Claiming happens here, in the chat, because a chat can only claim things it can name;
 	 * the Connections page and the Library keep speaking for the app.
 	 *
@@ -39,6 +39,7 @@
 		chatConnectionClaim,
 		chatConnectionId,
 		chatLorebookClaim,
+		chatMutedLorebookClaim,
 		chatPersonaClaim,
 		chatPersonaEntry,
 		chatPreset,
@@ -65,11 +66,14 @@
 		/** Portrait thumbnail and its framing. Personas only; nothing else has art. */
 		thumb?: string | null;
 		focus?: string;
-		/** Something OTHER than this chat already brings it, named: the row wears the word,
-		 *  draws its check from it, and refuses the press unless this chat carries it too,
-		 *  since unchecking a row somebody else holds would change nothing. Multi-select
-		 *  categories only; nothing else has a second source. */
+		/** Something OTHER than this chat already brings it, named: the row wears the word and
+		 *  draws its check from it, and a press mutes it rather than doing nothing, since a
+		 *  reader pointing at a row is asking about THIS story. Multi-select categories only;
+		 *  nothing else has a second source. */
 		held?: string;
+		/** This chat took it back out. The row states that instead of who brings it: what
+		 *  matters about a muted book is that it is not in this story. */
+		muted?: boolean;
 	}
 
 	interface SetupCategory {
@@ -164,6 +168,8 @@
 	let books = $derived(lorebookStore.books);
 	let claimedBooks = $derived(chatLorebookClaim(chat));
 	let claimedBookIds = $derived(new Set(claimedBooks));
+	let mutedBooks = $derived(chatMutedLorebookClaim(chat));
+	let mutedBookIds = $derived(new Set(mutedBooks));
 	/** The card sheet this chat PLAYS, which carries its linked books as well as its traits
 	 *  (architecture/prompt-pipeline.md 3b), or null while the pin names nothing: that read
 	 *  throws by design, and this panel is where a lost pin is repinned. */
@@ -179,7 +185,8 @@
 	let booksInPlay = $derived(
 		lorebookStore.booksForChat({
 			cards: [...characterBookIds, ...personaBookIds],
-			chat: claimedBooks
+			chat: claimedBooks,
+			muted: mutedBooks
 		})
 	);
 
@@ -284,40 +291,45 @@
 				pick: (id) => id && pickVersion(id)
 			});
 		}
-		// Last, and apart from the four above it: this is the one row that ADDS to what the app
-		// hands this story rather than standing in for it, so it trails the claims that answer
-		// "instead of the app's". Hidden on an empty shelf, the rule the Version row follows
-		// too: a drill into a list of nothing.
+		// Last, and apart from the four above it: this is the one row that CHANGES what the app
+		// hands this story rather than standing in for it, adding books of its own and leaving
+		// out ones the wider setup brings, so it trails the claims that answer "instead of the
+		// app's". Hidden on an empty shelf, the rule the Version row follows too: a drill into
+		// a list of nothing.
 		if (books.length > 0) {
 			list.push({
 				id: 'lorebook',
 				label: 'Lorebooks',
 				noun: 'lorebooks',
-				// What the story really plays with, cards and globals included, since that is
-				// what "in force" means on every other row here. One book is named; several are
-				// counted, because a row that listed them would wrap.
+				// What the story really plays with, cards and globals included and mutes taken
+				// out, since that is what "in force" means on every other row here. One book is
+				// named; several are counted, because a row that listed them would wrap.
 				value:
 					booksInPlay.length === 0
 						? 'No lorebooks'
 						: booksInPlay.length === 1
 							? booksInPlay[0].name.trim() || 'Untitled lorebook'
 							: `${booksInPlay.length} books`,
-				// Only what THIS chat added: the star says the story broke away, and a book its
-				// character carries is what every chat with that character gets.
-				diverged: lorebookStore.resolveLinks(claimedBooks).length > 0,
+				// Only what THIS chat decided, in either direction: the star says the story broke
+				// away, and a book its character carries is what every chat with that character
+				// gets. A mute counts, since leaving a book out is as much a break as adding one.
+				diverged:
+					lorebookStore.resolveLinks(claimedBooks).length > 0 ||
+					lorebookStore.resolveLinks(mutedBooks).length > 0,
 				// A dangling id is inert here and swept by nobody, exactly as it is on a card
 				// (architecture/lorebook.md), so there is no lost claim to report.
 				lost: null,
 				options: sortLorebooks(books, lorebookViewPrefs.order).map((book) => ({
 					id: book.id,
 					name: book.name.trim() || 'Untitled lorebook',
-					held: heldBy(book)
+					held: heldBy(book),
+					muted: mutedBookIds.has(book.id)
 				})),
 				picked: claimedBookIds,
 				multi: true,
 				app: null,
 				faces: false,
-				pick: (id) => id && toggleLorebook(id)
+				pick: (id) => id && pressLorebook(id)
 			});
 		}
 		return list;
@@ -436,14 +448,27 @@
 		}
 	}
 
-	/** The one pick that neither closes the panel nor takes the list out of the reader's hands:
-	 *  attaching books is a run of presses, and both a close and a busy flag would cost the
-	 *  second one. The toggle itself is computed inside the store's own queue, so two presses
-	 *  landing inside one round trip cannot drop each other. */
-	async function toggleLorebook(bookId: string) {
+	/**
+	 * The one press that neither closes the panel nor takes the list out of the reader's hands:
+	 * setting a story's lore up is a run of presses, and both a close and a busy flag would cost
+	 * the second one. Every write is computed inside the store's own queue, so two presses
+	 * landing in a single round trip cannot drop each other.
+	 *
+	 * One row, three answers, and which one it is follows from what the row already says: a book
+	 * this chat added comes back off, a muted one comes back in, and one the wider setup brings
+	 * is muted for this story alone. Muting a book the chat itself attached would be a second
+	 * way to write the same absence, so that row detaches instead.
+	 */
+	async function pressLorebook(bookId: string) {
 		if (!chat) return;
+		const book = books.find((b) => b.id === bookId);
+		const heldElsewhere = !!book && !!heldBy(book) && !claimedBookIds.has(bookId);
 		try {
-			await chatStore.toggleChatLorebook(chat.id, bookId);
+			if (mutedBookIds.has(bookId) || heldElsewhere) {
+				await chatStore.toggleChatLorebookMute(chat.id, bookId);
+			} else {
+				await chatStore.toggleChatLorebook(chat.id, bookId);
+			}
 		} catch (error) {
 			toastStore.failed('change the lorebooks this chat carries', error);
 		}
@@ -608,23 +633,24 @@
 						{:else}
 							{#each shown as option (option.id)}
 								{@const isPicked = active.picked.has(option.id)}
-								<!-- A row something else already brings is checked and inert: unchecking it
-								     here would change nothing about the story, and a press that does
-								     nothing is worse than a row that says why. -->
-								{@const heldOnly = !!option.held && !isPicked}
+								<!-- The check is what is in force, a different question from what this chat
+								     claimed: a row something else brings is in the story too, and a
+								     muted one is out of it however it got there. -->
+								{@const inPlay = (isPicked || !!option.held) && !option.muted}
 								<!-- A row that toggles announces itself as one: its check is a state the press
 								     changes, not a pick that answers the panel and dismisses it. -->
 								<button
 									type="button"
 									role={active.multi ? 'menuitemcheckbox' : 'menuitem'}
-									aria-checked={active.multi ? isPicked || heldOnly : undefined}
+									aria-checked={active.multi ? inPlay : undefined}
 									class="setup-row"
-									class:is-picked={isPicked}
-									class:is-held={heldOnly}
-									disabled={busy || heldOnly}
+									class:is-picked={isPicked && !option.muted}
+									class:is-held={!!option.held && !isPicked && !option.muted}
+									class:is-muted={option.muted}
+									disabled={busy}
 									onclick={() => active?.pick(option.id)}
 								>
-									<span class="setup-check" class:is-visible={isPicked || heldOnly}>
+									<span class="setup-check" class:is-visible={inPlay}>
 										<Icon name="check" class="w-3.5 h-3.5" />
 									</span>
 									{#if active.faces}
@@ -637,7 +663,12 @@
 										</span>
 									{/if}
 									<span class="setup-row-name">{option.name}</span>
-									{#if option.held}
+									<!-- One word, and while it is muted that word is the state rather than
+									     whoever brings it: the struck name already says the rest, and two
+									     words here would squeeze the name they are about. -->
+									{#if option.muted}
+										<span class="setup-held">Muted</span>
+									{:else if option.held}
 										<span class="setup-held">{option.held}</span>
 									{/if}
 								</button>
@@ -960,9 +991,8 @@
 	}
 
 	/* A row held by something other than this chat: checked, because it really is in the
-	   story, and quiet, because the press belongs to whoever holds it. */
+	   story, and quiet, because this story is not what put it there. */
 	.setup-row.is-held {
-		cursor: default;
 		color: var(--color-text-muted);
 	}
 
@@ -970,7 +1000,16 @@
 		color: var(--color-text-muted);
 	}
 
-	/* Who holds it, in the word for the door that would take it back off. */
+	/* Taken out of this story. The strike is the state: an unchecked row says only that this
+	   chat did not add the book, while a struck one says the chat decided against it. */
+	.setup-row.is-muted .setup-row-name {
+		text-decoration: line-through;
+		text-decoration-thickness: 1px;
+		color: var(--color-text-muted);
+	}
+
+	/* Who holds it, in the word for the door that would take it back off, or the word for
+	   what this chat did to it. */
 	.setup-held {
 		flex-shrink: 0;
 		font-size: 0.64rem;
