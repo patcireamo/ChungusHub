@@ -6,6 +6,7 @@
 import type { Lorebook } from './types';
 import { parseLorebook, toNativeWorldInfo } from './sillytavern';
 import { createZip } from '$lib/services/zip';
+import { triggerDownload } from '$lib/services/libraryExport';
 
 function sanitizeFilename(name: string): string {
 	// Strip only what filesystems reject (reserved punctuation + control chars) so
@@ -13,20 +14,6 @@ function sanitizeFilename(name: string): string {
 	// eslint-disable-next-line no-control-regex
 	const cleaned = (name || '').replace(/[\\/:*?"<>|]|[\x00-\x1f]/g, '').trim();
 	return cleaned || 'lorebook';
-}
-
-/** The anchor is put in the page before it is clicked and taken out after: a detached one
- *  plus an immediate revoke drops the download on a blob big enough to matter, which an
- *  archive of books is. Same shape as the library's own `triggerDownload`. */
-function save(filename: string, blob: Blob): void {
-	const url = URL.createObjectURL(blob);
-	const anchor = document.createElement('a');
-	anchor.href = url;
-	anchor.download = filename;
-	document.body.appendChild(anchor);
-	anchor.click();
-	anchor.remove();
-	URL.revokeObjectURL(url);
 }
 
 function worldInfoBlob(book: Lorebook): Blob {
@@ -37,7 +24,7 @@ function worldInfoBlob(book: Lorebook): Blob {
 
 /** Download a book as SillyTavern-compatible World Info JSON. */
 export function downloadLorebook(book: Lorebook): void {
-	save(`${sanitizeFilename(book.name)}.json`, worldInfoBlob(book));
+	triggerDownload(`${sanitizeFilename(book.name)}.json`, worldInfoBlob(book));
 }
 
 /**
@@ -64,7 +51,7 @@ export function downloadLorebooks(books: Lorebook[]): void {
 			data: encoder.encode(JSON.stringify(toNativeWorldInfo(book), null, 2))
 		};
 	});
-	save('lorebooks.zip', createZip(entries));
+	triggerDownload('lorebooks.zip', createZip(entries));
 }
 
 /** Read + parse a lorebook file into a fresh Lorebook. Throws (loudly) on bad JSON / format. */

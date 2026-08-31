@@ -69,7 +69,7 @@
 	// panels these buttons raise name themselves exactly while the buttons are bare
 	// icons, off one writer, with nothing to keep in step. contracts.test.ts pins
 	// the attribute's name and the probe's variable.
-	const NAV_LABELS_MIN_REM = 46;
+	const NAV_LABELS_MIN_REM = 40;
 	let navRoomProbe: HTMLDivElement | undefined = $state();
 
 	$effect(() => {

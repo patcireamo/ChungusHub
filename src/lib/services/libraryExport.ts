@@ -133,7 +133,9 @@ export function canvasToPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
 	});
 }
 
-/** Prompt a browser download of a blob under the given filename. */
+/** Prompt a browser download of a blob under the given filename. The anchor is put in the
+ *  page before the click and the url revoked after: a detached anchor plus an immediate
+ *  revoke drops the download on a blob big enough to matter. */
 export function triggerDownload(filename: string, blob: Blob): void {
 	const url = URL.createObjectURL(blob);
 	const anchor = document.createElement('a');

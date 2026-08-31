@@ -6,6 +6,7 @@
 	 * appears once the shelf is big enough to need one.
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import LorebookGlobalBadge from './LorebookGlobalBadge.svelte';
 	import { foldForSearch } from '$lib/components/library/browse';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { sortLorebooks } from '$lib/lorebook/types';
@@ -119,7 +120,7 @@
 					<!-- Says why linking this one changes nothing: it is already in every chat, so
 					     the row would otherwise read as a link that did not take. -->
 					{#if book.global}
-						<span class="lbp-every">Every chat</span>
+						<LorebookGlobalBadge />
 					{/if}
 					<span class="lbp-count">{book.entries.length}</span>
 					<span class="lbp-check" aria-hidden="true">
@@ -253,17 +254,6 @@
 
 	.lbp-row.is-linked .lbp-name {
 		font-weight: 600;
-	}
-
-	.lbp-every {
-		flex-shrink: 0;
-		padding: 0.05rem 0.35rem;
-		border-radius: var(--radius-full);
-		border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
-		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-		font-family: var(--font-ui);
-		font-size: 0.6rem;
-		color: var(--color-accent);
 	}
 
 	.lbp-count {

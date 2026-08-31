@@ -122,7 +122,7 @@
 					<span class="act-row-text">
 						<span class="act-row-name">Use in every chat</span>
 						<span class="act-row-help">
-							Every chat scans it, with no character or persona linking it
+							Every chat scans it, even with no character or persona linking it
 						</span>
 					</span>
 					<Toggle

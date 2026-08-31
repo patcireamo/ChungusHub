@@ -1,17 +1,9 @@
 <script lang="ts">
 	/**
-	 * Where a selection of entries is going: the body of both transfer popovers in the entry
-	 * list's selection bar.
-	 *
-	 * **The verb is decided by the button that opened this, and printed at the head.** A panel
-	 * that only listed books would leave the reader guessing whether the next press copies the
-	 * selection or cuts it out of the book they are standing in, and those two presses are not
-	 * equally easy to take back.
-	 *
-	 * The open book is deliberately not in the list: sending entries to the book they are
-	 * already in is the Duplicate the row menu offers. Nor is making a book, for the reason
-	 * the editor cannot mint one either (architecture/lorebook.md): that is an act on the
-	 * archive and it belongs to the shelf.
+	 * Where a selection of entries is going: the body of both transfer popovers. The verb and
+	 * count print at the head, or the reader is left guessing whether the next press copies
+	 * the selection or cuts it out of the book they are standing in. The open book is not in
+	 * the list, and no book can be minted here (architecture/lorebook.md).
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import LorebookGlobalBadge from './LorebookGlobalBadge.svelte';
@@ -32,15 +24,8 @@
 
 	let { bookId, mode, count, onPick }: Props = $props();
 
-	/**
-	 * The three orders offered here, taken from the shelf's own list by id, in its sequence and
-	 * with its labels. This row writes the shelf's preference rather than one of its own, so a
-	 * fourth wording of A → Z is how two views of one shelf start naming one setting two ways.
-	 *
-	 * Three of the seven, because the question here is only "where is that book in this list".
-	 * A shelf left on one of the other four lights none of them, which is honest: the list
-	 * really is in an order these three do not name, and pressing one adopts it everywhere.
-	 */
+	// Three of the shelf's own orders, by id, writing the shelf's preference: a fourth
+	// wording of A → Z is how two views of one shelf start naming one setting two ways.
 	const SORTS = LOREBOOK_SORT_OPTIONS.filter((o) => ['a-z', 'z-a', 'updated'].includes(o.id));
 
 	// The shelf's own order, so the book a reader is hunting sits where they last saw it.
@@ -68,9 +53,8 @@
 	{mode === 'move' ? 'Move' : 'Copy'} {count} {count === 1 ? 'entry' : 'entries'} to…
 </p>
 
-<!-- Nothing to search or order in a list of one, so a shelf holding a single other book gets
-     the list alone. Past that, hunting a name in a long archive is the whole difficulty of
-     this panel and both are drawn every time. -->
+<!-- Nothing to search or order in a list of one; past that, finding one name in a long
+     archive is the whole difficulty of this panel. -->
 {#if books.length > 1}
 	<div class="brw-search lbt-search">
 		<Icon name="search" class="brw-search-icon w-3.5 h-3.5" />

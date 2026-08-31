@@ -1,12 +1,9 @@
 <script lang="ts">
 	/**
-	 * One book, open. The editor half of the Lorebooks shelf (lorebook/LorebooksView): it
-	 * renders wide and centered over the chat while the shelf keeps the Library dock, the
-	 * same split the character editor and its browse list use.
-	 *
-	 * Which book is open belongs to `uiStore.lorebookEditorId`, never to this component, so
-	 * a deep link and a shelf press are the same act. Picking another book is the shelf's
-	 * job alone, exactly as it is for a character: the header states what is open.
+	 * One book, open: the editor half of the Lorebooks shelf (lorebook/LorebooksView), wide
+	 * and centered over the chat while the shelf keeps the Library dock. Which book is open
+	 * belongs to `uiStore.lorebookEditorId`, never to this component, so a deep link and a
+	 * shelf press are the same act; picking another book is the shelf's job alone.
 	 */
 	import { tick } from 'svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -65,8 +62,6 @@
 	let books = $derived(lorebookStore.books);
 	let selectedBook = $derived(books.find((b) => b.id === bookId) ?? null);
 
-	// One column, zero navigation: entries unfold in place, any number at once. Nothing on
-	// this page replaces anything else: reaching a thing never means closing another.
 	let expandedIds = $state<Set<string>>(new Set());
 
 	function toggleExpand(id: string) {
@@ -96,17 +91,14 @@
 	/** Past this the chips are a wall rather than a summary, so the rest wait behind one press. */
 	const CARRIER_LIMIT = 3;
 
-	/** Everything carrying the book, in one row of chips: the cards first, since a card link
-	 *  is the durable binding, then the chats that took it for one story. Each chip opens what
-	 *  it names, which is where the rest of that thing's setup lives. */
+	/** Everything carrying the book, in one row of chips: cards first (the durable binding),
+	 *  then the chats that took it for one story. Each chip opens what it names. */
 	let carriers = $derived([
 		...linked.map((en) => ({
 			id: en.id,
 			name: en.identity.name || 'Unnamed',
 			icon: en.type === 'persona' ? ('user' as const) : ('users' as const),
-			// The face a card is recognised by, aimed by its own framing like every other
-			// cover-fit portrait in the app (architecture/library.md). A card with no picture
-			// keeps the glyph, in the same round frame, so a mixed row is still one shape.
+			// Aimed by the card's own framing, like every cover-fit portrait in the app.
 			thumb: imageService.thumbnailUrl(en.identity.imageUrl),
 			focus: portraitFocusStyle(en.identity.portraitFocus),
 			title: `Open ${en.type} editor`,
@@ -244,8 +236,7 @@
 	let testerOpen = $state(false);
 
 	let globals = $derived(lorebookSettingsStore.settings);
-	/** The strip's collapsed line: what the open book actually runs with, not what either
-	 *  layer holds on its own. */
+	/** The strip's collapsed line: what the book actually runs with, both layers resolved. */
 	let summary = $derived(
 		selectedBook
 			? activationSummary(
@@ -380,17 +371,15 @@
 
 	// ===== housekeeping effects =====
 
-	// A book that goes while it is open (deleted on another device, or from the shelf under
-	// this editor) leaves nothing to edit, so the editor stands down rather than rendering
-	// an empty document over the chat.
+	// A book that goes while it is open (deleted here, on the shelf, or on another device)
+	// closes the editor rather than leaving an empty document over the chat.
 	$effect(() => {
 		if (!selectedBook && !lorebookStore.loading) onClose();
 	});
 
-	// Mirror the open book into the workspace focus so the assistant auto-attaches "the
-	// lorebook you're editing", and release it on unmount: this view exists exactly while
-	// the editor is open, so unmounting IS the user navigating away, and a focus left
-	// standing would keep the assistant pointing at a book they closed.
+	// Mirror the open book into the workspace focus (the assistant's auto-attach signal) and
+	// release it on unmount: unmounting IS navigating away, and a focus left standing keeps
+	// the assistant pointing at a closed book.
 	$effect(() => {
 		workspaceFocus.setLorebook(bookId);
 	});
@@ -402,12 +391,9 @@
 		search = '';
 		selectMode = false;
 	});
-	// A book with no name is one still waiting to be named, so the caret lands there. Not on
-	// a touch screen, where a caret answers by putting the keyboard over the page that was
-	// asked for.
-	// The book is read inside the tick, not in the effect body: every keystroke anywhere in
-	// it reassigns the store's list, and an effect tracking that would yank the caret back
-	// to the title on each one.
+	// A nameless book lands the caret in its Name field; not on touch, where a caret answers
+	// with a keyboard over the page. The book is read inside the tick, not the effect body:
+	// every keystroke reassigns the store's list, and tracking it would yank the caret back.
 	$effect(() => {
 		const id = bookId;
 		if (coarse) return;
@@ -543,12 +529,11 @@
 
 <div class="brw">
 	{#if selectedBook}
-		<!-- The centered editors' shared bar (app.css, .editor-header): the open book is the
-		     subject, what acts on it trails right, and the way out ends the row. -->
+		<!-- The centered editors' shared bar (app.css, .editor-header). -->
 		<header class="editor-header">
 			<div class="editor-header-identity">
-				<!-- A book, said in the glyph the shelf and the Bound to chips already use, since
-				     this bar is the character editor's too. -->
+				<!-- The glyph is what says WHICH editor this is: the bar is the character
+				     editor's too. -->
 				<span class="editor-header-glyph" aria-hidden="true">
 					<Icon name="bookOpen" class="w-4 h-4" strokeWidth={1.5} />
 				</span>
@@ -610,10 +595,8 @@
 		     what it HOLDS on the right, the split the character editor's identity pane uses. -->
 		<div class="lb-page panel-scroll">
 			<div class="lb-rail">
-				<!-- The book's cover, in the slot and the shape the other two editors open a
-				     portrait in: press to pick one, the two corner actions to drop it or aim it.
-				     Empty it keeps the book glyph rather than a photo one, since a plate with
-				     nothing on it should still say what kind of thing this page is about. -->
+				<!-- The cover, in the slot the other two editors open a portrait in: press to
+				     pick one, the two corner actions to drop it or aim it. -->
 				<div
 					class="lb-plate portrait-frame"
 					class:is-empty={!coverUrl}
@@ -659,13 +642,11 @@
 					{/if}
 				</div>
 
-				<!-- The book's identity. The name is a labelled field and not a second heading:
-				     the bar above already says it, and saying it twice in two sizes is what made
-				     this page read as one title with a title under it. -->
+				<!-- The name is a labelled field and never a second heading: the bar above already
+				     says it, and the same string in two sizes an inch apart reads as two titles. -->
 				<div class="lb-ident">
 					<div>
-						<!-- The character editor's own Name field, to the class: two editors sharing a
-						     bar must not hold two opinions about what a field looks like. -->
+						<!-- The character editor's own Name field, to the class. -->
 						<label
 							for="lb-name-{selectedBook.id}"
 							class="block text-sm font-ui font-medium text-text-primary mb-1.5"
@@ -686,12 +667,8 @@
 						/>
 					</div>
 
-					<!-- Use in every chat answers the same question from the other end and lives in
-					     the Activation strip beside the rest of what the book DOES; this is the
-					     named half of it. Binding is offered from here as well as from each card and
-					     each chat because a book is where the question is asked from most often, and
-					     it writes through those same doors, so there is one binding and not a second
-					     kind of one. -->
+					<!-- Binding, from the book's end: it writes through the same doors the cards and
+					     chats use, so there is one binding and not a second kind of one. -->
 					<div class="lb-bind">
 						<button
 							type="button"
@@ -739,9 +716,8 @@
 								{/if}
 							</div>
 						{:else if !selectedBook.global}
-							<!-- Held back while the switch above is on, since a book reaching every chat
-							     must not read as one reaching nothing right under the control that
-							     sends it everywhere. -->
+							<!-- Held back while the book is in every chat: a book reaching every chat
+							     must not read as one reaching nothing. -->
 							<p class="lb-bind-none">Not linked</p>
 						{/if}
 					</div>
@@ -750,10 +726,6 @@
 
 			<!-- What the book holds: the second column, and the whole page on a narrow panel. -->
 			<div class="lb-page-inner">
-				<!-- The two strips take the wide column rather than the rail: three cards of
-				     settings and a scan box with results have nothing to spend 17rem on. The rail
-				     keeps what the book IS. Stacked, this lands exactly where it did, since the
-				     rail's contents still come first down the page. -->
 				<div class="lb-strips">
 					<section class="lb-strip">
 						<button
@@ -778,9 +750,8 @@
 						{/if}
 					</section>
 
-					<!-- Same shape as Activation, and deliberately under it: that strip states the
-					     rules this one lets you try. Collapsed until asked for, since a book is read
-					     far more often than it is debugged. -->
+					<!-- Under Activation on purpose: that strip states the rules this one lets you
+					     try. -->
 					<section class="lb-strip">
 						<button
 							type="button"
@@ -851,8 +822,6 @@
 								{/snippet}
 								<div class="brw-sec">
 									<div class="brw-sec-head"><span class="brw-sec-title">Sort by</span></div>
-									<!-- One list of finished answers, not a field plus a direction: "Z → A" is the
-									     whole choice, so nothing has to be combined in the reader's head. -->
 									<div class="brw-opts" role="radiogroup" aria-label="Sort entries by">
 										{#each LOREBOOK_ENTRY_SORT_OPTIONS as option (option.id)}
 											<button
@@ -870,9 +839,8 @@
 								</div>
 								<div class="brw-sec">
 									<div class="brw-sec-head"><span class="brw-sec-title">Show</span></div>
-									<!-- The three natures wear the dot their rows wear, so the filter and the list
-									     name a row the same way. Independent switches rather than one choice: a
-									     reader hiding the disabled entries still wants both of the live kinds. -->
+									<!-- The natures wear the dot their rows wear, so the filter and the list name
+									     a row the same way. -->
 									<div class="brw-opts brw-opts--3" role="group" aria-label="Filter by entry behavior">
 										{#each LOREBOOK_ENTRY_NATURE_OPTIONS as option (option.id)}
 											<button
@@ -944,11 +912,9 @@
 								Disable
 							</button>
 
-							<!-- Where the selection goes, between the two that change it in place and
-							     the one that destroys it. The verb is pressed here and the destination
-							     picked in the panel, so neither has to be read back out of the other.
-							     Both wear their words at every width, exactly as Enable and Disable do:
-							     two icons nobody can tell apart is not a saving on a phone. -->
+							<!-- The verb is pressed here and the destination picked in the panel. Both
+							     wear their words at every width, as Enable and Disable do: two icons
+							     nobody can tell apart is not a saving on a phone. -->
 							{#if otherBooks.length > 0}
 								<BrowsePopover bind:open={moveOpen}>
 									{#snippet trigger({ toggle, open })}
@@ -1007,9 +973,8 @@
 
 					{#if entries.length === 0 && elsewhere.length === 0 && (q || hidden.length > 0)}
 						<div class="text-center py-12 px-6">
-							<!-- Names the narrowing that actually emptied the list, and offers a way out of
-							     each one that is on. A list emptied by the funnel must not read as a search
-							     that missed, or the reader clears the thing that was not in the way. -->
+							<!-- Names the narrowing that emptied the list and offers a way out of each one
+							     that is on: a list the funnel emptied must not read as a search that missed. -->
 							<p class="text-sm font-ui text-text-secondary">
 								{q ? `Nothing matches “${search}”.` : 'Every entry here is hidden.'}
 							</p>
@@ -1084,9 +1049,7 @@
 			</div>
 		</div>
 
-		<!-- What the book amounts to, in the foot the two library editors wear. It is stated
-		     here and no longer in the rail: the same numbers an inch apart in two type sizes is
-		     a page arguing with itself. -->
+		<!-- What the book amounts to, in the foot the two library editors wear, stated once. -->
 		<LorebookStatsBar book={selectedBook} />
 	{/if}
 </div>
@@ -1176,9 +1139,8 @@
 		padding: 0.75rem 0.75rem 3rem;
 	}
 
-	/* What the book IS, beside what it HOLDS. A container query and not a viewport one: this
-	   panel is as wide as the chat column, so a window that is wide with both docks open must
-	   not be told it has room for two columns. */
+	/* A container query and not a viewport one: this panel is as wide as the chat column, so
+	   a wide window with both docks open must not be told it has room for two columns. */
 	@container browse (min-width: 860px) {
 		.lb-page {
 			grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
@@ -1186,16 +1148,14 @@
 			padding: 1.5rem 1.5rem 3rem;
 		}
 
-		/* It holds still while the entries scroll past it: what a book is does not move. */
 		.lb-rail {
 			position: sticky;
 			top: 0;
 			align-self: start;
 		}
 
-		/* The rule between the panes, drawn on this side and only side by side, the character
-		   editor's own: stacked, the two follow each other down the page and a line across the
-		   middle would read as a divider inside the book's identity. */
+		/* The rule between the panes, drawn only side by side: stacked, a line across the
+		   middle reads as a divider inside the book's identity. */
 		.lb-page-inner {
 			border-left: 1px solid var(--color-border-subtle);
 			padding-left: 1.5rem;
@@ -1209,10 +1169,8 @@
 		min-width: 0;
 	}
 
-	/* The two strips, stacked as one block above the entries. Its own size container rather
-	   than the column's: the column also holds the entry rows, whose popovers position
-	   themselves against the viewport, and a containment context here would make this element
-	   the box they measure from. */
+	/* Its own size container, never the column's: the entry rows' popovers measure against
+	   the viewport, and a containment context on their column would redefine that box. */
 	.lb-strips {
 		display: flex;
 		flex-direction: column;
@@ -1223,8 +1181,7 @@
 	}
 
 	/* Narrow, a strip's summary takes its own line under the name: a hint clipped to three
-	   words is not a hint, and it is the whole reason a fold can stay folded. Given the room,
-	   it rides on the name's line where it belongs. */
+	   words is not a hint, and it is the whole reason a fold can stay folded. */
 	@container lbstrips (max-width: 26rem) {
 		.lb-strip-head {
 			flex-wrap: wrap;
@@ -1242,9 +1199,6 @@
 		}
 	}
 
-	/* The entries take the column they are given, the way the character editor's fields take
-	   theirs: a measure of their own would leave a wide panel mostly empty, and an entry row
-	   is a title over a line of keys rather than prose that needs a short line. */
 	.lb-page-inner {
 		min-width: 0;
 	}
@@ -1272,8 +1226,7 @@
 
 	/* ===== the book's identity, at the head of the rail ===== */
 
-	/* The other two editors open on a picture, so the rail does too. Capped and centred while
-	   the panes are stacked, exactly as their portrait is: at full width a 3:4 plate would be
+	/* Capped and centred while the panes are stacked: at full width a 3:4 plate would be
 	   taller than the phone it is on. */
 	.lb-plate {
 		position: relative;
@@ -1315,8 +1268,8 @@
 		object-fit: cover;
 	}
 
-	/* The empty plate is the only state that says what a press does, since a plate carrying
-	   art already shows it under the veil below. */
+	/* The empty plate is the one state that says what a press does; a plate carrying art
+	   says it in the veil below. */
 	.lb-plate-add {
 		display: grid;
 		justify-items: center;
@@ -1417,11 +1370,8 @@
 		background: var(--color-border);
 	}
 
-	/* Label over the chips: in a rail there is no room to sit them side by side, and who
-	   carries the book is a list rather than a value. */
-	/* How the book reaches a chat: the way to bind one, then what is bound. The rule above it
-	   is what stops the block reading as one more field of the name: what the book is CALLED
-	   and what carries it are two questions, and only the first is typed into. */
+	/* The rule above this block is what stops it reading as one more field of the name: what
+	   the book is called and what carries it are two questions. */
 	.lb-bind {
 		display: flex;
 		flex-direction: column;
@@ -1464,7 +1414,6 @@
 		}
 	}
 
-	/* Nothing carries it, said where the chips would be rather than down among the counts. */
 	.lb-bind-none {
 		font-family: var(--font-ui);
 		font-size: 0.7rem;
@@ -1530,8 +1479,7 @@
 		object-fit: cover;
 	}
 
-	/* The count of what is folded away: it names a quantity rather than a thing, so it wears
-	   no face and takes its padding back. */
+	/* Names a quantity rather than a thing, so it wears no face and takes its padding back. */
 	.lb-chip--more {
 		padding: 0.15rem 0.55rem;
 		color: var(--color-text-muted);
@@ -1566,41 +1514,32 @@
 
 	/* ===== the settings strip ===== */
 
-	/* Close enough to read as one stack with the identity above them: what the book is, what
-	   it runs with, what it fires on. The rail's own gap spaces them. */
 	.lb-strip {
 		border: 1px solid var(--color-border-subtle);
 		border-radius: var(--radius-lg);
 		background: var(--color-card-bg);
 	}
 
-	/* The line itself is the shared .strip-head recipe in app.css; the card around it owns
-	   its padding, which is what keeps a strip in a document and a row on a shelf each
-	   aligned to what they sit under. */
+	/* The line is the shared .strip-head recipe (app.css); the card around it owns the
+	   padding, so a strip here and a row on the shelf each align to what they sit under. */
 	.lb-strip-head {
 		padding: 0.6rem 0.85rem;
 	}
 
 	/* ===== in-list controls (one row: search takes the room, the actions end it) ===== */
 
-	/* The library toolbar's own shape. The search flexes and the actions ride at the end of the
-	   same line, so the list starts one row higher and a phone spends its height on entries. */
 	.lb-controls {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		/* Padding, not margin: it cannot collapse into the strips above it, so the gap that
-		   separates the book's settings from its entries is the one written here. Several times
-		   the space between the strips themselves, which is what makes the zones read apart. */
+		/* Padding, not margin: it must not collapse into the strips above, and this gap is
+		   what separates the book's settings from its entries. */
 		padding: 1.25rem 0 0.5rem;
 	}
 
-	/* Tighter than the gap above, which is what makes the three read as one group beside the
-	   search rather than as three loose buttons. Also the position context the BrowsePopover
-	   panel anchors to, the same job .brw-bar does for the library toolbars: without it the
-	   panel resolves against an ancestor further up, lands away from its trigger, and
-	   .panel-scroll clips it. Its right edge is the group's, so the panel drops under the
-	   buttons that summoned it. */
+	/* The position context the BrowsePopover panel anchors to, the job .brw-bar does for the
+	   library toolbars: without it the panel resolves against an ancestor further up, lands
+	   away from its trigger, and .panel-scroll clips it. */
 	.lb-controls-row {
 		position: relative;
 		flex-shrink: 0;
@@ -1609,9 +1548,7 @@
 		gap: 0.375rem;
 	}
 
-	/* The tallest thing this row opens, and it opens inside .lb-page's scroller. Capping it
-	   keeps the whole panel reachable where the viewport is short (a phone held sideways)
-	   instead of making the page taller to reach the last option.
+	/* Capped so the whole panel stays reachable on a short viewport (a phone held sideways).
 	   dvh: static vh over-measures under mobile browser chrome. */
 	.lb-controls-row :global(.brw-pop-panel) {
 		max-height: min(26rem, 62dvh);
@@ -1623,7 +1560,6 @@
 		opacity: 0.4;
 	}
 
-	/* Inside the column the bulk bar reads as a banner, not a full-bleed strip. */
 	.lb-bulk {
 		margin: 0 0 0.5rem;
 		border: 1px solid color-mix(in srgb, var(--color-accent) 26%, transparent);
@@ -1640,12 +1576,9 @@
 
 	/* ===== entry rows ===== */
 
-	/* One plate under the whole list, the card the two strips above it wear. A collapsed row
-	   is a title, a keyword line and two small number fields, all of them small text: over a
-	   blurred backdrop with the glass theme up, they were being read against whatever picture
-	   was behind the panel. The surface belongs to the list rather than to each row, so the
-	   rows still read as lines of one thing instead of a stack of separate chips.
-	   Its padding also keeps a hovered or open row off the plate's own rounded corners. */
+	/* One plate under the whole list, never a surface per row: small text over the glass
+	   theme's blurred backdrop is otherwise read against whatever picture is behind the
+	   panel. The padding keeps a hovered or open row off the plate's rounded corners. */
 	.lb-rows {
 		display: flex;
 		flex-direction: column;

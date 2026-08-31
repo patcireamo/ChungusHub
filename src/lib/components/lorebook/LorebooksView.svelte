@@ -1,10 +1,8 @@
 <script lang="ts">
 	/**
-	 * Lorebooks half of the merged Library (see library/LibraryView): the shelf. Speaks the
-	 * same toolbar/row language as the Characters and Personas tabs, and offers exactly what
-	 * a shelf of books has a subject for: no layout switch and no card size (a book has no
-	 * picture to size), no pager (a shelf is text rows, and paging one is a control that
-	 * costs more than it saves).
+	 * Lorebooks half of the merged Library (see library/LibraryView): the shelf, wearing the
+	 * Characters and Personas tabs' own browse bar, selection bar, view options (layout, card
+	 * size, per page) and pager.
 	 *
 	 * A press opens the book's editor over the chat (uiStore.lorebookEditorId), the same slot
 	 * and the same reason as the character editor: a book is a document, and the dock is a shelf.
@@ -87,10 +85,8 @@
 		currentPage = 1;
 	}
 
-	/** The defaults page, a drill-down over the shelf. It lives HERE and not inside a book,
-	 *  because a layer every book falls back to is a property of the archive: reaching it
-	 *  through one book's editor made it unreachable with an empty shelf, and made an
-	 *  app-wide change look like something being done to the book whose name was on screen. */
+	/** The defaults page, a drill-down over the shelf: a layer every book falls back to is a
+	 *  property of the archive, never of one book (architecture/lorebook.md). */
 	let defaultsOpen = $state(false);
 	let defaultsRow = $state<HTMLButtonElement | null>(null);
 	let defaultsBack = $state<HTMLButtonElement | null>(null);
@@ -104,21 +100,13 @@
 		else defaultsRow?.focus();
 	}
 
-	/**
-	 * How a book reaches a prompt, which is one question with three answers, held out of the
-	 * list independently: a reader hunting dead weight wants only the unlinked, one tidying
-	 * the working shelf wants only the linked, and one auditing what every chat is carrying
-	 * wants only the globals.
-	 *
-	 * Global outranks linked rather than sitting on an axis of its own: a book in every chat
-	 * is already in every chat, so which cards also link it is not what this filter asks. The
-	 * `noun` is what the chips and the labels a screen reader gets are written from, since
-	 * "No in every chat books" is not a sentence.
-	 */
+	/** The Show filter's three answers: how a book reaches a prompt, with global outranking
+	 *  linked (architecture/lorebook.md). `noun` writes the chips and their screen-reader
+	 *  labels, in the same every-chat vocabulary the rest of the shelf speaks. */
 	const LINK_STATES = [
-		{ id: 'global', label: 'In every chat', noun: 'global' },
-		{ id: 'linked', label: 'Linked', noun: 'linked' },
-		{ id: 'unlinked', label: 'Unlinked', noun: 'unlinked' }
+		{ id: 'global', label: 'In every chat', noun: 'every-chat books' },
+		{ id: 'linked', label: 'Linked', noun: 'linked books' },
+		{ id: 'unlinked', label: 'Unlinked', noun: 'unlinked books' }
 	] as const;
 	type LinkState = (typeof LINK_STATES)[number]['id'];
 
@@ -129,21 +117,14 @@
 		resetPage();
 	}
 
-	// The shelf's order is the app-wide lorebook display preference, shared with the character
-	// editor's link picker: two views of one shelf. Layout, card size and per-page belong to
-	// this shelf alone, since the picker is a popover with one shape.
+	// The app-wide lorebook display order, shared with both pickers over this shelf; layout,
+	// card size and per-page are this shelf's alone (architecture/lorebook.md coupling 10).
 	let ordered = $derived(sortLorebooks(books, lorebookViewPrefs.order));
 	let cardMinWidth = $derived(CARD_SIZE_MAP[lorebookViewPrefs.cardSize] ?? 160);
 
-	/**
-	 * What the shelf's search reads: the book's name plus its INDEX, its entry titles and
-	 * keywords. Not entry content, which is what the open book's own search is for: a shelf
-	 * answers "which book holds the Charizard entry", and a query matching prose would put
-	 * half the archive on screen.
-	 *
-	 * Folded once per book and kept until that book is edited. Folding every title and key on
-	 * every keystroke is a pass over the whole archive per character typed.
-	 */
+	/** The search reads names, entry titles and keywords, never entry content (architecture/
+	 *  lorebook.md), folded once per book and kept until that book is edited: folding on every
+	 *  keystroke is a pass over the whole archive per character typed. */
 	const index = new Map<string, { stamp: number; text: string }>();
 
 	function searchTextOf(book: (typeof books)[number]): string {
@@ -235,9 +216,8 @@
 	let fileInput = $state<HTMLInputElement | null>(null);
 
 	function open(id: string) {
-		// A book opening puts the shelf back under it: the dock and the editor over the chat
-		// are read as one place, and a defaults page left standing behind an open book is a
-		// shelf that has lost the list the book came off.
+		// A defaults page left standing behind an open book is a shelf that has lost the list
+		// the book came off.
 		defaultsOpen = false;
 		uiStore.lorebookEditorId = id;
 	}
@@ -268,8 +248,8 @@
 				toastStore.failed(`import "${file.name}"`, err);
 			}
 		}
-		// One book opens, so a reader never has to hunt a long shelf for what just arrived.
-		// A batch does not: thirty editors would be thirty answers to the same question.
+		// One book opens so it never has to be hunted for; a batch does not, since thirty
+		// editors would be thirty answers to the same question.
 		if (landed.length === 1) open(landed[0]);
 	}
 
@@ -438,9 +418,8 @@
 				</div>
 			</BrowsePopover>
 
-			<!-- View options: how the shelf is drawn. Its own disclosure and not the funnel's,
-			     the same split the Library's two tabs draw: one popover narrows the list, the
-			     other only changes how what is left is shown. -->
+			<!-- View options, its own disclosure and not the funnel's: one popover narrows the
+			     list, the other only changes how what is left is drawn. -->
 			<BrowsePopover bind:open={viewOpen}>
 				{#snippet trigger({ toggle, open: isOpen })}
 					<button
@@ -589,10 +568,8 @@
 	{/if}
 
 	{#if !defaultsOpen}
-		<!-- The archive's own settings, a row under the toolbar rather than an item in a menu:
-		     the layer every book falls back to is worth stating, and its line already says what
-		     it holds. Drawn with no books too, since how books will behave is decidable before
-		     there is a book to try it on. -->
+		<!-- The archive's own settings row, drawn with no books too: how books will behave is
+		     decidable before there is a book to try it on. -->
 		<button
 			type="button"
 			class="brw-bar strip-head lbd-row"
@@ -620,12 +597,12 @@
 				{#each LINK_STATES as state (state.id)}
 					{#if hidden.includes(state.id)}
 						<span class="brw-chip">
-							No {state.noun} books
+							No {state.noun}
 							<button
 								type="button"
 								class="brw-chip-x"
 								onclick={() => toggleLinkState(state.id)}
-								aria-label="Show {state.noun} lorebooks again"
+								aria-label="Show {state.noun} again"
 							>
 								<Icon name="close" class="w-2.5 h-2.5" />
 							</button>
@@ -734,9 +711,8 @@
 				</EmptyState>
 			</div>
 		{:else if visible.length === 0}
-			<!-- Names the narrowing that actually emptied the shelf and offers a way out of each
-			     one that is on, the line the entry list one panel away draws: a list the funnel
-			     emptied must not send the reader to clear a search that was never in the way. -->
+			<!-- Names the narrowing that emptied the shelf and offers a way out of each one that
+			     is on: a list the funnel emptied must not send the reader to clear the search. -->
 			<div class="grid place-items-center h-full">
 				<EmptyState icon="search" size="sm">
 					{query ? `Nothing matches “${search.trim()}”.` : 'Every lorebook here is hidden.'}

@@ -20,8 +20,8 @@
 		{ id: 'lorebooks', icon: 'bookOpen', label: 'Lorebooks' }
 	];
 
-	// The New chat flow rides this panel: a banner names the current step, the tabs
-	// double as the step indicator, and picks in the views drive uiStore's flow state.
+	// The New chat flow rides this panel: a banner names the current step, picks in the
+	// views drive uiStore's flow state, and leaving its two shelves ends it.
 	let flowStep = $derived(uiStore.newChatStep);
 	let flowCharacterName = $derived.by(() => {
 		const id = uiStore.newChatCharacterId;

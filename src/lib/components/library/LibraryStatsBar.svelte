@@ -177,7 +177,9 @@
 	{/if}
 	<span
 		class="editor-stat"
-		title="Counted with the tokenizer of the model you generate with."
+		title={isPersona
+			? 'Counted with the tokenizer of the model you generate with.'
+			: 'Every field of this version, counted with the tokenizer of the model you generate with.'}
 	>
 		<b>{num(cardTokens)}</b>
 		{isPersona ? 'tokens in the description' : 'tokens on the card'}

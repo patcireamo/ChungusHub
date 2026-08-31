@@ -2775,7 +2775,7 @@ class ServerDatabase {
 		const cover = (this.getLorebook(id) as { cover?: string } | null)?.cover;
 		// Just drop the book. A character/persona may keep this id in data.lorebookIds, but
 		// every reader resolves links against existing books (prompt-builder, the store's
-		// resolveBooks, the assistant, the link picker and both link counts) and skips ids with
+		// booksForChat, the assistant, the link picker and both link counts) and skips ids with
 		// no book, so a dangling id is inert, and it's dropped the next time that entry's links
 		// are edited; an ordinary save carries it, since it sends data whole. We deliberately do NOT
 		// rewrite character_library here: that cross-table write under the 'lorebooks' sync
