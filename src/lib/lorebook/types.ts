@@ -509,6 +509,54 @@ export function resolveBookActivation(
 	};
 }
 
+/**
+ * The one wording of an activation strip's collapsed line: what will actually run, in the
+ * order the panel below it asks. Read by the open book's Activation strip and by the shelf's
+ * Global Settings row, so the same setting cannot be named two ways one press apart.
+ *
+ * A part is `set` where the resolved value DIFFERS from the default it would otherwise take,
+ * which is the reading the panel's stars give. The shelf passes the defaults as both, so
+ * nothing is lit there: the root layer has nothing to differ from.
+ */
+export function activationSummary(
+	resolved: ResolvedActivation,
+	settings: LorebookGlobalSettings
+): { text: string; set: boolean }[] {
+	const out = [
+		{
+			text: `scan ${resolved.scanDepth === 0 ? 'all' : resolved.scanDepth}`,
+			set: resolved.scanDepth !== settings.scanDepth
+		},
+		{
+			text: `recursion ${resolved.recursiveScanning ? 'on' : 'off'}`,
+			set: resolved.recursiveScanning !== settings.recursiveScanning
+		}
+	];
+	if (resolved.recursiveScanning) {
+		// While books recurse together there is one shared loop, so the cap that runs is the
+		// global one; printing the book's own here would name a number the scan never uses.
+		const passes = settings.crossBookRecursion ? settings.maxRecursionSteps : resolved.maxRecursionSteps;
+		out.push({
+			text: passes > 0 ? `≤${passes} passes` : '∞ passes',
+			set: !settings.crossBookRecursion && resolved.maxRecursionSteps !== settings.maxRecursionSteps
+		});
+		if (settings.crossBookRecursion) out.push({ text: 'books together', set: false });
+	}
+	out.push({
+		text: `case ${resolved.caseSensitive ? 'on' : 'off'}`,
+		set: resolved.caseSensitive !== settings.caseSensitive
+	});
+	out.push({
+		text: `whole words ${resolved.matchWholeWords ? 'on' : 'off'}`,
+		set: resolved.matchWholeWords !== settings.matchWholeWords
+	});
+	out.push({
+		text: `budget ${settings.budgetPercent > 0 ? `${settings.budgetPercent}%` : 'off'}`,
+		set: false
+	});
+	return out;
+}
+
 // ===== the scan and what it decided =====
 
 /**

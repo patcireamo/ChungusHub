@@ -18,7 +18,14 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { lorebookDeleteMessage, natureOf, sortEntries, sortLorebooks } from './types';
+import {
+	activationSummary,
+	DEFAULT_LOREBOOK_GLOBAL_SETTINGS,
+	lorebookDeleteMessage,
+	natureOf,
+	sortEntries,
+	sortLorebooks
+} from './types';
 
 /** Only the two fields the sort reads; `sortLorebooks` is typed to accept exactly this much. */
 function book(name: string, createdAt = 0) {
@@ -232,5 +239,56 @@ describe('lorebookDeleteMessage', () => {
 		expect(lorebookDeleteMessage(book('Kaldoria', 2), 3)).toBe(
 			'Delete "Kaldoria" and its 2 entries? It is bound to 3 characters or personas. This cannot be undone.'
 		);
+	});
+});
+
+/**
+ * The one wording of a strip's collapsed line, read by the open book's Activation strip and
+ * by the shelf's Global Settings row. What is locked here is which parts are LIT: the mark
+ * means "this departs from what it would inherit", so the root layer marks nothing and a
+ * value that has nothing to act on is never sold as a difference.
+ */
+describe('activationSummary', () => {
+	const globals = DEFAULT_LOREBOOK_GLOBAL_SETTINGS;
+	const resolvedOf = (over: Partial<typeof globals> = {}) => ({ ...globals, ...over });
+	const lit = (parts: { text: string; set: boolean }[]) =>
+		parts.filter((p) => p.set).map((p) => p.text);
+
+	test('the defaults against themselves light nothing: the root has nothing to differ from', () => {
+		expect(lit(activationSummary(globals, globals))).toEqual([]);
+	});
+
+	test('a book lights only what it departs from', () => {
+		const parts = activationSummary(resolvedOf({ scanDepth: 12 }), globals);
+		expect(lit(parts)).toEqual(['scan 12']);
+	});
+
+	test('0 reads as the whole chat, and an uncapped recursion as endless', () => {
+		const parts = activationSummary(resolvedOf({ scanDepth: 0 }), globals).map((p) => p.text);
+		expect(parts).toContain('scan all');
+		expect(parts).toContain('∞ passes');
+	});
+
+	test('recursion off takes the pass count off the line entirely', () => {
+		const parts = activationSummary(resolvedOf({ recursiveScanning: false }), globals).map(
+			(p) => p.text
+		);
+		expect(parts).toEqual([
+			`scan ${globals.scanDepth}`,
+			'recursion off',
+			'case off',
+			'whole words on',
+			'budget off'
+		]);
+	});
+
+	// While books recurse together there is ONE loop, so a book's own cap runs nothing: the
+	// line prints the global number and refuses to mark it, or the strip would name a cap the
+	// scan never reaches for.
+	test('books recursing together print the global cap, unlit', () => {
+		const crossing = { ...globals, crossBookRecursion: true, maxRecursionSteps: 3 };
+		const parts = activationSummary(resolvedOf({ maxRecursionSteps: 9 }), crossing);
+		expect(parts.map((p) => p.text)).toContain('≤3 passes');
+		expect(lit(parts)).toEqual([]);
 	});
 });

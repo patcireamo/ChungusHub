@@ -20,14 +20,21 @@
 	import LorebookShelfRow from './LorebookShelfRow.svelte';
 	import LorebookActivationPanel from './LorebookActivationPanel.svelte';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
+	import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 	import { downloadLorebook, downloadLorebooks, readLorebookFile } from '$lib/lorebook/io';
-	import { lorebookDeleteMessage, sortLorebooks } from '$lib/lorebook/types';
+	import { activationSummary, lorebookDeleteMessage, sortLorebooks } from '$lib/lorebook/types';
 	import { lorebookSortPref, LOREBOOK_SORT_OPTIONS } from '$lib/stores/lorebookSort.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { uiStore } from '$lib/stores/ui.svelte';
 
 	let books = $derived(lorebookStore.books);
+
+	/** The Global Settings row's own line: the defaults, in the wording the open book's
+	 *  Activation strip uses. Passed as both layers, so nothing is lit: this IS the root. */
+	let defaults = $derived(
+		activationSummary(lorebookSettingsStore.settings, lorebookSettingsStore.settings)
+	);
 
 	/** bookId → how many characters and personas carry it. One pass over the library rather
 	 *  than a filter per row, which would walk the whole library once for every book. An
@@ -283,7 +290,7 @@
 			>
 				<Icon name="chevronLeft" class="w-4 h-4" strokeWidth={2} />
 			</button>
-			<span class="lbd-title">Lorebook Defaults</span>
+			<span class="lbd-title">Global Settings</span>
 		</div>
 	{:else if books.length > 0}
 		<!-- Toolbar: search front and center, two quiet disclosures, one primary action.
@@ -399,18 +406,6 @@
 					<Icon name="check" class="w-3.5 h-3.5" />
 					{selectionMode ? 'Exit selection' : 'Select multiple'}
 				</button>
-				<button
-					type="button"
-					role="menuitem"
-					class="brw-menu-item"
-					onclick={() => {
-						moreOpen = false;
-						defaultsOpen = true;
-					}}
-				>
-					<Icon name="settings" class="w-3.5 h-3.5" />
-					Lorebook Defaults
-				</button>
 			</BrowsePopover>
 
 			<button type="button" class="brw-new" onclick={newBook} title="New lorebook">
@@ -418,7 +413,28 @@
 				<span class="brw-new-label">New</span>
 			</button>
 		</div>
+	{/if}
 
+	{#if !defaultsOpen}
+		<!-- The archive's own settings, a row under the toolbar rather than an item in a menu:
+		     the layer every book falls back to is worth stating, and its line already says what
+		     it holds. Drawn with no books too, since how books will behave is decidable before
+		     there is a book to try it on. -->
+		<button type="button" class="brw-bar strip-head lbd-row" onclick={() => (defaultsOpen = true)}>
+			<Icon name="settings" class="w-4 h-4 text-text-muted flex-shrink-0" />
+			<span class="strip-title">Global Settings</span>
+			<span class="strip-sum">
+				{#each defaults as part (part.text)}
+					<span class="strip-part">{part.text}</span>
+				{/each}
+			</span>
+			<span class="strip-chev">
+				<Icon name="chevronRight" class="w-4 h-4" />
+			</span>
+		</button>
+	{/if}
+
+	{#if !defaultsOpen && books.length > 0}
 		<!-- Active filters: a summary line that only exists while something narrows the list -->
 		{#if filtersActive}
 			<div class="brw-chips">
@@ -508,7 +524,7 @@
 
 	<div
 		role="region"
-		aria-label={defaultsOpen ? 'Lorebook defaults' : 'Lorebooks'}
+		aria-label={defaultsOpen ? 'Global lorebook settings' : 'Lorebooks'}
 		class="brw-content"
 		class:is-flush={defaultsOpen}
 	>
@@ -534,13 +550,6 @@
 						<Button variant="secondary" size="sm" onclick={() => fileInput?.click()}>
 							<Icon name="upload" class="w-4 h-4" />
 							Import
-						</Button>
-						<!-- The empty shelf's own door to the defaults, since the toolbar holding the
-						     other one is not drawn here: how books will behave is decidable before
-						     there is a book to try it on. -->
-						<Button variant="ghost" size="sm" onclick={() => (defaultsOpen = true)}>
-							<Icon name="settings" class="w-4 h-4" />
-							Defaults
 						</Button>
 					{/snippet}
 				</EmptyState>
@@ -618,6 +627,12 @@
 />
 
 <style>
+	/* The settings row wears the toolbar's own bar so it lines up with the row above it,
+	   and the strip vocabulary inside so it reads like the book editor's own strips. */
+	.lbd-row:hover {
+		background: color-mix(in srgb, var(--color-bg-tertiary) 45%, transparent);
+	}
+
 	/* The page's name, in the row that holds the way back to the shelf. */
 	.lbd-title {
 		min-width: 0;

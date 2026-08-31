@@ -26,6 +26,7 @@
 	import { workspaceFocus } from '$lib/stores/workspaceFocus.svelte';
 	import { countTokens } from '$lib/tokenizer';
 	import {
+		activationSummary,
 		lorebookDeleteMessage,
 		natureOf,
 		partitionEntries,
@@ -100,47 +101,11 @@
 	let testerOpen = $state(false);
 
 	let globals = $derived(lorebookSettingsStore.settings);
-	/**
-	 * The strip's collapsed line: what the open book actually runs with, not what either layer
-	 * holds on its own. A part is lit where the book's value DIFFERS from the default it would
-	 * otherwise take, the same reading the panel's stars give: a value typed back to the
-	 * default is not a difference, however the book happens to store it.
-	 */
-	let summary = $derived.by(() => {
-		const b = selectedBook;
-		if (!b) return [] as { text: string; set: boolean }[];
-		const a = resolveBookActivation(b, globals);
-		const out = [
-			{ text: `scan ${a.scanDepth === 0 ? 'all' : a.scanDepth}`, set: a.scanDepth !== globals.scanDepth },
-			{
-				text: `recursion ${a.recursiveScanning ? 'on' : 'off'}`,
-				set: a.recursiveScanning !== globals.recursiveScanning
-			}
-		];
-		if (a.recursiveScanning) {
-			// While books recurse together there is one shared loop, so the cap that runs is the
-			// global one; printing the book's own here would name a number the scan never uses.
-			const passes = globals.crossBookRecursion ? globals.maxRecursionSteps : a.maxRecursionSteps;
-			out.push({
-				text: passes > 0 ? `≤${passes} passes` : '∞ passes',
-				set: !globals.crossBookRecursion && a.maxRecursionSteps !== globals.maxRecursionSteps
-			});
-			if (globals.crossBookRecursion) out.push({ text: 'books together', set: false });
-		}
-		out.push({
-			text: `case ${a.caseSensitive ? 'on' : 'off'}`,
-			set: a.caseSensitive !== globals.caseSensitive
-		});
-		out.push({
-			text: `whole words ${a.matchWholeWords ? 'on' : 'off'}`,
-			set: a.matchWholeWords !== globals.matchWholeWords
-		});
-		out.push({
-			text: `budget ${globals.budgetPercent > 0 ? `${globals.budgetPercent}%` : 'off'}`,
-			set: false
-		});
-		return out;
-	});
+	/** The strip's collapsed line: what the open book actually runs with, not what either
+	 *  layer holds on its own. */
+	let summary = $derived(
+		selectedBook ? activationSummary(resolveBookActivation(selectedBook, globals), globals) : []
+	);
 
 	let searchEl = $state<HTMLInputElement | null>(null);
 	let nameEl = $state<HTMLInputElement | null>(null);
@@ -495,18 +460,18 @@
 				<section class="lb-strip">
 					<button
 						type="button"
-						class="lb-strip-head"
+						class="strip-head lb-strip-head"
 						onclick={() => (stripOpen = !stripOpen)}
 						aria-expanded={stripOpen}
 					>
 						<Icon name="settings" class="w-4 h-4 text-text-muted flex-shrink-0" />
-						<span class="lb-strip-title">Activation</span>
-						<span class="lb-strip-sum">
+						<span class="strip-title">Activation</span>
+						<span class="strip-sum">
 							{#each summary as part (part.text)}
-								<span class="lb-sum-part" class:is-set={part.set}>{part.text}</span>
+								<span class="strip-part" class:is-set={part.set}>{part.text}</span>
 							{/each}
 						</span>
-						<span class="lb-strip-chev" class:is-open={stripOpen}>
+						<span class="strip-chev" class:is-open={stripOpen}>
 							<Icon name="chevronDown" class="w-4 h-4" />
 						</span>
 					</button>
@@ -521,16 +486,16 @@
 				<section class="lb-strip">
 					<button
 						type="button"
-						class="lb-strip-head"
+						class="strip-head lb-strip-head"
 						onclick={() => (testerOpen = !testerOpen)}
 						aria-expanded={testerOpen}
 					>
 						<Icon name="search" class="w-4 h-4 text-text-muted flex-shrink-0" />
-						<span class="lb-strip-title">Test scan</span>
-						<span class="lb-strip-sum">
-							<span class="lb-sum-part">see what this book fires on</span>
+						<span class="strip-title">Test scan</span>
+						<span class="strip-sum">
+							<span class="strip-part">see what this book fires on</span>
 						</span>
-						<span class="lb-strip-chev" class:is-open={testerOpen}>
+						<span class="strip-chev" class:is-open={testerOpen}>
 							<Icon name="chevronDown" class="w-4 h-4" />
 						</span>
 					</button>
@@ -989,66 +954,11 @@
 		background: var(--color-card-bg);
 	}
 
+	/* The line itself is the shared .strip-head recipe in app.css; the card around it owns
+	   its padding, which is what keeps a strip in a document and a row on a shelf each
+	   aligned to what they sit under. */
 	.lb-strip-head {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		width: 100%;
 		padding: 0.6rem 0.85rem;
-		cursor: pointer;
-		text-align: left;
-	}
-
-	.lb-strip-head:hover .lb-strip-title {
-		color: var(--color-accent);
-	}
-
-	.lb-strip-title {
-		flex-shrink: 0;
-		font-family: var(--font-ui);
-		font-size: 0.8125rem;
-		font-weight: 600;
-		color: var(--color-text-primary);
-		transition: color 140ms ease;
-	}
-
-	.lb-strip-sum {
-		flex: 1;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-family: var(--font-mono);
-		font-size: 0.68rem;
-		color: var(--color-text-muted);
-		text-align: right;
-	}
-
-	/* The parts this book set for itself, lit inside the resolved line. The separator is
-	   drawn by the part that follows it so it keeps the muted colour either way. */
-	.lb-sum-part.is-set {
-		color: var(--color-accent);
-	}
-
-	.lb-sum-part + .lb-sum-part::before {
-		content: '· ';
-		color: var(--color-text-muted);
-		opacity: 0.75;
-	}
-
-	.lb-strip-chev {
-		flex-shrink: 0;
-		display: flex;
-		align-items: center;
-		color: var(--color-text-muted);
-	}
-
-	.lb-strip-chev :global(svg) {
-		transition: transform 160ms ease;
-	}
-
-	.lb-strip-chev.is-open :global(svg) {
-		transform: rotate(180deg);
 	}
 
 	/* ===== in-list controls (one row: search takes the room, the actions end it) ===== */

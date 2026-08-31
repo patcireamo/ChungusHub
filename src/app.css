@@ -801,6 +801,73 @@
 		transform: translateY(1px);
 	}
 
+	/* A settings strip's pressable line: a glyph, the name, a dim summary of what is set,
+	   and the affordance at the end. Worn by the open book's Activation and Test scan
+	   strips and by the Lorebooks shelf's Global Settings row, so settings folded behind
+	   one line read the same wherever they are. **The host owns the frame**, a card in a
+	   document or a full-bleed bar on a shelf, and its padding with it: a padding here
+	   would misalign the row from whatever it sits under. */
+	.strip-head {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		width: 100%;
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.strip-head:hover .strip-title {
+		color: var(--color-accent);
+	}
+
+	.strip-title {
+		flex-shrink: 0;
+		font-family: var(--font-ui);
+		font-size: 0.8125rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		transition: color 140ms ease;
+	}
+
+	.strip-sum {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--font-mono);
+		font-size: 0.68rem;
+		color: var(--color-text-muted);
+		text-align: right;
+	}
+
+	/* The parts the subject set for itself, lit inside the resolved line. The separator is
+	   drawn by the part that follows it so it keeps the muted colour either way. */
+	.strip-part.is-set {
+		color: var(--color-accent);
+	}
+
+	.strip-part + .strip-part::before {
+		content: '· ';
+		color: var(--color-text-muted);
+		opacity: 0.75;
+	}
+
+	.strip-chev {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		color: var(--color-text-muted);
+	}
+
+	.strip-chev svg {
+		transition: transform 160ms ease;
+	}
+
+	.strip-chev.is-open svg {
+		transform: rotate(180deg);
+	}
+
 	/* Narrow screens: the bar tightens, icons stay, nothing wraps. */
 	@media (max-width: 640px) {
 		.editor-header {

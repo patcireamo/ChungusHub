@@ -198,7 +198,7 @@
 		{#if scope === 'book'}
 			<p class="act-foot">
 				Whether books recurse together is one property of the whole scan, so it is set in
-				Lorebook Defaults, on the Lorebooks shelf.
+				Global Settings, on the Lorebooks shelf.
 			</p>
 		{/if}
 	</div>
@@ -283,7 +283,7 @@
 			<span class="act-label section-label">Prompt budget</span>
 			<p class="act-foot act-foot--flush">
 				Lore budget is one share of the prompt for everything lore injects at once, so it is set
-				in Lorebook Defaults, on the Lorebooks shelf.
+				in Global Settings, on the Lorebooks shelf.
 			</p>
 		</div>
 	{/if}
