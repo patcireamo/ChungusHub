@@ -11,6 +11,7 @@
 	 * order is long enough that scrolling it is the slow way to reach one book.
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import { foldForSearch } from '$lib/components/library/browse';
 	import { sortLorebooks, type Lorebook } from '$lib/lorebook/types';
 	import { lorebookSortPref, LOREBOOK_SORT_OPTIONS } from '$lib/stores/lorebookSort.svelte';
 
@@ -42,8 +43,8 @@
 	// `books` itself stays in store order, which is what link resolution reads.
 	let ordered = $derived(sortLorebooks(books, lorebookSortPref.order));
 	let visible = $derived.by(() => {
-		const q = query.trim().toLowerCase();
-		return q ? ordered.filter((b) => nameOf(b).toLowerCase().includes(q)) : ordered;
+		const q = foldForSearch(query.trim());
+		return q ? ordered.filter((b) => foldForSearch(nameOf(b)).includes(q)) : ordered;
 	});
 
 	function show() {

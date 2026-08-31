@@ -134,8 +134,11 @@ export function sortEntries(
  * whole family to "i" before lowercasing makes any casing of a name match any casing
  * of the query. Letters like ö/ü/ş/ç/ğ are distinct letters, not accents. They are
  * deliberately NOT folded, so "göl" does not match "gol".
+ *
+ * Exported because the lorebook shelf and the two pickers over it search names too, and a
+ * second casing rule would make the same query find a book in one list and miss it in the next.
  */
-function foldForSearch(s: string): string {
+export function foldForSearch(s: string): string {
 	return s.normalize('NFC').replace(/[İI]/g, 'i').toLowerCase().replace(/ı/g, 'i');
 }
 

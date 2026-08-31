@@ -5,12 +5,14 @@
 	import type { LibraryEntryType } from '$lib/types/library';
 
 	interface Props {
-		/** The kind this card holds: names the conversion item ("Save as persona…" and back). */
-		entryType: LibraryEntryType;
+		/** The kind this card holds: names the conversion item ("Save as persona…" and back).
+		 *  Absent on a row that is neither, which is also a row with nothing to convert to. */
+		entryType?: LibraryEntryType;
 		/** Favorite toggle lives in the menu now (shared across every view mode). */
 		isFavorite?: boolean;
 		onToggleFavorite?: () => void;
-		onDuplicate: () => void;
+		/** Absent where the shelf has no copy action, e.g. a lorebook row. */
+		onDuplicate?: () => void;
 		/** Opens the conversion dialog: a persona made from this character, or the reverse. */
 		onConvert?: () => void;
 		onDelete: () => void;
@@ -147,16 +149,18 @@
 			</button>
 			<div class="my-1 border-t border-border-subtle"></div>
 		{/if}
-		<button
-			type="button"
-			role="menuitem"
-			onclick={(e) => run(onDuplicate, e)}
-			class="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs font-ui text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition-colors"
-		>
-			<Icon name="copy" class="w-3.5 h-3.5" />
-			Duplicate
-		</button>
-		{#if onConvert}
+		{#if onDuplicate}
+			<button
+				type="button"
+				role="menuitem"
+				onclick={(e) => run(onDuplicate, e)}
+				class="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs font-ui text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition-colors"
+			>
+				<Icon name="copy" class="w-3.5 h-3.5" />
+				Duplicate
+			</button>
+		{/if}
+		{#if onConvert && entryType}
 			<button
 				type="button"
 				role="menuitem"

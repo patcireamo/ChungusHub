@@ -8,15 +8,9 @@ import { workspaceFocus } from '$lib/stores/workspaceFocus.svelte';
 /** Chat-area overlays: they cover the chat column. Settings and the merged Library
  *  are separate (settingsOpen / libraryOpen), each docking into a side margin. The
  *  Chungus Assistant is neither: it's a free-floating widget (assistantOpen). */
-export type OverlayType =
-	| 'chats'
-	| 'lorebook'
-	| 'presetControls'
-	| 'storymap'
-	| 'memory'
-	| 'stats';
-/** The two halves of the merged Library, chosen by the panel's top switcher. */
-export type LibraryTab = 'characters' | 'personas';
+export type OverlayType = 'chats' | 'presetControls' | 'storymap' | 'memory' | 'stats';
+/** The three shelves of the merged Library, chosen by the panel's top switcher. */
+export type LibraryTab = 'characters' | 'personas' | 'lorebooks';
 /** What the Chats panel lists: the open chat's character, or every chat there is. */
 export type ChatsScope = 'character' | 'all';
 /** Transient side occupied by the snapped Assistant; null while floating/centered/closed. */
@@ -52,9 +46,9 @@ class UiStore {
 	// mount and clears the field. Set by "Edit in Library" style buttons.
 	pendingLibraryEntryId = $state<string | null>(null);
 
-	// One-shot deep link for the Lorebook overlay: when set, the view selects this book
-	// and clears the field (an id that names no book is dropped instead of resetting the
-	// selection). Set by assistant chips pointing at a book (assistant-targets.ts).
+	// One-shot deep link for the Lorebooks shelf: when set, the shelf opens this book's
+	// editor and clears the field (an id that names no book is dropped once the shelf has
+	// loaded). Set by assistant chips pointing at a book (assistant-targets.ts).
 	pendingLorebookId = $state<string | null>(null);
 
 	// One-shot deep link for settings anchors: navigation.ts sets it; the
@@ -83,7 +77,7 @@ class UiStore {
 	settingsLocked = $state(false);
 	libraryOpen = $state(false);
 	libraryLocked = $state(false);
-	// Which half of the merged Library is showing. Persisted across opens so the
+	// Which shelf of the merged Library is showing. Persisted across opens so the
 	// panel reopens on the tab you left it on; deep links override it.
 	libraryTab = $state<LibraryTab>('characters');
 	// The library entry (character or persona) whose editor is open in the centered
@@ -91,6 +85,11 @@ class UiStore {
 	// list; opening an entry pops its editor out over the chat column, so the wide
 	// editor never gets squeezed into the dock.
 	libraryEditorId = $state<string | null>(null);
+	// The lorebook whose editor is open, in the same centered slot and for the same
+	// reason: a book is a document and the dock is a shelf. At most ONE of the two
+	// centered editors stands at a time (`openEditor`), or a deep link out of one
+	// would stack the other on top of it.
+	lorebookEditorId = $state<string | null>(null);
 	// The Chungus Assistant is a free-floating widget, not a docked panel: it never
 	// participates in the mutual exclusion above. `assistantOpen` toggles the panel vs.
 	// its mascot launcher button; there's no lock because it remains independently
@@ -204,13 +203,20 @@ class UiStore {
 		this.libraryOpen = true;
 	}
 
+	/** Raise one of the two centered editors and lower the other. They share a slot over
+	 *  the chat, so a deep link out of one must replace it rather than stack on it. */
+	private openEditor(entry: string | null, lorebook: string | null) {
+		this.libraryEditorId = entry;
+		this.lorebookEditorId = lorebook;
+	}
+
 	closeLibrary() {
 		// Honour the nav guard: an unsaved brand-new entry traps the close (and pulses the
 		// warning) whether it's the pill, click-away, or another panel stealing the dock.
 		if (this.navBlocked()) return;
 		this.libraryOpen = false;
-		// Closing the dock also dismisses the centered entry editor.
-		this.libraryEditorId = null;
+		// Closing the dock also dismisses whichever centered editor it opened.
+		this.openEditor(null, null);
 		// The flow lives in the Library, so closing the panel abandons the wizard.
 		this.clearNewChat();
 		// The Library dock owned the auto-attach focus; releasing it on close means the
@@ -227,8 +233,8 @@ class UiStore {
 			flushFn?.();
 			this.libraryTab = 'characters';
 		}
-		// The wizard presents the browse list, so dismiss any open entry editor.
-		this.libraryEditorId = null;
+		// The wizard presents the browse list, so dismiss any open editor.
+		this.openEditor(null, null);
 		this.openLibrary(flushFn);
 		this.newChatStep = 'character';
 		this.newChatCharacterId = null;
@@ -240,7 +246,7 @@ class UiStore {
 		this.newChatCharacterId = characterId;
 		this.newChatStep = 'persona';
 		this.libraryTab = 'personas';
-		this.libraryEditorId = null;
+		this.openEditor(null, null);
 	}
 
 	/** End the New chat flow, completion and cancel alike. */
@@ -258,16 +264,16 @@ class UiStore {
 		this.libraryLocked = !this.libraryLocked;
 	}
 
-	// Flip the Library's Characters/Personas switcher, trapped by the nav guard so an
-	// unsaved brand-new entry can't be abandoned by switching tabs.
+	// Flip the Library's shelf switcher, trapped by the nav guard so an unsaved
+	// brand-new entry can't be abandoned by switching tabs.
 	setLibraryTab(tab: LibraryTab, flushFn?: () => void) {
 		if (this.libraryTab === tab) return;
 		if (this.navBlocked()) return;
 		flushFn?.();
 		this.libraryTab = tab;
 		// The centered editor belongs to the tab it was opened from, so dismiss it and the
-		// dock and the editor never show different halves of the Library.
-		this.libraryEditorId = null;
+		// dock and the editor never show different shelves of the Library.
+		this.openEditor(null, null);
 	}
 
 	// Open the Library on the entry's tab, deep-linking to its editor (the view opens
@@ -275,7 +281,29 @@ class UiStore {
 	openLibraryEntry(entryId: string, entityType: 'character' | 'persona', flushFn?: () => void) {
 		this.pendingLibraryEntryId = entryId;
 		this.libraryTab = entityType === 'persona' ? 'personas' : 'characters';
+		this.openEditor(null, null);
 		this.openLibrary(flushFn);
+	}
+
+	/** The Lorebooks shelf: the third tab of the Library, where books are browsed. */
+	openLorebooks(flushFn?: () => void) {
+		this.libraryTab = 'lorebooks';
+		this.openEditor(null, null);
+		this.openLibrary(flushFn);
+	}
+
+	/** Ctrl+B and the command palette: the shelf, or away from it if it is already up. */
+	toggleLorebooks(flushFn?: () => void) {
+		if (this.libraryOpen && this.libraryTab === 'lorebooks') this.closeLibrary();
+		else this.openLorebooks(flushFn);
+	}
+
+	/** Open one book's editor with the shelf behind it (an assistant chip pointing at a
+	 *  book). The shelf consumes `pendingLorebookId` so an id naming nothing is dropped
+	 *  rather than opening an editor over a book that is gone. */
+	openLorebook(bookId: string, flushFn?: () => void) {
+		this.pendingLorebookId = bookId;
+		this.openLorebooks(flushFn);
 	}
 
 	/** Route the settings surface to a page. Every page navigation funnels through

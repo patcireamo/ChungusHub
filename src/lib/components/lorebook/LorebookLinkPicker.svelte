@@ -6,6 +6,7 @@
 	 * appears once the shelf is big enough to need one.
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import { foldForSearch } from '$lib/components/library/browse';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { sortLorebooks } from '$lib/lorebook/types';
 	import { lorebookSortPref } from '$lib/stores/lorebookSort.svelte';
@@ -28,7 +29,7 @@
 	// (architecture/lorebook.md), and a foot counting those reads as a link to a book on screen.
 	let linkedCount = $derived(lorebookStore.resolveBooks(selected).length);
 
-	// Linked books first, then the shared display order (Lorebooks pane → switcher → Sort)
+	// Linked books first, then the shared display order (Library → Lorebooks → Sort)
 	// within each group. The split is captured once at mount so a toggle restyles the row
 	// instead of teleporting it, and the outer sort is stable, so it can't undo that.
 	// svelte-ignore state_referenced_locally -- freezing the open-time order is the point
@@ -41,9 +42,9 @@
 
 	let query = $state('');
 	let visible = $derived.by(() => {
-		const q = query.trim().toLowerCase();
+		const q = foldForSearch(query.trim());
 		if (!q) return ordered;
-		return ordered.filter((book) => (book.name || 'Untitled lorebook').toLowerCase().includes(q));
+		return ordered.filter((book) => foldForSearch(book.name || 'Untitled lorebook').includes(q));
 	});
 
 	function toggle(id: string) {
@@ -56,7 +57,7 @@
 
 	function openManager() {
 		onNavigate?.();
-		uiStore.toggleOverlay('lorebook');
+		uiStore.openLorebooks();
 	}
 
 	// Escape clears an active search before it bubbles up and closes the popover.

@@ -1,11 +1,11 @@
 /**
  * How the lorebook lists are ordered on screen.
  *
- * One choice for the whole app, not one per list: the switcher in the Lorebooks pane and the
- * link picker in the character editor are two views of the same shelf, and picking an order
- * twice would cost exactly the work this exists to save. Rides the settings spine like the
- * browse-view and sprite prefs, so it survives a reload and follows the user to their other
- * devices.
+ * One choice for the whole app, not one per list: the Library's Lorebooks shelf, the open
+ * book's switcher and the link picker in the character editor are three views of the same
+ * shelf, and picking an order three times would cost exactly the work this exists to save.
+ * Rides the settings spine like the browse-view and sprite prefs, so it survives a reload
+ * and follows the user to their other devices.
  *
  * Display only: `lorebookStore.books` is never reordered, because link resolution reads that
  * order to decide what reaches the prompt first (`sortLorebooks` in lorebook/types.ts).

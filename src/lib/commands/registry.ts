@@ -336,7 +336,7 @@ export const COMMANDS: CommandDef[] = [
 		group: 'open',
 		icon: 'bookOpen',
 		describe: 'Open Lorebooks',
-		run: () => uiStore.openOverlay('lorebook', flush)
+		run: () => uiStore.openLorebooks(flush)
 	},
 	{
 		name: 'library',

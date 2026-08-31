@@ -198,9 +198,9 @@ export const SHORTCUTS: ShortcutDef[] = [
 	{
 		id: 'lorebook',
 		group: 'panels',
-		label: 'Lorebooks',
+		label: 'Library: Lorebooks',
 		binding: { mod: true, key: 'b' },
-		run: () => uiStore.toggleOverlay('lorebook', flush)
+		run: () => uiStore.toggleLorebooks(flush)
 	},
 	{
 		id: 'library',

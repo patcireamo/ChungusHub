@@ -57,11 +57,10 @@ export async function goToTarget(target: AssistantTarget): Promise<void> {
 		return;
 	}
 	if (target.kind === 'lorebook') {
-		// A BOOK id lands on the book itself (the view consumes the one-shot and drops an
-		// id it cannot resolve: some tool rows carry an entry id here, which keeps
-		// today's open-the-overlay behavior for them).
-		uiStore.pendingLorebookId = target.id;
-		uiStore.openOverlay('lorebook', flush);
+		// A BOOK id opens that book (the shelf consumes the one-shot and drops an id it
+		// cannot resolve: some tool rows carry an entry id here, which leaves them on the
+		// shelf rather than on an editor over nothing).
+		uiStore.openLorebook(target.id, flush);
 		return;
 	}
 	await navigateTo({ kind: 'chat', id: target.id, label: '' });

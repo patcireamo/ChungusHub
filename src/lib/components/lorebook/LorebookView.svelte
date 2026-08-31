@@ -1,9 +1,12 @@
-<script module lang="ts">
-	// The open book survives overlay close/reopen (this view unmounts with the overlay).
-	let rememberedBookId: string | null = null;
-</script>
-
 <script lang="ts">
+	/**
+	 * One book, open. The editor half of the Lorebooks shelf (lorebook/LorebooksView): it
+	 * renders wide and centered over the chat while the shelf keeps the Library dock, the
+	 * same split the character editor and its browse list use.
+	 *
+	 * Which book is open belongs to `uiStore.lorebookEditorId`, never to this component, so
+	 * a deep link, a shelf press and the header's switcher are all the same act.
+	 */
 	import { tick } from 'svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
@@ -18,8 +21,7 @@
 	import LorebookBookSwitcher from './LorebookBookSwitcher.svelte';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
-	import { downloadLorebook, readLorebookFile } from '$lib/lorebook/io';
-	import { toastStore } from '$lib/stores/toast.svelte';
+	import { downloadLorebook } from '$lib/lorebook/io';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { workspaceFocus } from '$lib/stores/workspaceFocus.svelte';
@@ -37,13 +39,19 @@
 		LOREBOOK_ENTRY_SORT_OPTIONS
 	} from '$lib/stores/lorebookEntryPrefs.svelte';
 
+	interface Props {
+		/** The book being edited. Owned by uiStore, so the switcher only reassigns it. */
+		bookId: string;
+		onClose: () => void;
+	}
+
+	let { bookId, onClose }: Props = $props();
+
 	const reduce =
 		typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 	let books = $derived(lorebookStore.books);
-
-	let selectedId = $state<string | null>(rememberedBookId);
-	let selectedBook = $derived(books.find((b) => b.id === selectedId) ?? null);
+	let selectedBook = $derived(books.find((b) => b.id === bookId) ?? null);
 
 	// One column, zero navigation: entries unfold in place, any number at once. Nothing on
 	// this page replaces anything else: reaching a thing never means closing another.
@@ -133,7 +141,6 @@
 		return out;
 	});
 
-	let fileInput = $state<HTMLInputElement | null>(null);
 	let searchEl = $state<HTMLInputElement | null>(null);
 	let nameEl = $state<HTMLInputElement | null>(null);
 
@@ -170,7 +177,7 @@
 		if (!q) return [] as { bookId: string; bookName: string; entry: LorebookEntry }[];
 		const out: { bookId: string; bookName: string; entry: LorebookEntry }[] = [];
 		for (const b of books) {
-			if (b.id === selectedId) continue;
+			if (b.id === bookId) continue;
 			for (const e of b.entries) {
 				if (matches(e)) {
 					out.push({ bookId: b.id, bookName: b.name || 'Untitled lorebook', entry: e });
@@ -215,71 +222,40 @@
 
 	// ===== housekeeping effects =====
 
-	// Consume the one-shot deep link (an assistant chip pointing at a book). An id naming
-	// no book is dropped once the list is in, rather than left armed to fire on a future
-	// overlay open; an empty list keeps it armed until the books load.
+	// A book that goes while it is open (deleted on another device, or from the shelf under
+	// this editor) leaves nothing to edit, so the editor stands down rather than rendering
+	// an empty document over the chat.
 	$effect(() => {
-		const pending = uiStore.pendingLorebookId;
-		if (!pending) return;
-		if (books.some((b) => b.id === pending)) {
-			selectedId = pending;
-			uiStore.pendingLorebookId = null;
-		} else if (books.length) {
-			uiStore.pendingLorebookId = null;
-		}
-	});
-
-	// Keep a valid selection: default to the first book, recover if the selected one is gone.
-	$effect(() => {
-		if (!selectedBook && books.length > 0) selectedId = books[0].id;
-	});
-	$effect(() => {
-		rememberedBookId = selectedId;
+		if (!selectedBook && !lorebookStore.loading) onClose();
 	});
 
 	// Mirror the open book into the workspace focus so the assistant auto-attaches "the
 	// lorebook you're editing", and release it on unmount: this view exists exactly while
-	// its overlay is open, so unmounting IS the user navigating away, and a focus left
+	// the editor is open, so unmounting IS the user navigating away, and a focus left
 	// standing would keep the assistant pointing at a book they closed.
 	$effect(() => {
-		workspaceFocus.setLorebook(selectedId);
+		workspaceFocus.setLorebook(bookId);
 	});
 	$effect(() => () => workspaceFocus.setLorebook(null));
 	// Reset per-book transient UI on book switch. Expanded ids are keyed by entry id, so the
 	// other book's rows simply don't render them. A cross-book jump survives the swap.
 	$effect(() => {
-		selectedId;
+		bookId;
 		search = '';
 		selectMode = false;
 	});
+	// A book with no name is one the shelf just made, so the caret lands where it is named.
+	// The book is read inside the tick, not in the effect body: every keystroke anywhere in
+	// it reassigns the store's list, and an effect tracking that would yank the caret back
+	// to the title on each one.
+	$effect(() => {
+		const id = bookId;
+		void tick().then(() => {
+			if (!lorebookStore.getBook(id)?.name) nameEl?.focus();
+		});
+	});
 	// Commit pending debounced writes when the view unmounts.
 	$effect(() => () => void lorebookStore.flush());
-
-	// ===== book actions =====
-
-	/** A fresh book opens with the caret in the page's title, which is where it is named. */
-	async function newBook() {
-		const book = await lorebookStore.createBook('');
-		selectedId = book.id;
-		await tick();
-		nameEl?.focus();
-	}
-
-	async function onFiles(e: Event) {
-		const input = e.target as HTMLInputElement;
-		const files = Array.from(input.files ?? []);
-		input.value = '';
-		for (const file of files) {
-			try {
-				const book = await readLorebookFile(file);
-				await lorebookStore.addBook(book);
-				selectedId = book.id;
-				toastStore.success(`Imported "${book.name}" (${book.entries.length} entries)`);
-			} catch (err) {
-				toastStore.failed(`import "${file.name}"`, err);
-			}
-		}
-	}
 
 	// ===== the actions menu (everything you can do TO the book the switcher names) =====
 
@@ -307,8 +283,8 @@
 	async function deleteBook() {
 		if (!selectedBook) return;
 		bookDeleteOpen = false;
+		onClose();
 		await lorebookStore.deleteBook(selectedBook.id);
-		selectedId = null;
 	}
 
 	// ===== entry actions =====
@@ -347,8 +323,8 @@
 		if (copy) void revealEntry(copy.id);
 	}
 
-	async function openInBook(bookId: string, entryId: string) {
-		selectedId = bookId;
+	async function openInBook(id: string, entryId: string) {
+		uiStore.lorebookEditorId = id;
 		await revealEntry(entryId);
 	}
 
@@ -375,7 +351,10 @@
 			// handler sees it, so no popover guard is needed here.
 			if (selectMode) selectMode = false;
 			else if (expandedIds.size > 0) expandedIds = new Set();
-			else return; // falls through to the workspace's global Escape, which closes the overlay
+			// The editor is the top-most surface, so the last rung closes IT and leaves the
+			// shelf standing, rather than falling through to the workspace and taking the
+			// whole Library with it.
+			else onClose();
 			e.preventDefault();
 			return;
 		}
@@ -398,23 +377,20 @@
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
-<input
-	bind:this={fileInput}
-	type="file"
-	accept=".json,application/json"
-	multiple
-	class="hidden"
-	onchange={onFiles}
-/>
 
 <div class="brw">
-	<header class="overlay-header overlay-header--stacked">
-		<h2 class="overlay-title">Lorebooks</h2>
-		<!-- The switcher names a book and the menu acts on the book it names, so the two ride
-		     the subject line together. -->
-		<div class="overlay-crumb">
-			{#if selectedBook}
-				<LorebookBookSwitcher book={selectedBook} {books} onSelect={(id) => (selectedId = id)} />
+	{#if selectedBook}
+		<!-- The shelf's name leads, the open book is the subject, and the menu acts on the
+		     book it names, so switcher and menu ride the subject line together. -->
+		<header class="overlay-header">
+			<div class="overlay-crumb">
+				<span class="overlay-crumb-label">Lorebooks</span>
+				<span class="overlay-crumb-sep">/</span>
+				<LorebookBookSwitcher
+					book={selectedBook}
+					{books}
+					onSelect={(id) => (uiStore.lorebookEditorId = id)}
+				/>
 				<div class="lb-acts">
 					<BrowsePopover bind:open={actionsOpen} variant="menu">
 						{#snippet trigger({ toggle, open })}
@@ -430,25 +406,6 @@
 								<Icon name="dotsVertical" class="w-4 h-4" strokeWidth={1.5} />
 							</button>
 						{/snippet}
-						<button
-							type="button"
-							role="menuitem"
-							class="brw-menu-item"
-							onclick={() => closeActionsAnd(() => void newBook())}
-						>
-							<Icon name="plus" class="w-4 h-4" strokeWidth={1.5} />
-							<span>New lorebook</span>
-						</button>
-						<button
-							type="button"
-							role="menuitem"
-							class="brw-menu-item"
-							onclick={() => closeActionsAnd(() => fileInput?.click())}
-						>
-							<Icon name="upload" class="w-4 h-4" strokeWidth={1.5} />
-							<span>Import World Info</span>
-						</button>
-						<div class="lb-acts-rule"></div>
 						<button
 							type="button"
 							role="menuitem"
@@ -469,28 +426,17 @@
 						</button>
 					</BrowsePopover>
 				</div>
-			{/if}
-			<!-- No book, nothing to say: the empty state below is the whole panel. -->
-		</div>
-	</header>
-	{#if books.length === 0}
-		<div class="flex-1 grid place-items-center">
-			<EmptyState icon="bookOpen" title="No lorebooks yet">
-				A lorebook holds world facts that are woven into the story when their
-				keywords come up.
-				{#snippet actions()}
-					<Button variant="primary" size="sm" onclick={newBook}>
-						<Icon name="plus" class="w-4 h-4" />
-						New lorebook
-					</Button>
-					<Button variant="ghost" size="sm" onclick={() => fileInput?.click()}>
-						<Icon name="upload" class="w-4 h-4" />
-						Import
-					</Button>
-				{/snippet}
-			</EmptyState>
-		</div>
-	{:else if selectedBook}
+			</div>
+			<button
+				type="button"
+				class="overlay-action-btn"
+				onclick={onClose}
+				aria-label="Close lorebook"
+				title="Close (Esc)"
+			>
+				<Icon name="close" class="w-[1.15rem] h-[1.15rem]" strokeWidth={1.5} />
+			</button>
+		</header>
 		<!-- Everything below lives in ONE scroll: the settings strip, controls, entries. -->
 		<div class="lb-page panel-scroll">
 			<div class="lb-page-inner">
@@ -885,13 +831,6 @@
 		flex-shrink: 0;
 		display: flex;
 		align-items: center;
-	}
-
-	/* Above it the two doors to any book, below it what happens to this one. */
-	.lb-acts-rule {
-		height: 1px;
-		margin: 0.3rem 0.2rem;
-		background: var(--color-border-subtle);
 	}
 
 	/* Compounded onto the base class so the red survives whatever order the two

@@ -26,18 +26,17 @@
 		uiStore.toggleOverlay(overlay, flush);
 	}
 
-	// The centred navigation cluster: each opens a chat-area overlay. Characters and
-	// Personas moved into the merged Library dock (the right pill); Chats is reached
-	// from the composer's hamburger menu.
+	// The centred navigation cluster: each opens a chat-area overlay. Characters, Personas
+	// and Lorebooks all moved into the merged Library dock (the right pill, which reopens on
+	// the shelf you left it on); Chats is reached from the composer's hamburger menu.
 	type NavItem = {
 		overlay: OverlayType;
-		icon: 'bookOpen' | 'sliders' | 'sitemap' | 'brain';
+		icon: 'sliders' | 'sitemap' | 'brain';
 		label: string;
 		title: string;
 	};
 
 	const NAV: NavItem[] = [
-		{ overlay: 'lorebook', icon: 'bookOpen', label: 'Lorebooks', title: `Lorebooks (${shortcut('B')})` },
 		{ overlay: 'presetControls', icon: 'sliders', label: 'Preset Controls', title: 'Preset Controls' },
 		{ overlay: 'storymap', icon: 'sitemap', label: 'Story Map', title: 'Story Map' },
 		{ overlay: 'memory', icon: 'brain', label: 'Memory', title: 'Memory' }

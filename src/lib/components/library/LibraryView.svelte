@@ -1,16 +1,24 @@
 <script lang="ts">
-	import Icon from '$lib/components/ui/Icon.svelte';
+	import Icon, { type IconName } from '$lib/components/ui/Icon.svelte';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import CharacterLibraryView from './CharacterLibraryView.svelte';
 	import PersonasView from './PersonasView.svelte';
+	import LorebooksView from '$lib/components/lorebook/LorebooksView.svelte';
+	import type { LibraryTab } from '$lib/stores/ui.svelte';
 
-	// The merged Library: a top switcher over the two existing views. Only the active
-	// one is mounted, so each view's own $effects (nav-blocker, workspace-focus mirror)
-	// run in isolation, with no changes needed inside them.
+	// The merged Library: a top switcher over the three shelves. Only the active one is
+	// mounted, so each view's own $effects (nav-blocker, workspace-focus mirror) run in
+	// isolation, with no changes needed inside them.
 	let tab = $derived(uiStore.libraryTab);
 	const flush = () => lorebookStore.flush();
+
+	const TABS: { id: LibraryTab; icon: IconName; label: string }[] = [
+		{ id: 'characters', icon: 'users', label: 'Characters' },
+		{ id: 'personas', icon: 'user', label: 'Personas' },
+		{ id: 'lorebooks', icon: 'bookOpen', label: 'Lorebooks' }
+	];
 
 	// The New chat flow rides this panel: a banner names the current step, the tabs
 	// double as the step indicator, and picks in the views drive uiStore's flow state.
@@ -51,36 +59,29 @@
 
 	<div class="library-switch">
 		<div class="library-tabs" role="tablist" aria-label="Library sections">
-			<button
-				type="button"
-				role="tab"
-				aria-selected={tab === 'characters'}
-				class="library-tab-btn"
-				class:is-active-tint={tab === 'characters'}
-				onclick={() => uiStore.setLibraryTab('characters', flush)}
-			>
-				<Icon name="users" class="w-4 h-4" strokeWidth={2} />
-				<span>Characters</span>
-			</button>
-			<button
-				type="button"
-				role="tab"
-				aria-selected={tab === 'personas'}
-				class="library-tab-btn"
-				class:is-active-tint={tab === 'personas'}
-				onclick={() => uiStore.setLibraryTab('personas', flush)}
-			>
-				<Icon name="user" class="w-4 h-4" strokeWidth={2} />
-				<span>Personas</span>
-			</button>
+			{#each TABS as item (item.id)}
+				<button
+					type="button"
+					role="tab"
+					aria-selected={tab === item.id}
+					class="library-tab-btn"
+					class:is-active-tint={tab === item.id}
+					onclick={() => uiStore.setLibraryTab(item.id, flush)}
+				>
+					<Icon name={item.icon} class="w-4 h-4" strokeWidth={2} />
+					<span class="library-tab-label">{item.label}</span>
+				</button>
+			{/each}
 		</div>
 	</div>
 
 	<div class="flex-1 min-h-0">
 		{#if tab === 'characters'}
 			<CharacterLibraryView />
-		{:else}
+		{:else if tab === 'personas'}
 			<PersonasView />
+		{:else}
+			<LorebooksView />
 		{/if}
 	</div>
 </div>
@@ -133,7 +134,7 @@
 	}
 
 	/* Segmented pill switcher, the app's sub-tab language: a bordered, tinted track
-	   holding two equal cells that fill the row, so the tabs sit centered instead of
+	   holding three equal cells that fill the row, so the tabs sit centered instead of
 	   hugging the left edge. */
 	.library-switch {
 		flex-shrink: 0;
@@ -143,12 +144,26 @@
 
 	.library-tabs {
 		display: grid;
-		grid-template-columns: repeat(2, 1fr);
+		grid-template-columns: repeat(3, 1fr);
 		gap: 0.35rem;
 		padding: 0.25rem;
 		border: 1px solid var(--color-border-subtle);
 		border-radius: var(--radius-lg);
 		background: color-mix(in srgb, var(--color-bg-secondary) 40%, transparent);
+	}
+
+	/* Three cells share a row that is barely 340px wide in a narrow dock, so the glyphs come
+	   back only once the panel can carry them beside the longest word. A truncated tab name
+	   is the one thing this must never trade for them: the label IS the navigation. */
+	.library-tab-btn :global(svg) {
+		display: none;
+	}
+
+	.library-tab-label {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.library-tab-btn {
@@ -158,7 +173,7 @@
 		gap: 0.4rem;
 		min-width: 0;
 		height: 2.1rem;
-		padding: 0 0.6rem;
+		padding: 0 0.5rem;
 		border: 1px solid transparent;
 		border-radius: var(--radius-md);
 		background: transparent;
@@ -182,6 +197,16 @@
 		color: var(--color-accent);
 		background: color-mix(in srgb, var(--color-accent) 13%, transparent);
 		border-color: color-mix(in srgb, var(--color-accent) 33%, transparent);
+	}
+
+	@container (min-width: 27rem) {
+		.library-tab-btn :global(svg) {
+			display: block;
+		}
+
+		.library-tab-btn {
+			padding: 0 0.6rem;
+		}
 	}
 
 	@container (min-width: 640px) {

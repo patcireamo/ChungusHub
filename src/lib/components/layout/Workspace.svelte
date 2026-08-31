@@ -160,6 +160,9 @@
 	// The entry editor pops out of the dock into a wide, centered overlay over the
 	// chat. The dock picks which entry (character or persona) it edits.
 	let libraryEditorOpen = $derived(libraryOpen && uiStore.libraryEditorId != null);
+	// The open lorebook takes the same slot, off the Lorebooks shelf. uiStore keeps the two
+	// ids mutually exclusive, so only one of them is ever standing.
+	let lorebookEditorOpen = $derived(libraryOpen && uiStore.lorebookEditorId != null);
 
 	// Chats: a centered modal popup over a dimmed workspace on desktop, so the
 	// chat stays visible behind it. On phones it falls back to the full chat-area
@@ -186,6 +189,7 @@
 			settingsContentOpen ||
 			libraryOverlay ||
 			libraryEditorOpen ||
+			lorebookEditorOpen ||
 			(promptDebugEnabled && uiStore.debugPanelOpen)
 	);
 	let chatCovered = $derived(welcomeOpen || coveringOverlay);
@@ -341,8 +345,6 @@
 							<StoryMapView />
 						{:else if activeOverlay === 'memory'}
 							<MemoryPanel />
-					{:else if activeOverlay === 'lorebook'}
-						<LorebookView />
 					{:else if activeOverlay === 'presetControls'}
 						<PresetControlsView />
 					{:else if activeOverlay === 'stats'}
@@ -400,6 +402,19 @@
 			<div class="chat-overlay chat-overlay-front" transition:fade={{ duration: 120 }}>
 				<div class="chat-overlay-panel" data-panel>
 					<LibraryEditorOverlay />
+				</div>
+			</div>
+		{/if}
+
+		<!-- The open lorebook, in the same slot and for the same reason: the Lorebooks shelf
+		     keeps the dock while the book itself is read at full width. -->
+		{#if lorebookEditorOpen && uiStore.lorebookEditorId}
+			<div class="chat-overlay chat-overlay-front" transition:fade={{ duration: 120 }}>
+				<div class="chat-overlay-panel" data-panel>
+					<LorebookView
+						bookId={uiStore.lorebookEditorId}
+						onClose={() => (uiStore.lorebookEditorId = null)}
+					/>
 				</div>
 			</div>
 		{/if}
