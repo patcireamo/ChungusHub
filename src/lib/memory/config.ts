@@ -125,6 +125,22 @@ export function memorySliderMax(key: keyof MemoryConfig, shownMaxPerLayer: numbe
 }
 
 /**
+ * Whether one field is running on the value it would inherit, for the star that marks the
+ * rows which are not (`OverrideMark`).
+ *
+ * Both sides are resolved, never compared raw: `promoteCount` is clamped by `maxPerLayer`, so
+ * a raw comparison stars a row that already follows and leaves a star the click cannot clear.
+ */
+export function followsInherited(
+	stored: Partial<MemoryConfig> | null,
+	inherited: Partial<MemoryConfig>,
+	key: keyof MemoryConfig
+): boolean {
+	const following = { ...stored, [key]: inherited[key] ?? DEFAULT_MEMORY_CONFIG[key] };
+	return resolveConfig(stored)[key] === resolveConfig(following)[key];
+}
+
+/**
  * Clean a set of app-wide defaults down to what is worth storing: known keys, finite
  * numbers, clamped exactly as a per-chat override is, and with anything still equal to the
  * shipped default dropped.

@@ -15,7 +15,13 @@
 		chatPersonaClaim,
 		chatPresetClaim
 	} from '$lib/utils/chat-setup';
-	import { DEFAULT_MEMORY_CONFIG, MEMORY_CONFIG_FIELDS, memorySliderMax } from '$lib/memory/config';
+	import OverrideMark from '$lib/components/ui/OverrideMark.svelte';
+	import {
+		DEFAULT_MEMORY_CONFIG,
+		MEMORY_CONFIG_FIELDS,
+		followsInherited,
+		memorySliderMax
+	} from '$lib/memory/config';
 	import { countTokens } from '$lib/tokenizer';
 	import { rangeReset } from '$lib/actions/rangeReset';
 	import type { MemoryConfig } from '$lib/memory/types';
@@ -509,6 +515,11 @@
 									<span class="memory-setting-label">
 										<label for="mem-{s.key}">{s.label}</label>
 										<span class="memory-help-icon" title={s.help}><Icon name="info" class="w-3.5 h-3.5" /></span>
+										<OverrideMark
+											overridden={!followsInherited(memoryStore.configOverride, featurePromptsStore.memoryDefaults, s.key)}
+											onRevert={() => commit(s.key, startingDefault(s.key))}
+											label="Changed from your starting defaults"
+										/>
 									</span>
 									<span class="memory-setting-val">{shown(s.key)}</span>
 								</div>

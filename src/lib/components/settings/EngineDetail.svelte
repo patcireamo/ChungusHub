@@ -33,9 +33,11 @@
 	import type { CallTarget } from '$lib/types/llm';
 	import { toggleRow } from '$lib/actions/toggleRow';
 	import { rangeReset } from '$lib/actions/rangeReset';
+	import OverrideMark from '$lib/components/ui/OverrideMark.svelte';
 	import {
 		DEFAULT_MEMORY_CONFIG,
 		MEMORY_CONFIG_FIELDS,
+		followsInherited,
 		memorySliderMax,
 		resolveConfig
 	} from '$lib/memory/config';
@@ -280,6 +282,10 @@
 							<span class="slider-label-wrap">
 								<label for="mem-default-{f.key}" class="slider-label">{f.label}</label>
 								<InfoTip text={f.help} />
+								<OverrideMark
+									overridden={!followsInherited(featurePromptsStore.memoryDefaults, {}, f.key)}
+									onRevert={() => memCommit(f.key, DEFAULT_MEMORY_CONFIG[f.key])}
+								/>
 							</span>
 							<span class="slider-value">{memShown(f.key)}</span>
 						</div>

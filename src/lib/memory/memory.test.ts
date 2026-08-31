@@ -29,6 +29,7 @@ import { buildRecall } from './recall';
 import {
 	resolveConfig,
 	sanitizeMemoryDefaults,
+	followsInherited,
 	memorySliderMax,
 	MEMORY_CONFIG_FIELDS,
 	DEFAULT_MEMORY_CONFIG
@@ -287,6 +288,16 @@ describe('app-wide defaults: what a chat is handed when memory is switched on', 
 			const clamped = resolveConfig({ maxPerLayer: 60, [f.key]: f.max });
 			expect(clamped[f.key]).toBe(f.max); // a slider must not offer what the clamp refuses
 		}
+	});
+
+	test('the override star reads the value in force, not the stored number', () => {
+		// A star clicking cannot clear is worse than no star: promoteCount is clamped by
+		// maxPerLayer, so the row already follows even though nothing was stored for it.
+		expect(followsInherited({ maxPerLayer: 3 }, {}, 'promoteCount')).toBe(true);
+		expect(followsInherited({ batchSize: 12 }, { batchSize: 12 }, 'batchSize')).toBe(true);
+		// A chat enabled before this default was set runs a number the card no longer holds.
+		expect(followsInherited(null, { batchSize: 12 }, 'batchSize')).toBe(false);
+		expect(followsInherited({ batchSize: 20 }, { batchSize: 12 }, 'batchSize')).toBe(false);
 	});
 
 	test('the merge slider stops where maxPerLayer does', () => {
