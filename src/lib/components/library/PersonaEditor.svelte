@@ -8,6 +8,7 @@
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { imageService, imageRejectionReason } from '$lib/services/imageService';
 	import LibraryEditorHeader from './LibraryEditorHeader.svelte';
+	import LibraryStatsBar from './LibraryStatsBar.svelte';
 	import ConvertEntryDialog from './ConvertEntryDialog.svelte';
 	import PortraitFramingDialog from './PortraitFramingDialog.svelte';
 	import { portraitFocusStyle } from '$lib/utils/portrait-focus';
@@ -398,6 +399,8 @@
 				</div>
 			</div>
 		</div>
+
+		<LibraryStatsBar {entry} />
 	</div>
 
 	{#if snapshot.imageUrl}

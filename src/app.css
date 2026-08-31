@@ -817,6 +817,40 @@
 		transform: translateY(1px);
 	}
 
+	/* The foot of the same three editors: what the thing on screen amounts to, counted from
+	   live state and never stored. Head, body, foot in one frame, so it is painted like the
+	   header and lands under the scroller rather than inside it. **The figures are each
+	   editor's own** and share nothing but this line: a card is chats and tokens, a persona is
+	   the stories it plays in, a book is what it holds. What they must not do is disagree about
+	   how a figure LOOKS, which is why the shape is written once here. */
+	.editor-stats {
+		flex-shrink: 0;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0 0.4rem;
+		padding: 0.4rem 1rem 0.4rem 1.5rem;
+		border-top: 1px solid var(--color-border-subtle);
+		background: var(--color-bg-secondary);
+		font-family: var(--font-ui);
+		font-size: 0.7rem;
+		line-height: 1.7;
+		color: var(--color-text-muted);
+	}
+
+	/* Drawn by the part that follows, so the line has no trailing separator to trim. */
+	.editor-stat + .editor-stat::before {
+		content: '·';
+		margin-right: 0.4rem;
+		opacity: 0.55;
+	}
+
+	.editor-stat b {
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-text-secondary);
+	}
+
 	/* A settings strip's pressable line: a glyph, the name, a dim summary of what is set,
 	   and the affordance at the end. Worn by the open book's Activation and Test scan
 	   strips and by the Lorebooks shelf's Global Settings row, so settings folded behind
@@ -902,6 +936,10 @@
 
 		.editor-header-divider {
 			margin: 0 0.15rem;
+		}
+
+		.editor-stats {
+			padding: 0.35rem 0.6rem 0.35rem 0.9rem;
 		}
 	}
 

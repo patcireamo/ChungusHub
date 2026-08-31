@@ -970,7 +970,7 @@ describe('per-chat setup (architecture/ui-shell-settings.md)', () => {
 		const APP_WIDE = [
 			'src/lib/components/layout/AppShell.svelte',
 			'src/lib/components/layout/WelcomeDialog.svelte',
-			'src/lib/components/library/CharacterStatsBar.svelte',
+			'src/lib/components/library/LibraryStatsBar.svelte',
 			'src/lib/components/library/PersonaEditor.svelte',
 			'src/lib/components/library/PersonasView.svelte',
 			'src/lib/services/sync.ts',
@@ -1017,9 +1017,9 @@ describe('per-chat setup (architecture/ui-shell-settings.md)', () => {
 		// naming what the app answers now, and the resolver that owns the fallback.
 		const APP_WIDE = [
 			'src/lib/components/chat/ChatSetupChip.svelte',
-			'src/lib/components/library/CharacterStatsBar.svelte',
 			'src/lib/components/library/EntryFormFields.svelte',
 			'src/lib/components/library/LibraryEntryEditor.svelte',
+			'src/lib/components/library/LibraryStatsBar.svelte',
 			'src/lib/components/library/PersonaEditor.svelte',
 			'src/lib/components/presetControls/PresetControlsView.svelte',
 			'src/lib/components/presets/PresetManager.svelte',

@@ -9,7 +9,7 @@
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import EntryFormFields from './EntryFormFields.svelte';
 	import CharacterVersionMenu from './CharacterVersionMenu.svelte';
-	import CharacterStatsBar from './CharacterStatsBar.svelte';
+	import LibraryStatsBar from './LibraryStatsBar.svelte';
 	import LibraryEditorHeader from './LibraryEditorHeader.svelte';
 	import ExportDialog from './ExportDialog.svelte';
 	import ConvertEntryDialog from './ConvertEntryDialog.svelte';
@@ -420,7 +420,7 @@
 			/>
 		</div>
 
-		<CharacterStatsBar {entry} />
+		<LibraryStatsBar {entry} />
 	</div>
 
 	<ConfirmDialog

@@ -23,6 +23,7 @@
 	import LorebookBindPicker from './LorebookBindPicker.svelte';
 	import LorebookTransferPicker from './LorebookTransferPicker.svelte';
 	import LorebookScanTester from './LorebookScanTester.svelte';
+	import LorebookStatsBar from './LorebookStatsBar.svelte';
 	import { imageService, imageRejectionReason } from '$lib/services/imageService';
 	import { portraitFocusStyle } from '$lib/utils/portrait-focus';
 	import { toastStore } from '$lib/stores/toast.svelte';
@@ -35,12 +36,10 @@
 	import { viewport } from '$lib/stores/viewport.svelte';
 	import { chatLorebookClaim } from '$lib/utils/chat-setup';
 	import { workspaceFocus } from '$lib/stores/workspaceFocus.svelte';
-	import { countTokens } from '$lib/tokenizer';
 	import {
 		activationSummary,
 		lorebookDeleteMessage,
 		natureOf,
-		partitionEntries,
 		resolveBookActivation,
 		sortEntries,
 		type LorebookEntry
@@ -78,24 +77,6 @@
 	}
 
 	// ===== the book's own title =====
-
-	/** What the open book is made of, empty groups left out: a zero is not a fact worth a slot. */
-	let composition = $derived.by(() => {
-		if (!selectedBook) return [] as { kind: string; count: number }[];
-		const parts = partitionEntries(selectedBook.entries);
-		return [
-			{ kind: 'always', count: parts.alwaysActive.length },
-			{ kind: 'keyword', count: parts.keyword.length },
-			{ kind: 'off', count: parts.disabled.length }
-		].filter((part) => part.count > 0);
-	});
-
-	/** Prompt weight if every enabled entry fired at once: an honest upper bound. */
-	let tokens = $derived(
-		selectedBook
-			? selectedBook.entries.reduce((sum, e) => (e.disable ? sum : sum + countTokens(e.content)), 0)
-			: 0
-	);
 
 	/** The cards carrying the open book. A book nothing carries never reaches a prompt. */
 	let linked = $derived(
@@ -746,26 +727,7 @@
 							<p class="lb-bind-none">Not linked</p>
 						{/if}
 					</div>
-
-					<!-- What the book is made of. The natures are spelled out only where there is
-					     more than one, since "3 entries · 3 keyword" says the same number twice; an
-					     empty book says so in the empty state below instead. -->
-					{#if total > 0}
-						<p class="lb-ident-meta">
-							<span class="lb-stat">{total} {total === 1 ? 'entry' : 'entries'}</span>
-							{#if composition.length > 1}
-								{#each composition as part (part.kind)}
-									<span class="lb-stat">
-										<span class="lb-dot lb-dot-{part.kind}"></span>{part.count}
-										{part.kind}
-									</span>
-								{/each}
-							{/if}
-							<span class="lb-stat lb-stat--tokens">~{tokens} tokens</span>
-						</p>
-					{/if}
 				</div>
-
 			</div>
 
 			<!-- What the book holds: the second column, and the whole page on a narrow panel. -->
@@ -1103,6 +1065,11 @@
 				{/if}
 			</div>
 		</div>
+
+		<!-- What the book amounts to, in the foot the two library editors wear. It is stated
+		     here and no longer in the rail: the same numbers an inch apart in two type sizes is
+		     a page arguing with itself. -->
+		<LorebookStatsBar book={selectedBook} />
 	{/if}
 </div>
 
@@ -1409,39 +1376,8 @@
 		gap: 0.35rem;
 	}
 
-	.lb-ident-meta {
-		display: flex;
-		align-items: center;
-		gap: 0.4rem;
-		flex-wrap: wrap;
-		margin: 0.15rem 0 0;
-		font-family: var(--font-ui);
-		font-size: 0.6875rem;
-		color: var(--color-text-muted);
-	}
-
-	.lb-stat {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
-	}
-
-	/* Drawn by the part that follows, so the line has no trailing separator to trim. */
-	.lb-stat + .lb-stat::before {
-		content: '·';
-		opacity: 0.75;
-	}
-
-	.lb-stat--tokens {
-		font-family: var(--font-mono);
-		font-variant-numeric: tabular-nums;
-	}
-
-	.lb-stat--quiet {
-		font-style: italic;
-	}
-
-	/* The three natures, in the entry rows' own colours. */
+	/* The three natures, in the entry rows' own colours. Worn by the funnel's Show switches,
+	   which is the one place left in this view that names a nature. */
 	.lb-dot {
 		width: 0.4rem;
 		height: 0.4rem;
@@ -1684,9 +1620,19 @@
 
 	/* ===== entry rows ===== */
 
+	/* One plate under the whole list, the card the two strips above it wear. A collapsed row
+	   is a title, a keyword line and two small number fields, all of them small text: over a
+	   blurred backdrop with the glass theme up, they were being read against whatever picture
+	   was behind the panel. The surface belongs to the list rather than to each row, so the
+	   rows still read as lines of one thing instead of a stack of separate chips.
+	   Its padding also keeps a hovered or open row off the plate's own rounded corners. */
 	.lb-rows {
 		display: flex;
 		flex-direction: column;
+		padding: 0.25rem;
+		border: 1px solid var(--color-border-subtle);
+		border-radius: var(--radius-lg);
+		background: var(--color-card-bg);
 	}
 
 	/* Hairline between collapsed rows so a long list scans as lines, not a floating

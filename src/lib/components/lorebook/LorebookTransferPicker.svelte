@@ -18,7 +18,7 @@
 	import { foldForSearch } from '$lib/components/library/browse';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { sortLorebooks } from '$lib/lorebook/types';
-	import { lorebookViewPrefs } from '$lib/stores/lorebookViewPrefs.svelte';
+	import { lorebookViewPrefs, LOREBOOK_SORT_OPTIONS } from '$lib/stores/lorebookViewPrefs.svelte';
 
 	interface Props {
 		/** The book the entries are in, kept out of the list. */
@@ -32,9 +32,16 @@
 
 	let { bookId, mode, count, onPick }: Props = $props();
 
-	/** Below this the list is short enough to read whole, and a search field costs more
-	 *  attention than the scrolling it saves. The number every picker in the app uses. */
-	const SEARCH_FROM = 8;
+	/**
+	 * The three orders offered here, taken from the shelf's own list by id, in its sequence and
+	 * with its labels. This row writes the shelf's preference rather than one of its own, so a
+	 * fourth wording of A → Z is how two views of one shelf start naming one setting two ways.
+	 *
+	 * Three of the seven, because the question here is only "where is that book in this list".
+	 * A shelf left on one of the other four lights none of them, which is honest: the list
+	 * really is in an order these three do not name, and pressing one adopts it everywhere.
+	 */
+	const SORTS = LOREBOOK_SORT_OPTIONS.filter((o) => ['a-z', 'z-a', 'updated'].includes(o.id));
 
 	// The shelf's own order, so the book a reader is hunting sits where they last saw it.
 	let books = $derived(
@@ -61,7 +68,10 @@
 	{mode === 'move' ? 'Move' : 'Copy'} {count} {count === 1 ? 'entry' : 'entries'} to…
 </p>
 
-{#if books.length >= SEARCH_FROM}
+<!-- Nothing to search or order in a list of one, so a shelf holding a single other book gets
+     the list alone. Past that, hunting a name in a long archive is the whole difficulty of
+     this panel and both are drawn every time. -->
+{#if books.length > 1}
 	<div class="brw-search lbt-search">
 		<Icon name="search" class="brw-search-icon w-3.5 h-3.5" />
 		<input
@@ -72,6 +82,21 @@
 			aria-label="Search lorebooks"
 			class="input-base"
 		/>
+	</div>
+
+	<div class="lbt-sort" role="radiogroup" aria-label="Sort lorebooks by">
+		{#each SORTS as option (option.id)}
+			<button
+				type="button"
+				role="radio"
+				aria-checked={lorebookViewPrefs.order === option.id}
+				class="brw-opt"
+				class:is-active={lorebookViewPrefs.order === option.id}
+				onclick={() => lorebookViewPrefs.setOrder(option.id)}
+			>
+				{option.label}
+			</button>
+		{/each}
 	</div>
 {/if}
 
@@ -105,6 +130,21 @@
 
 	.lbt-search {
 		margin-bottom: 0.35rem;
+	}
+
+	/* Two to a line at this width: "Recently edited" in a third of a 19rem popover is a label
+	   with nowhere to go. */
+	.lbt-sort {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 0.375rem;
+		margin-bottom: 0.45rem;
+	}
+
+	/* An odd chip takes the whole line rather than half of one, which reads as a column that
+	   lost its neighbour. */
+	.lbt-sort > :last-child:nth-child(odd) {
+		grid-column: 1 / -1;
 	}
 
 	/* The search stays put while the list scrolls under it. dvh rather than vh: a static one
