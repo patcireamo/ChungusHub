@@ -8,6 +8,7 @@
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { memoryStore, type ChatCtx } from '$lib/memory/store.svelte';
+	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import {
 		chatLorebookClaim,
 		chatMutedLorebookClaim,
@@ -215,9 +216,6 @@
 	}
 
 	// ===== Settings =====
-	// verbatimTail bottoms out at 1, not 0: at 0 the boundary can reach the turn being
-	// answered, and {{chatHistory}} filters archived ids, so that turn would drop out of
-	// its own prompt, leaving a summary to speak for it (src/lib/memory/config.ts).
 	// The five sliders come from config.ts, shared with the app-wide defaults on the Engines
 	// page: two hand-kept copies of the same rows part on the first change to either.
 	let showSettings = $state(false);
@@ -247,6 +245,14 @@
 	/** Against the DRAFT maxPerLayer, so dragging that slider narrows this one as it moves. */
 	function sliderMax(key: keyof MemoryConfig): number {
 		return memorySliderMax(key, shown('maxPerLayer'));
+	}
+
+	/** Double-click reaches the layer under this one, which for a chat is your Starting
+	 *  defaults, not the shipped number: that card is where these numbers came from when
+	 *  memory was switched on, so it is what "put it back" means here. A field never set
+	 *  there falls through to the shipped one. */
+	function startingDefault(key: keyof MemoryConfig): number {
+		return featurePromptsStore.memoryDefaults[key] ?? DEFAULT_MEMORY_CONFIG[key];
 	}
 
 	// A slider commits on release, so a drag ended by closing the panel (Escape, a chat
@@ -513,9 +519,10 @@
 									max={sliderMax(s.key)}
 									step="1"
 									value={shown(s.key)}
+									title="Double-click to reset to your starting defaults"
 									oninput={(e) => drag(s.key, Number((e.currentTarget as HTMLInputElement).value))}
 									onchange={(e) => commit(s.key, Number((e.currentTarget as HTMLInputElement).value))}
-									use:rangeReset={{ defaultValue: DEFAULT_MEMORY_CONFIG[s.key], apply: (v) => commit(s.key, v) }}
+									use:rangeReset={{ defaultValue: startingDefault(s.key), apply: (v) => commit(s.key, v) }}
 								/>
 							</div>
 						{/each}

@@ -36,7 +36,8 @@
 	import {
 		DEFAULT_MEMORY_CONFIG,
 		MEMORY_CONFIG_FIELDS,
-		memorySliderMax
+		memorySliderMax,
+		resolveConfig
 	} from '$lib/memory/config';
 	import type { MemoryConfig } from '$lib/memory/types';
 	import { copyText } from '$lib/utils/clipboard';
@@ -132,8 +133,14 @@
 	// fire one write and one cross-device broadcast per pixel.
 	let memDraft = $state<Partial<Record<keyof MemoryConfig, number>>>({});
 
+	/** Post-clamp, the same shape the chat panel reads: the stored defaults are clamped per
+	 *  field but not against each other, so an unresolved `promoteCount` prints a number above
+	 *  the track it sits on. Storage keeps the raw one, which is what lets it come back when
+	 *  `maxPerLayer` is raised again. */
+	const memResolved = $derived(resolveConfig(featurePromptsStore.memoryDefaults));
+
 	function memShown(key: keyof MemoryConfig): number {
-		return memDraft[key] ?? featurePromptsStore.memoryDefaults[key] ?? DEFAULT_MEMORY_CONFIG[key];
+		return memDraft[key] ?? memResolved[key];
 	}
 
 	/** Against the DRAFT maxPerLayer, so dragging that slider narrows this one as it moves. */
