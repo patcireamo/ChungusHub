@@ -89,13 +89,15 @@
 
 <div class="steering-popover surface-float">
 	{#if editing}
-		<SteeringNoteEditor
-			note={editing}
-			rows={4}
-			maxHeight={180}
-			onback={() => (editingId = null)}
-			ondeleted={() => (editingId = null)}
-		/>
+		<div class="pop-body panel-scroll">
+			<SteeringNoteEditor
+				note={editing}
+				rows={4}
+				maxHeight={180}
+				onback={() => (editingId = null)}
+				ondeleted={() => (editingId = null)}
+			/>
+		</div>
 	{:else}
 		<div class="pop-head">
 			<span class="pop-title font-ui">Steering</span>
@@ -108,40 +110,57 @@
 			</span>
 		</div>
 
-		{#if scoped.length}
-			<div class="stack">
-				{#each scoped as note (note.id)}
-					<div class="row" class:row--off={!note.enabled}>
-						<Toggle
-							checked={note.enabled}
-							size="sm"
-							label={note.enabled ? 'Disable this note' : 'Enable this note'}
-							onchange={(on) => steeringStore.update(note.id, { enabled: on })}
-						/>
-						<button type="button" class="row-main" onclick={() => (editingId = note.id)}>
-							<span class="row-title font-ui">{noteLabel(note)}</span>
-							<span class="row-scope font-ui">
-								{bindingLabel(note)}{#if note.mode === 'once'}<span class="row-once">next reply</span>{/if}
-							</span>
-						</button>
-						<!-- Straight delete, no dialog: the editor's own Delete has never asked
-						     either, and a note is one line of guidance, not a document. -->
-						<button
-							type="button"
-							class="row-del"
-							aria-label="Delete steering"
-							title="Delete"
-							onclick={() => steeringStore.remove(note.id)}
-						>
-							<Icon name="trash" class="w-3 h-3" />
-						</button>
-					</div>
-				{/each}
-			</div>
-		{:else}
-			<p class="empty">No guidance here yet. Type below to steer the next reply.</p>
-		{/if}
+		<!-- Both lists live in the one scroller, so however many notes and reused lines
+		     pile up they take space from each other and never from the panel. -->
+		<div class="pop-body panel-scroll">
+			{#if scoped.length}
+				<div class="stack">
+					{#each scoped as note (note.id)}
+						<div class="row" class:row--off={!note.enabled}>
+							<Toggle
+								checked={note.enabled}
+								size="sm"
+								label={note.enabled ? 'Disable this note' : 'Enable this note'}
+								onchange={(on) => steeringStore.update(note.id, { enabled: on })}
+							/>
+							<button type="button" class="row-main" onclick={() => (editingId = note.id)}>
+								<span class="row-title font-ui">{noteLabel(note)}</span>
+								<span class="row-scope font-ui">
+									{bindingLabel(note)}{#if note.mode === 'once'}<span class="row-once">next reply</span>{/if}
+								</span>
+							</button>
+							<!-- Straight delete, no dialog: the editor's own Delete has never asked
+							     either, and a note is one line of guidance, not a document. -->
+							<button
+								type="button"
+								class="row-del"
+								aria-label="Delete steering"
+								title="Delete"
+								onclick={() => steeringStore.remove(note.id)}
+							>
+								<Icon name="trash" class="w-3 h-3" />
+							</button>
+						</div>
+					{/each}
+				</div>
+			{:else}
+				<p class="empty">No guidance here yet. Type below to steer the next reply.</p>
+			{/if}
 
+			{#if history.length > 0}
+				<div class="history">
+					<span class="field-label font-ui">Recent</span>
+					{#each history as entry (entry)}
+						<button type="button" class="hist-row" title={entry} onclick={() => (quickText = entry)}>
+							{entry}
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+
+		<!-- Under the Recent list it fills, and outside the scroller: the cheap action is
+		     never the one you have to scroll for. -->
 		<div class="quick">
 			<span class="field-label font-ui">Steer the next reply</span>
 			<textarea
@@ -153,17 +172,6 @@
 				placeholder="Rides the next request, then it's gone…"
 			></textarea>
 		</div>
-
-		{#if history.length > 0}
-			<div class="history">
-				<span class="field-label font-ui">Recent</span>
-				{#each history as entry (entry)}
-					<button type="button" class="hist-row" title={entry} onclick={() => (quickText = entry)}>
-						{entry}
-					</button>
-				{/each}
-			</div>
-		{/if}
 
 		<div class="foot">
 			<button type="button" class="foot-link font-ui" onclick={newNote}>
@@ -180,10 +188,30 @@
 		   phones (menu + attach buttons before it), so the clamp keeps the right edge
 		   on-screen there instead of assuming the anchor is at the viewport's left. */
 		width: min(23rem, calc(100vw - 6.5rem));
+		/* It grows upward from the composer, so without a ceiling its own head leaves the
+		   top of the screen and the stack goes with it. dvh rather than vh: a static one
+		   over-measures under mobile browser chrome. */
+		max-height: min(26rem, 60dvh);
 		padding: 0.65rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.55rem;
+	}
+
+	/* The lists take whatever the fixed rows leave, and scroll inside it. */
+	.pop-body {
+		flex: 0 1 auto;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.55rem;
+		overscroll-behavior: contain;
+	}
+
+	.pop-head,
+	.quick,
+	.foot {
+		flex: none;
 	}
 
 	.pop-head {
