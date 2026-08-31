@@ -2,9 +2,10 @@
 	/**
 	 * The activation cascade, one panel for both of its layers.
 	 *
-	 * The rows are written once and a scope switch decides which layer they write to: the open
-	 * book's overrides, or the defaults every book falls back to. Two panels carrying the same
-	 * six settings under two headings is how a change meant for one book lands on all of them.
+	 * The rows are written once and the caller decides which layer they write to: hand it a book
+	 * and they edit that book's overrides, hand it none and they edit the defaults every book
+	 * falls back to. Two panels carrying the same six settings under two headings is how a
+	 * change meant for one book lands on all of them.
 	 *
 	 * In book scope every row shows the value the scan will actually use and says where it came
 	 * from, so the panel and the engine can't tell different stories (both resolve through
@@ -22,18 +23,20 @@
 	import { toggleRow } from '$lib/actions/toggleRow';
 
 	interface Props {
-		/** The open book, whose overrides the "This book" scope edits. */
-		book: Lorebook;
+		/** The open book, whose own overrides these rows edit. Omitted on the shelf's defaults
+		 *  page, where the same rows edit the layer every book falls back to. */
+		book?: Lorebook;
 	}
 
 	let { book }: Props = $props();
 
 	/** Which layer of the cascade the rows below write to. */
-	let scope = $state<'book' | 'global'>('book');
+	let scope = $derived<'book' | 'global'>(book ? 'book' : 'global');
 
 	let globals = $derived(lorebookSettingsStore.settings);
-	/** What this book runs with: its own overrides over the globals. */
-	let resolved = $derived(resolveBookActivation(book, globals));
+	/** What this book runs with: its own overrides over the globals. In global scope the
+	 *  defaults ARE the resolved values, which is what leaves every row unmarked there. */
+	let resolved = $derived(book ? resolveBookActivation(book, globals) : globals);
 
 	// Each row reads the value of the layer on screen and writes to that same layer.
 	let scanValue = $derived(scope === 'book' ? resolved.scanDepth : globals.scanDepth);
@@ -45,6 +48,7 @@
 	let wholeValue = $derived(scope === 'book' ? resolved.matchWholeWords : globals.matchWholeWords);
 
 	function setBook(patch: Parameters<typeof lorebookStore.updateBookMeta>[1]) {
+		if (!book) throw new Error('LorebookActivationPanel: book-scope write with no book');
 		lorebookStore.updateBookMeta(book.id, patch);
 	}
 
@@ -86,35 +90,13 @@
 
 <!-- Strip content: the page scrolls as one, so this panel brings no scroll of its own. -->
 <div class="px-4 py-4 space-y-5">
-	<div>
-		<div class="act-scope" role="radiogroup" aria-label="Which layer these settings change">
-			<button
-				type="button"
-				class="act-scope-btn"
-				class:is-active={scope === 'book'}
-				role="radio"
-				aria-checked={scope === 'book'}
-				onclick={() => (scope = 'book')}
-			>
-				This book
-			</button>
-			<button
-				type="button"
-				class="act-scope-btn"
-				class:is-active={scope === 'global'}
-				role="radio"
-				aria-checked={scope === 'global'}
-				onclick={() => (scope = 'global')}
-			>
-				Global
-			</button>
-		</div>
-		<p class="act-note">
-			{scope === 'book'
-				? 'This book only. What it does not set follows the defaults.'
-				: 'The defaults every book follows where it sets nothing of its own.'}
-		</p>
-	</div>
+	<!-- Which layer is being edited, said once and in a sentence: the surface a reader is
+	     standing on is the only thing that decides it. -->
+	<p class="act-note">
+		{scope === 'book'
+			? 'This book only. What it does not set follows the defaults.'
+			: 'What every book follows where it sets nothing of its own.'}
+	</p>
 
 	<!-- Scanning -->
 	<div>
@@ -169,7 +151,7 @@
 						<span class="act-row-name">Max recursion passes</span>
 						<span class="act-row-help">
 							{stepsInert
-								? 'Books recurse together, so the one shared loop is capped under Global'
+								? 'Books recurse together, so the one shared loop is capped in the defaults'
 								: 'How many times activated content is re-scanned · 0 = until nothing new fires'}
 						</span>
 					</label>
@@ -215,8 +197,8 @@
 		</div>
 		{#if scope === 'book'}
 			<p class="act-foot">
-				Whether books recurse together is one property of the whole scan, so it is set under
-				Global.
+				Whether books recurse together is one property of the whole scan, so it is set in
+				Lorebook Defaults, on the Lorebooks shelf.
 			</p>
 		{/if}
 	</div>
@@ -301,51 +283,14 @@
 			<span class="act-label section-label">Prompt budget</span>
 			<p class="act-foot act-foot--flush">
 				Lore budget is one share of the prompt for everything lore injects at once, so it is set
-				under Global.
+				in Lorebook Defaults, on the Lorebooks shelf.
 			</p>
 		</div>
 	{/if}
 </div>
 
 <style>
-	/* ===== scope switch ===== */
-
-	/* The same track as the entry editor's behavior switch a page down: same geometry, same
-	   lifted-chip active state, so one page doesn't hold two opinions about "selected". */
-	.act-scope {
-		display: inline-flex;
-		align-items: center;
-		gap: 2px;
-		padding: 3px;
-		background: color-mix(in srgb, var(--color-bg-tertiary) 80%, transparent);
-		border: 1px solid var(--color-border-subtle);
-		border-radius: var(--radius-md);
-	}
-
-	.act-scope-btn {
-		padding: 0.3rem 0.7rem;
-		border-radius: calc(var(--radius-md) - 4px);
-		font-family: var(--font-ui);
-		font-size: 0.75rem;
-		font-weight: 500;
-		color: var(--color-text-muted);
-		cursor: pointer;
-		transition: background-color 140ms ease, color 140ms ease;
-	}
-
-	.act-scope-btn:hover {
-		color: var(--color-text-primary);
-	}
-
-	.act-scope-btn.is-active {
-		background: var(--color-bg-primary);
-		color: var(--color-accent);
-		font-weight: 600;
-		box-shadow: var(--shadow-sm);
-	}
-
 	.act-note {
-		margin-top: 0.5rem;
 		font-family: var(--font-ui);
 		font-size: 0.75rem;
 		color: var(--color-text-muted);

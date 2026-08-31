@@ -18,6 +18,7 @@
 	import BrowsePopover from '$lib/components/library/BrowsePopover.svelte';
 	import { foldForSearch } from '$lib/components/library/browse';
 	import LorebookShelfRow from './LorebookShelfRow.svelte';
+	import LorebookActivationPanel from './LorebookActivationPanel.svelte';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { downloadLorebook, downloadLorebooks, readLorebookFile } from '$lib/lorebook/io';
 	import { lorebookDeleteMessage, sortLorebooks } from '$lib/lorebook/types';
@@ -49,7 +50,7 @@
 		const pending = uiStore.pendingLorebookId;
 		if (!pending) return;
 		if (books.some((b) => b.id === pending)) {
-			uiStore.lorebookEditorId = pending;
+			open(pending);
 			uiStore.pendingLorebookId = null;
 		} else if (books.length) {
 			uiStore.pendingLorebookId = null;
@@ -61,6 +62,12 @@
 	let search = $state('');
 	let filterOpen = $state(false);
 	let moreOpen = $state(false);
+
+	/** The defaults page, a drill-down over the shelf. It lives HERE and not inside a book,
+	 *  because a layer every book falls back to is a property of the archive: reaching it
+	 *  through one book's editor made it unreachable with an empty shelf, and made an
+	 *  app-wide change look like something being done to the book whose name was on screen. */
+	let defaultsOpen = $state(false);
 
 	/** The two states a book can be in on this shelf, held out of the list independently:
 	 *  a reader hunting dead weight wants only the unlinked, and one tidying the working
@@ -143,17 +150,18 @@
 		selectedIds = next;
 	}
 
-	// Esc leaves selection mode, but only when nothing above it (a popover or a confirm
-	// dialog, which consume Esc themselves) is open.
+	// Esc steps back out of the defaults page, or out of selection mode, but only when
+	// nothing above it (a popover or a confirm dialog, which consume Esc themselves) is open.
 	$effect(() => {
-		if (!selectionMode) return;
+		if (!selectionMode && !defaultsOpen) return;
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key !== 'Escape') return;
 			if (filterOpen || moreOpen || bulkDeleteOpen || deleteId) return;
 			// Consume the press so the workspace's global Esc doesn't also close the Library.
 			e.preventDefault();
 			e.stopPropagation();
-			toggleSelectionMode();
+			if (defaultsOpen) defaultsOpen = false;
+			else toggleSelectionMode();
 		};
 		document.addEventListener('keydown', onKey);
 		return () => document.removeEventListener('keydown', onKey);
@@ -164,6 +172,10 @@
 	let fileInput = $state<HTMLInputElement | null>(null);
 
 	function open(id: string) {
+		// A book opening puts the shelf back under it: the dock and the editor over the chat
+		// are read as one place, and a defaults page left standing behind an open book is a
+		// shelf that has lost the list the book came off.
+		defaultsOpen = false;
 		uiStore.lorebookEditorId = id;
 	}
 
@@ -258,7 +270,22 @@
 </script>
 
 <div class="brw">
-	{#if books.length > 0}
+	{#if defaultsOpen}
+		<!-- The defaults page's top row, standing where the toolbar was so the two pages
+		     line up: the way back, then the name of what is on screen. -->
+		<div class="brw-bar">
+			<button
+				type="button"
+				class="brw-btn"
+				onclick={() => (defaultsOpen = false)}
+				aria-label="Back to lorebooks"
+				title="Back (Esc)"
+			>
+				<Icon name="chevronLeft" class="w-4 h-4" strokeWidth={2} />
+			</button>
+			<span class="lbd-title">Lorebook Defaults</span>
+		</div>
+	{:else if books.length > 0}
 		<!-- Toolbar: search front and center, two quiet disclosures, one primary action.
 		     The book count lives in the search placeholder. -->
 		<div class="brw-bar">
@@ -372,6 +399,18 @@
 					<Icon name="check" class="w-3.5 h-3.5" />
 					{selectionMode ? 'Exit selection' : 'Select multiple'}
 				</button>
+				<button
+					type="button"
+					role="menuitem"
+					class="brw-menu-item"
+					onclick={() => {
+						moreOpen = false;
+						defaultsOpen = true;
+					}}
+				>
+					<Icon name="settings" class="w-3.5 h-3.5" />
+					Lorebook Defaults
+				</button>
 			</BrowsePopover>
 
 			<button type="button" class="brw-new" onclick={newBook} title="New lorebook">
@@ -467,8 +506,16 @@
 		{/if}
 	{/if}
 
-	<div role="region" aria-label="Lorebooks" class="brw-content">
-		{#if lorebookStore.loading && books.length === 0}
+	<div
+		role="region"
+		aria-label={defaultsOpen ? 'Lorebook defaults' : 'Lorebooks'}
+		class="brw-content"
+		class:is-flush={defaultsOpen}
+	>
+		{#if defaultsOpen}
+			<!-- No book, so the rows write to the layer every book falls back to. -->
+			<LorebookActivationPanel />
+		{:else if lorebookStore.loading && books.length === 0}
 			<div class="flex items-center justify-center h-full">
 				<div class="flex flex-col items-center gap-3 text-text-muted">
 					<Spinner size="lg" />
@@ -487,6 +534,13 @@
 						<Button variant="secondary" size="sm" onclick={() => fileInput?.click()}>
 							<Icon name="upload" class="w-4 h-4" />
 							Import
+						</Button>
+						<!-- The empty shelf's own door to the defaults, since the toolbar holding the
+						     other one is not drawn here: how books will behave is decidable before
+						     there is a book to try it on. -->
+						<Button variant="ghost" size="sm" onclick={() => (defaultsOpen = true)}>
+							<Icon name="settings" class="w-4 h-4" />
+							Defaults
 						</Button>
 					{/snippet}
 				</EmptyState>
@@ -562,3 +616,22 @@
 	onConfirm={confirmBulkDelete}
 	onCancel={() => (bulkDeleteOpen = false)}
 />
+
+<style>
+	/* The page's name, in the row that holds the way back to the shelf. */
+	.lbd-title {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--font-ui);
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	/* The settings panel brings its own padding, so the scroller drops the shelf's. */
+	.brw-content.is-flush {
+		padding: 0;
+	}
+</style>
