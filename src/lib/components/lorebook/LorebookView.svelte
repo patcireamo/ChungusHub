@@ -590,56 +590,63 @@
 					{/if}
 				</div>
 
-				<section class="lb-strip">
-					<button
-						type="button"
-						class="strip-head lb-strip-head"
-						onclick={() => (stripOpen = !stripOpen)}
-						aria-expanded={stripOpen}
-					>
-						<Icon name="settings" class="w-4 h-4 text-text-muted flex-shrink-0" />
-						<span class="strip-title">Activation</span>
-						<span class="strip-sum">
-							{#each summary as part (part.text)}
-								<span class="strip-part" class:is-set={part.set}>{part.text}</span>
-							{/each}
-						</span>
-						<span class="strip-chev" class:is-open={stripOpen}>
-							<Icon name="chevronDown" class="w-4 h-4" />
-						</span>
-					</button>
-					{#if stripOpen}
-						<LorebookActivationPanel book={selectedBook} />
-					{/if}
-				</section>
-
-				<!-- Same shape as Activation, and deliberately under it: that strip states the
-				     rules this one lets you try. Collapsed until asked for, since a book is read
-				     far more often than it is debugged. -->
-				<section class="lb-strip">
-					<button
-						type="button"
-						class="strip-head lb-strip-head"
-						onclick={() => (testerOpen = !testerOpen)}
-						aria-expanded={testerOpen}
-					>
-						<Icon name="search" class="w-4 h-4 text-text-muted flex-shrink-0" />
-						<span class="strip-title">Test scan</span>
-						<span class="strip-sum">
-							<span class="strip-part">see what this book fires on</span>
-						</span>
-						<span class="strip-chev" class:is-open={testerOpen}>
-							<Icon name="chevronDown" class="w-4 h-4" />
-						</span>
-					</button>
-					{#if testerOpen}
-						<LorebookScanTester book={selectedBook} />
-					{/if}
-				</section>
 			</div>
 
 			<!-- What the book holds: the second column, and the whole page on a narrow panel. -->
 			<div class="lb-page-inner">
+				<!-- The two strips take the wide column rather than the rail: three cards of
+				     settings and a scan box with results have nothing to spend 17rem on. The rail
+				     keeps what the book IS. Stacked, this lands exactly where it did, since the
+				     rail's contents still come first down the page. -->
+				<div class="lb-strips">
+					<section class="lb-strip">
+						<button
+							type="button"
+							class="strip-head lb-strip-head"
+							onclick={() => (stripOpen = !stripOpen)}
+							aria-expanded={stripOpen}
+						>
+							<Icon name="settings" class="w-4 h-4 text-text-muted flex-shrink-0" />
+							<span class="strip-title">Activation</span>
+							<span class="strip-sum">
+								{#each summary as part (part.text)}
+									<span class="strip-part" class:is-set={part.set}>{part.text}</span>
+								{/each}
+							</span>
+							<span class="strip-chev" class:is-open={stripOpen}>
+								<Icon name="chevronDown" class="w-4 h-4" />
+							</span>
+						</button>
+						{#if stripOpen}
+							<LorebookActivationPanel book={selectedBook} />
+						{/if}
+					</section>
+
+					<!-- Same shape as Activation, and deliberately under it: that strip states the
+					     rules this one lets you try. Collapsed until asked for, since a book is read
+					     far more often than it is debugged. -->
+					<section class="lb-strip">
+						<button
+							type="button"
+							class="strip-head lb-strip-head"
+							onclick={() => (testerOpen = !testerOpen)}
+							aria-expanded={testerOpen}
+						>
+							<Icon name="search" class="w-4 h-4 text-text-muted flex-shrink-0" />
+							<span class="strip-title">Test scan</span>
+							<span class="strip-sum">
+								<span class="strip-part">see what this book fires on</span>
+							</span>
+							<span class="strip-chev" class:is-open={testerOpen}>
+								<Icon name="chevronDown" class="w-4 h-4" />
+							</span>
+						</button>
+						{#if testerOpen}
+							<LorebookScanTester book={selectedBook} />
+						{/if}
+					</section>
+				</div>
+
 				{#if total === 0}
 					<div class="py-14">
 						<EmptyState icon="feather" size="sm" title="No entries yet">
@@ -958,12 +965,6 @@
 			align-self: start;
 		}
 
-		/* Side by side there is nothing above the entries to be separated from, and the gap
-		   would start the list a row lower than the rail it is beside. */
-		.lb-controls {
-			padding-top: 0;
-		}
-
 		/* The rule between the panes, drawn on this side and only side by side, the character
 		   editor's own: stacked, the two follow each other down the page and a line across the
 		   middle would read as a divider inside the book's identity. */
@@ -978,14 +979,25 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		min-width: 0;
-		container-type: inline-size;
-		container-name: lbrail;
 	}
 
-	/* In a rail the strip's summary takes its own line under the name: a hint clipped to three
-	   words is not a hint, and it is the whole reason a fold can stay folded. Full width, which
-	   the rail is on a narrow panel, keeps it on the name's line where it belongs. */
-	@container lbrail (max-width: 26rem) {
+	/* The two strips, stacked as one block above the entries. Its own size container rather
+	   than the column's: the column also holds the entry rows, whose popovers position
+	   themselves against the viewport, and a containment context here would make this element
+	   the box they measure from. */
+	.lb-strips {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		min-width: 0;
+		container-type: inline-size;
+		container-name: lbstrips;
+	}
+
+	/* Narrow, a strip's summary takes its own line under the name: a hint clipped to three
+	   words is not a hint, and it is the whole reason a fold can stay folded. Given the room,
+	   it rides on the name's line where it belongs. */
+	@container lbstrips (max-width: 26rem) {
 		.lb-strip-head {
 			flex-wrap: wrap;
 			row-gap: 0.15rem;
@@ -1270,10 +1282,9 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		/* Padding, not margin: stacked, it cannot collapse into the rail above it, so the gap
-		   that separates the book's settings from its entries is the one written here. Several
-		   times the space between the strips themselves, which is what makes the zones read
-		   apart. Side by side it is dropped, above. */
+		/* Padding, not margin: it cannot collapse into the strips above it, so the gap that
+		   separates the book's settings from its entries is the one written here. Several times
+		   the space between the strips themselves, which is what makes the zones read apart. */
 		padding: 1.25rem 0 0.5rem;
 	}
 
