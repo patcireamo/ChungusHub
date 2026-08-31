@@ -77,6 +77,11 @@ export function isImageFile(file: Blob): boolean {
 export function imageRejectionReason(file: Blob): string | null {
 	const named = file instanceof File && file.name ? `"${file.name}"` : null;
 	if (!isImageFile(file)) return `${named ?? 'This file'} is not an image file.`;
+	// An SVG is a document, not pixels: stored under a category that keeps original bytes it
+	// would be served back as image/svg+xml, a page that runs on this app's own origin.
+	if (file.type === 'image/svg+xml') {
+		return `${named ?? 'This file'} is an SVG. Use a png, jpg or webp instead.`;
+	}
 	if (file.size > MAX_SOURCE_BYTES) {
 		return `${named ?? 'This image'} is ${megabytes(file.size)}; the limit is ${megabytes(MAX_SOURCE_BYTES)}.`;
 	}

@@ -1091,10 +1091,12 @@
 	{/if}
 </div>
 
+<!-- An explicit list rather than image/*, which offers SVG: a cover keeps its original
+     bytes, and a stored SVG is served back as a page on this app's own origin. -->
 <input
 	bind:this={coverInput}
 	type="file"
-	accept="image/*"
+	accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
 	class="hidden"
 	onchange={onCoverPick}
 />
