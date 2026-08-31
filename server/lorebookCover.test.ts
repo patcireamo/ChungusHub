@@ -106,12 +106,24 @@ describe('a lorebook cover (architecture/lorebook.md)', () => {
 	});
 
 	// A book nobody put a picture on must leave a bare row, the same rule an unframed portrait
-	// follows: absent is what every book made before covers existed carries.
-	test('a book with no cover stores neither key', () => {
+	// follows: absent is what every book made before covers existed carries. `global` answers
+	// to it too, and its absence is what keeps a book out of every chat.
+	test('a book with no cover and no switch stores none of the keys', () => {
 		serverDb.insertLorebook(book('b-bare'));
 		const back = serverDb.getLorebook('b-bare');
 		expect('cover' in back).toBe(false);
 		expect('coverFocus' in back).toBe(false);
+		expect('global' in back).toBe(false);
+	});
+
+	// The switch reaches every prompt in the install, so it is the last field that may be lost
+	// to the payload whitelist: a book that quietly stops being global changes every send.
+	test('the every-chat switch survives the write path', () => {
+		serverDb.insertLorebook(book('b-global', { global: true }));
+		expect((serverDb.getLorebook('b-global') as { global?: boolean }).global).toBe(true);
+		const loaded = serverDb.getLorebook('b-global');
+		serverDb.updateLorebook({ ...loaded, name: 'Renamed' });
+		expect((serverDb.getLorebook('b-global') as { global?: boolean }).global).toBe(true);
 	});
 
 	test('deleting the book deletes its picture', () => {

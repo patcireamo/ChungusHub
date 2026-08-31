@@ -11,7 +11,12 @@ import { imageService } from '$lib/services/imageService';
 import { DebouncedWriter } from '$lib/utils/debounced-write';
 import type { PortraitFocus } from '$lib/utils/portrait-focus';
 import type { Lorebook, LorebookEntry } from './types';
-import { createEmptyLorebook, createEmptyLorebookEntry, resolveLorebookLinks } from './types';
+import {
+	createEmptyLorebook,
+	createEmptyLorebookEntry,
+	resolveLinkedBooks,
+	resolveLorebookLinks
+} from './types';
 
 class LorebookStore {
 	private static readonly SAVE_DEBOUNCE_MS = 500;
@@ -65,13 +70,21 @@ class LorebookStore {
 	}
 
 	/**
-	 * Resolve linked ids to the books that still exist, IN THE ORDER OF `ids` (deduped),
-	 * skipping any id with no book. The link order is canonical so the live token meter and
-	 * the real generation path (which resolves the same way, over a fresh server read)
-	 * can never diverge: both go through `resolveLorebookLinks`.
+	 * What a chat plays with: the books switched into every chat, then what these ids link.
+	 * The live token meters and the real generation path (which resolves the same way, over a
+	 * fresh server read) can never diverge, because both go through `resolveLorebookLinks`.
 	 */
-	resolveBooks(ids: string[] | undefined | null): Lorebook[] {
+	booksForChat(ids: string[] | undefined | null): Lorebook[] {
 		return resolveLorebookLinks(this._books, ids);
+	}
+
+	/**
+	 * Which of these links still name a book. What a COUNT of an entry's links asks, and never
+	 * `booksForChat`: that one answers with books nothing links, so a chip reading it would
+	 * claim links the card has not made.
+	 */
+	resolveLinks(ids: string[] | undefined | null): Lorebook[] {
+		return resolveLinkedBooks(this._books, ids);
 	}
 
 	async createBook(name = 'New Lorebook'): Promise<Lorebook> {
@@ -141,6 +154,15 @@ class LorebookStore {
 		book.coverFocus = undefined;
 		await this.writeNow(book);
 		if (previous && previous !== next) await imageService.deleteImage(previous);
+	}
+
+	/** Switch the book into every chat, or back out. A discrete act, so it writes at once, and
+	 *  off stores as nothing: a book nobody switched on keeps the row it always had. */
+	async setGlobal(id: string, on: boolean): Promise<void> {
+		const book = this.getBook(id);
+		if (!book) return;
+		book.global = on || undefined;
+		await this.writeNow(book);
 	}
 
 	/** Aim the cover. Discrete too, and the centred default stores as nothing. */

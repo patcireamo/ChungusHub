@@ -2698,6 +2698,7 @@ class ServerDatabase {
 	insertLorebook(book: Record<string, unknown>): void {
 		const payload = {
 			name: book.name,
+			global: book.global,
 			cover: book.cover,
 			coverFocus: book.coverFocus,
 			scanDepth: book.scanDepth,
@@ -2719,6 +2720,7 @@ class ServerDatabase {
 	updateLorebook(book: Record<string, unknown>): void {
 		const payload = {
 			name: book.name,
+			global: book.global,
 			cover: book.cover,
 			coverFocus: book.coverFocus,
 			scanDepth: book.scanDepth,

@@ -58,15 +58,30 @@ function chatPersona(chat: RawChat): RawLibraryEntry | null {
 	return personaEntry(own) ?? personaEntry(serverDb.getSetting('activePersonaId'));
 }
 
-/** Books active for a chat: those linked by its character + the persona it plays as. */
+/**
+ * Books active for a chat: every book switched into every chat, plus those linked by its
+ * character and the persona it plays as.
+ *
+ * The second spelling of `resolveLorebookLinks` (src/lib/lorebook/types.ts), which this side
+ * cannot import. Leave the global half out and the assistant reports a scene missing the very
+ * books that are in ALL of them, which is the half no card names and nothing else would reveal.
+ */
 function chatLorebooks(chat: RawChat): RawLorebookBook[] {
+	const all = serverDb.getAllLorebooks() as RawLorebookBook[];
+	const out = all.filter((b) => b.global);
+	const seen = new Set(out.map((b) => b.id));
 	const ids = new Set<string>();
 	if (chat.characterId) {
 		const c = serverDb.getLibraryEntry(chat.characterId) as RawLibraryEntry | null;
 		for (const id of c?.data?.lorebookIds ?? []) ids.add(id);
 	}
 	for (const id of chatPersona(chat)?.data?.lorebookIds ?? []) ids.add(id);
-	return [...ids].map((id) => serverDb.getLorebook(id) as RawLorebookBook | null).filter((b): b is RawLorebookBook => !!b);
+	for (const id of ids) {
+		if (seen.has(id)) continue;
+		const book = all.find((b) => b.id === id);
+		if (book) out.push(book);
+	}
+	return out;
 }
 
 /**

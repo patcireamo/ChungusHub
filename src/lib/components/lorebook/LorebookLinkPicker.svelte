@@ -27,7 +27,7 @@
 	let selectedSet = $derived(new Set(selected));
 	// What is actually linked, not what the id list says: a deleted book leaves its id behind
 	// (architecture/lorebook.md), and a foot counting those reads as a link to a book on screen.
-	let linkedCount = $derived(lorebookStore.resolveBooks(selected).length);
+	let linkedCount = $derived(lorebookStore.resolveLinks(selected).length);
 
 	// Linked books first, then the shared display order (Library → Lorebooks → Sort)
 	// within each group. The split is captured once at mount so a toggle restyles the row
@@ -116,6 +116,11 @@
 						<Icon name="bookOpen" class="w-3.5 h-3.5" />
 					</span>
 					<span class="lbp-name">{book.name || 'Untitled lorebook'}</span>
+					<!-- Says why linking this one changes nothing: it is already in every chat, so
+					     the row would otherwise read as a link that did not take. -->
+					{#if book.global}
+						<span class="lbp-every">Every chat</span>
+					{/if}
 					<span class="lbp-count">{book.entries.length}</span>
 					<span class="lbp-check" aria-hidden="true">
 						<Icon name="check" class="w-3.5 h-3.5" />
@@ -248,6 +253,17 @@
 
 	.lbp-row.is-linked .lbp-name {
 		font-weight: 600;
+	}
+
+	.lbp-every {
+		flex-shrink: 0;
+		padding: 0.05rem 0.35rem;
+		border-radius: var(--radius-full);
+		border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+		font-family: var(--font-ui);
+		font-size: 0.6rem;
+		color: var(--color-accent);
 	}
 
 	.lbp-count {

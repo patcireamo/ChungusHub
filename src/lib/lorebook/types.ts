@@ -468,6 +468,15 @@ export interface Lorebook {
 	 *  Absent = the centred cover fit. Belongs to the picture, so replacing one drops it. */
 	coverFocus?: PortraitFocus;
 	/**
+	 * In every chat, with no card linking it. Absent = off, which is every book made or
+	 * imported before this and every book nobody switched on.
+	 *
+	 * Deliberately does NOT travel in an export: it is a decision about this install's whole
+	 * setup rather than a property of what the book says, and a shared book that switched
+	 * itself into every one of a stranger's chats would rewrite every prompt they send.
+	 */
+	global?: boolean;
+	/**
 	 * How many of the most recent messages to scan for keywords. 0 = scan the whole chat,
 	 * null = inherit the global setting. (Books saved before the global settings existed
 	 * carry their old concrete value, which now simply reads as an explicit override.)
@@ -757,13 +766,16 @@ export const DEFAULT_LOREBOOK_GLOBAL_SETTINGS: LorebookGlobalSettings = {
 };
 
 /**
- * Resolve link ids to books, in link order, dropping duplicates and ids that no longer
- * exist. The ONE implementation: the meters resolve through the store's cached books and
- * generation resolves through a fresh server read, but both must produce the same list in
- * the same order or the meter prices a different prompt than the one sent
- * (architecture/lorebook.md coupling #1).
+ * Which of these ids still name a book, in link order, deduped.
+ *
+ * The question a COUNT of links asks, and deliberately not the one below: that one answers
+ * what a chat plays with, which includes books no card links at all, and a chip counting
+ * those would claim links the card has not made.
  */
-export function resolveLorebookLinks(books: Lorebook[], ids: string[] | undefined | null): Lorebook[] {
+export function resolveLinkedBooks(
+	books: Lorebook[],
+	ids: string[] | undefined | null
+): Lorebook[] {
 	if (!ids?.length) return [];
 	const byId = new Map(books.map((b) => [b.id, b]));
 	const out: Lorebook[] = [];
@@ -775,6 +787,30 @@ export function resolveLorebookLinks(books: Lorebook[], ids: string[] | undefine
 		if (book) out.push(book);
 	}
 	return out;
+}
+
+/**
+ * The books a chat plays with: every book switched into every chat, then the ones these ids
+ * link, in link order, deduped and dropping ids that no longer exist. The ONE implementation:
+ * the meters resolve through the store's cached books and generation resolves through a fresh
+ * server read, but both must produce the same list in the same order or the meter prices a
+ * different prompt than the one sent (architecture/lorebook.md coupling #1).
+ *
+ * **A `global` book comes first and needs no link**: it is the world the story sits in, and
+ * what a card links is the specific on top of it. All of them lead rather than trail, so a
+ * card's own link list can never reshuffle the baseline.
+ *
+ * They are ordered by when they were made and never by the array they arrived in. The store's
+ * cached array and the server's fresh read are the same query at two moments, so an edit that
+ * moves a book in one and not the other would have the meter and the send lay lore down in a
+ * different order.
+ */
+export function resolveLorebookLinks(books: Lorebook[], ids: string[] | undefined | null): Lorebook[] {
+	const globals = books
+		.filter((b) => b.global)
+		.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+	const seen = new Set(globals.map((b) => b.id));
+	return [...globals, ...resolveLinkedBooks(books, ids).filter((b) => !seen.has(b.id))];
 }
 
 /** A fresh book inherits every activation setting from the global defaults. */
@@ -967,17 +1003,20 @@ export function sortLorebooks<
  * is the half where the warning matters most.
  *
  * `links` is a count of characters and personas, each counted once, so it says the same
- * number the book page's Bound to row shows.
+ * number the book page's Bound to row shows. A book switched into every chat says so too,
+ * and says it first: nothing links it, so the bound clause alone would report the widest
+ * loss on the shelf as a book nobody was using.
  */
 export function lorebookDeleteMessage(
-	book: Pick<Lorebook, 'name' | 'entries'>,
+	book: Pick<Lorebook, 'name' | 'entries' | 'global'>,
 	links: number
 ): string {
 	const n = book.entries.length;
 	const held = n > 0 ? ` and its ${n} ${n === 1 ? 'entry' : 'entries'}` : '';
+	const everywhere = book.global ? ' It is in every chat.' : '';
 	const s = links === 1 ? '' : 's';
 	const bound = links > 0 ? ` It is bound to ${links} character${s} or persona${s}.` : '';
-	return `Delete "${book.name || 'Untitled lorebook'}"${held}?${bound} This cannot be undone.`;
+	return `Delete "${book.name || 'Untitled lorebook'}"${held}?${everywhere}${bound} This cannot be undone.`;
 }
 
 /** Parse a comma-separated keyword string into a trimmed, non-empty list. */

@@ -6,6 +6,7 @@
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import LibraryEntryMenu from '$lib/components/library/LibraryEntryMenu.svelte';
+	import LorebookGlobalBadge from './LorebookGlobalBadge.svelte';
 	import { imageService } from '$lib/services/imageService';
 	import { portraitFocusAim } from '$lib/utils/portrait-focus';
 	import type { Lorebook } from '$lib/lorebook/types';
@@ -88,14 +89,17 @@
 		{/if}
 	</div>
 
-	<div class="px-2.5 py-2">
+	<div class="px-2.5 py-2 flex items-center gap-1.5">
 		<span
-			class="block font-ui text-[13px] truncate {book.name
+			class="min-w-0 font-ui text-[13px] truncate {book.name
 				? 'font-medium text-text-primary'
 				: 'italic text-text-muted'}"
 		>
 			{name}
 		</span>
+		{#if book.global}
+			<LorebookGlobalBadge />
+		{/if}
 	</div>
 </div>
 

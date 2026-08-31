@@ -140,7 +140,7 @@
 					}
 				]
 			: [],
-		lorebooks: lorebookStore.resolveBooks([
+		lorebooks: lorebookStore.booksForChat([
 			...(activeCharacterData?.lorebookIds ?? []),
 			...(chatPersona?.data.lorebookIds ?? [])
 		]),

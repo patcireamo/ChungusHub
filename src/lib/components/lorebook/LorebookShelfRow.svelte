@@ -13,6 +13,7 @@
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import LibraryEntryMenu from '$lib/components/library/LibraryEntryMenu.svelte';
+	import LorebookGlobalBadge from './LorebookGlobalBadge.svelte';
 	import { imageService } from '$lib/services/imageService';
 	import { portraitFocusStyle } from '$lib/utils/portrait-focus';
 	import type { Lorebook } from '$lib/lorebook/types';
@@ -95,20 +96,27 @@
 	<!-- Held to the frame's height, so the name starts at the same place in every row: centred,
 	     it would sink down the row and the list would have no line to be scanned by. -->
 	<div class="min-w-0 flex-1 min-h-20 pt-1">
-		<span
-			class="block font-ui text-sm truncate {book.name
-				? 'font-medium text-text-primary'
-				: 'italic text-text-muted'}"
-		>
-			{book.name || 'Untitled lorebook'}
+		<span class="flex items-center gap-1.5 min-w-0">
+			<span
+				class="font-ui text-sm truncate {book.name
+					? 'font-medium text-text-primary'
+					: 'italic text-text-muted'}"
+			>
+				{book.name || 'Untitled lorebook'}
+			</span>
+			{#if book.global}
+				<LorebookGlobalBadge />
+			{/if}
 		</span>
+		<!-- Not linked is held back behind the badge: a book the badge says is in every chat
+		     must not also read as one nothing uses. The link count still shows, since a global
+		     book a card ALSO links is a fact neither line says on its own. -->
 		<p class="mt-1 font-ui text-xs text-text-muted truncate">
 			{size}
-			<span class="opacity-60"> · </span>
 			{#if links > 0}
-				{links} linked
-			{:else}
-				<span class="italic">Not linked</span>
+				<span class="opacity-60"> · </span>{links} linked
+			{:else if !book.global}
+				<span class="opacity-60"> · </span><span class="italic">Not linked</span>
 			{/if}
 		</p>
 	</div>

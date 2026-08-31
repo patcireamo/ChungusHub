@@ -80,7 +80,7 @@
 	// Deleting a book leaves its id on the entry (architecture/lorebook.md), so the count
 	// resolves like every other reader. Counting the raw ids makes a link to a book that is
 	// gone read as a live one, and the shelf's remaining book gets the blame.
-	let lorebookCount = $derived(lorebookStore.resolveBooks(lorebookIds).length);
+	let lorebookCount = $derived(lorebookStore.resolveLinks(lorebookIds).length);
 
 	$effect(() => {
 		if (!lorebookOpen && !menuOpen) return;

@@ -16,7 +16,9 @@
 	import { holdMsForBlast } from '$lib/components/ui/HoldToConfirmButton.svelte';
 	import BrowsePopover from '$lib/components/library/BrowsePopover.svelte';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
+	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import PortraitFramingDialog from '$lib/components/library/PortraitFramingDialog.svelte';
+	import { toggleRow } from '$lib/actions/toggleRow';
 	import LorebookEntryRow from './LorebookEntryRow.svelte';
 	import LorebookActivationPanel from './LorebookActivationPanel.svelte';
 	import LorebookScanTester from './LorebookScanTester.svelte';
@@ -542,10 +544,32 @@
 							class="input-base w-full px-3 py-2 text-text-primary font-ui text-sm placeholder:text-text-muted"
 						/>
 					</div>
+
+					<!-- Directly under the name, because it belongs to the same question the name
+					     answers: what this book IS on this install. It is the one thing on this page
+					     that reaches chats nothing on screen names, so it is stated where the book
+					     is identified rather than folded in with its scan settings. -->
+					<div class="lb-every" use:toggleRow>
+						<span class="lb-every-text">
+							<span class="lb-every-name">Use in every chat</span>
+							<span class="lb-every-help">
+								Every chat scans it, with no character or persona linking it
+							</span>
+						</span>
+						<Toggle
+							checked={!!selectedBook.global}
+							label="Use in every chat"
+							onchange={(next) => lorebookStore.setGlobal(selectedBook.id, next)}
+						/>
+					</div>
+
 					<!-- One line for how big it is and whether anything carries it. The natures are
 					     spelled out only where there is more than one, since "3 entries · 3 keyword"
-					     says the same number twice. An empty book says so in the empty state below. -->
-					{#if total > 0 || linked.length === 0}
+					     says the same number twice. An empty book says so in the empty state below.
+					     Not linked is held back while the switch above is on, since it would read as
+					     a book reaching nothing three lines under the control that sends it
+					     everywhere. -->
+					{#if total > 0 || (linked.length === 0 && !selectedBook.global)}
 						<p class="lb-ident-meta">
 							{#if total > 0}
 								<span class="lb-stat">{total} {total === 1 ? 'entry' : 'entries'}</span>
@@ -559,7 +583,7 @@
 								{/if}
 								<span class="lb-stat lb-stat--tokens">~{tokens} tokens</span>
 							{/if}
-							{#if linked.length === 0}
+							{#if linked.length === 0 && !selectedBook.global}
 								<span class="lb-stat lb-stat--quiet">Not linked</span>
 							{/if}
 						</p>
@@ -1166,6 +1190,47 @@
 		flex-direction: column;
 		align-items: stretch;
 		gap: 0.35rem;
+	}
+
+	/* The switch under the name. Its own quiet card so it reads as a decision about the book
+	   rather than as one more field of it, and the whole row is the switch (toggleRow): a 40px
+	   target at the far end of a rail is a long travel for a small hit box. */
+	.lb-every {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		margin-top: 0.15rem;
+		padding: 0.5rem 0.65rem;
+		border: 1px solid var(--color-border-subtle);
+		border-radius: var(--radius-md);
+		background: color-mix(in srgb, var(--color-bg-tertiary) 40%, transparent);
+		transition: border-color 140ms ease;
+	}
+
+	.lb-every:hover {
+		border-color: var(--color-border);
+	}
+
+	.lb-every-text {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+	}
+
+	.lb-every-name {
+		font-family: var(--font-ui);
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--color-text-primary);
+	}
+
+	.lb-every-help {
+		font-family: var(--font-ui);
+		font-size: 0.6875rem;
+		line-height: 1.35;
+		color: var(--color-text-muted);
 	}
 
 	.lb-ident-meta {

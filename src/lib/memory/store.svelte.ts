@@ -440,7 +440,7 @@ class MemoryStore {
 		// One scan, through the same resolver as the prompt and the meters. No budget here: a
 		// memory template is its own request, priced against its own engine connection.
 		const lore = resolveLorebooks({
-			books: lorebookStore.resolveBooks([
+			books: lorebookStore.booksForChat([
 				...(data?.lorebookIds ?? []),
 				...(persona?.data.lorebookIds ?? [])
 			]),

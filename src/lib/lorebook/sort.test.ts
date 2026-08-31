@@ -23,8 +23,11 @@ import {
 	DEFAULT_LOREBOOK_GLOBAL_SETTINGS,
 	lorebookDeleteMessage,
 	natureOf,
+	resolveLinkedBooks,
+	resolveLorebookLinks,
 	sortEntries,
-	sortLorebooks
+	sortLorebooks,
+	type Lorebook
 } from './types';
 
 /** Only the three fields the sort reads; `sortLorebooks` is typed to accept exactly this much. */
@@ -114,6 +117,72 @@ describe('sortLorebooks', () => {
 			expect(out).not.toBe(shelf);
 			expect(names(shelf)).toEqual(['zebra', 'Apple', 'mango']);
 		}
+	});
+});
+
+/**
+ * What a chat plays with. This is coupling #1: the meters resolve over the store's cached
+ * books and generation resolves over a fresh server read, so anything this decides by the
+ * ARRAY it was handed rather than by the books themselves makes the meter price a prompt the
+ * send does not build.
+ */
+describe('resolveLorebookLinks', () => {
+	const shelf = (...books: Partial<Lorebook>[]): Lorebook[] =>
+		books.map((b, i) => ({ id: `b${i}`, name: `b${i}`, createdAt: i, ...b }) as Lorebook);
+
+	test('links resolve in link order, deduped, missing ids dropped', () => {
+		const books = shelf({ id: 'a' }, { id: 'b' }, { id: 'c' });
+		const out = resolveLorebookLinks(books, ['c', 'a', 'c', 'gone']);
+		expect(out.map((b) => b.id)).toEqual(['c', 'a']);
+	});
+
+	// What a chip counting an entry's links must ask instead, or a card that links nothing
+	// reports the shelf's global books as links it made.
+	test('resolveLinkedBooks answers with links alone', () => {
+		const books = shelf({ id: 'world', global: true }, { id: 'card' });
+		expect(resolveLinkedBooks(books, []).map((b) => b.id)).toEqual([]);
+		expect(resolveLinkedBooks(books, ['card']).map((b) => b.id)).toEqual(['card']);
+	});
+
+	// The whole point of the switch: no card names it, so nothing in the id list can reach it.
+	test('a global book joins a chat that links nothing at all', () => {
+		const books = shelf({ id: 'world', global: true }, { id: 'plain' });
+		expect(resolveLorebookLinks(books, []).map((b) => b.id)).toEqual(['world']);
+		expect(resolveLorebookLinks(books, undefined).map((b) => b.id)).toEqual(['world']);
+	});
+
+	test('globals lead, and a card cannot reshuffle them by linking one', () => {
+		const books = shelf({ id: 'w1', global: true }, { id: 'card' }, { id: 'w2', global: true });
+		expect(resolveLorebookLinks(books, ['card', 'w2']).map((b) => b.id)).toEqual([
+			'w1',
+			'w2',
+			'card'
+		]);
+	});
+
+	// The two callers read the same query at two different moments, so the array order is not
+	// something they agree on. Creation order is, and it never moves.
+	test('globals come in creation order, whatever order the array is in', () => {
+		const first = { id: 'first', global: true, createdAt: 100 };
+		const second = { id: 'second', global: true, createdAt: 200 };
+		const forwards = resolveLorebookLinks(shelf(first, second), []);
+		const backwards = resolveLorebookLinks(shelf(second, first), []);
+		expect(forwards.map((b) => b.id)).toEqual(['first', 'second']);
+		expect(backwards.map((b) => b.id)).toEqual(['first', 'second']);
+	});
+
+	test('a global book a card also links appears once', () => {
+		const books = shelf({ id: 'world', global: true }, { id: 'card' });
+		expect(resolveLorebookLinks(books, ['world', 'card']).map((b) => b.id)).toEqual([
+			'world',
+			'card'
+		]);
+	});
+
+	test('never reorders the array it was handed', () => {
+		const books = shelf({ id: 'late', global: true, createdAt: 900 }, { id: 'early', global: true, createdAt: 1 });
+		resolveLorebookLinks(books, []);
+		expect(books.map((b) => b.id)).toEqual(['late', 'early']);
 	});
 });
 
@@ -250,6 +319,17 @@ describe('lorebookDeleteMessage', () => {
 	test('a nameless book is named the way every list names it', () => {
 		expect(lorebookDeleteMessage(book('', 1), 0)).toBe(
 			'Delete "Untitled lorebook" and its 1 entry? This cannot be undone.'
+		);
+	});
+
+	// Nothing links a global book, so the bound clause alone would report the widest loss on
+	// the shelf as a book nobody was using.
+	test('a book in every chat says so, linked or not', () => {
+		expect(lorebookDeleteMessage({ ...book('Kaldoria', 2), global: true }, 0)).toBe(
+			'Delete "Kaldoria" and its 2 entries? It is in every chat. This cannot be undone.'
+		);
+		expect(lorebookDeleteMessage({ ...book('Kaldoria', 2), global: true }, 1)).toBe(
+			'Delete "Kaldoria" and its 2 entries? It is in every chat. It is bound to 1 character or persona. This cannot be undone.'
 		);
 	});
 

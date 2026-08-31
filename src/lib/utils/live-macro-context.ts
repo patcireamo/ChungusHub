@@ -76,7 +76,7 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 	// buildMacroContext, through the same resolver, so these surfaces cannot select
 	// differently from the prompt they sit beside.
 	const lore = resolveLorebooks({
-		books: lorebookStore.resolveBooks([
+		books: lorebookStore.booksForChat([
 			...(characterData?.lorebookIds ?? []),
 			...(persona?.data.lorebookIds ?? [])
 		]),

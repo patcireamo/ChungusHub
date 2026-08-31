@@ -112,17 +112,18 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 		? libraryEntries.find((entry) => entry.id === personaId && entry.type === 'persona') ?? null
 		: null;
 
-	// Active lorebooks = those linked by the bound character + the active persona, resolved IN
-	// LINK ORDER (deduped). The two reactive token meters run the same resolver over the
-	// store's books (lorebookStore.resolveBooks), so the meter can never render a different
-	// block than is sent. Generation reads the books fresh instead of trusting the store.
+	// Active lorebooks = every book switched into every chat, then those linked by the bound
+	// character and the active persona, resolved IN LINK ORDER (deduped). The two reactive
+	// token meters run the same resolver over the store's books (lorebookStore.booksForChat),
+	// so the meter can never render a different block than is sent. Generation reads the books
+	// fresh instead of trusting the store.
 	const linkedBookIds = [
 		...(character?.data.lorebookIds ?? []),
 		...(personaEntry?.data.lorebookIds ?? [])
 	];
-	const lorebooks: Lorebook[] = linkedBookIds.length
-		? resolveLorebookLinks(await db.getAllLorebooks(), linkedBookIds)
-		: [];
+	// Always asked, even with nothing linked: a book switched into every chat reaches this
+	// prompt through no id at all, so a short-circuit on an empty link list would drop it.
+	const lorebooks: Lorebook[] = resolveLorebookLinks(await db.getAllLorebooks(), linkedBookIds);
 
 	const recall: PromptRecall = chatId
 		? await memoryStore.getRecall(chatId, chatMessages)

@@ -10,6 +10,7 @@
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import LibraryEntryMenu from '$lib/components/library/LibraryEntryMenu.svelte';
+	import LorebookGlobalBadge from './LorebookGlobalBadge.svelte';
 	import { imageService } from '$lib/services/imageService';
 	import { portraitFocusAim } from '$lib/utils/portrait-focus';
 	import type { Lorebook } from '$lib/lorebook/types';
@@ -100,22 +101,27 @@
 	{/if}
 
 	<div class="absolute inset-x-0 bottom-0 p-3.5 flex flex-col gap-1">
-		<h3
-			class="font-ui font-semibold text-[15px] truncate {book.name ? 'text-white' : 'italic text-white/70'}"
-			style="text-shadow: 0 1px 4px rgb(0 0 0 / 0.85), 0 0 2px rgb(0 0 0 / 0.5);"
-		>
-			{name}
-		</h3>
+		<div class="flex items-center gap-1.5 min-w-0">
+			<h3
+				class="font-ui font-semibold text-[15px] truncate {book.name ? 'text-white' : 'italic text-white/70'}"
+				style="text-shadow: 0 1px 4px rgb(0 0 0 / 0.85), 0 0 2px rgb(0 0 0 / 0.5);"
+			>
+				{name}
+			</h3>
+			{#if book.global}
+				<LorebookGlobalBadge />
+			{/if}
+		</div>
+		<!-- Not linked is held back behind the badge, the same rule the list row draws. -->
 		<p
 			class="font-ui text-xs text-white/85 truncate"
 			style="text-shadow: 0 1px 3px rgb(0 0 0 / 0.75);"
 		>
 			{count === 0 ? 'Empty' : `${count} ${count === 1 ? 'entry' : 'entries'}`}
-			<span class="opacity-60"> · </span>
 			{#if links > 0}
-				{links} linked
-			{:else}
-				<span class="italic">Not linked</span>
+				<span class="opacity-60"> · </span>{links} linked
+			{:else if !book.global}
+				<span class="opacity-60"> · </span><span class="italic">Not linked</span>
 			{/if}
 		</p>
 	</div>

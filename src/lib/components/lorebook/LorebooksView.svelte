@@ -92,12 +92,21 @@
 	 *  app-wide change look like something being done to the book whose name was on screen. */
 	let defaultsOpen = $state(false);
 
-	/** The two states a book can be in on this shelf, held out of the list independently:
-	 *  a reader hunting dead weight wants only the unlinked, and one tidying the working
-	 *  shelf wants only the linked. */
+	/**
+	 * How a book reaches a prompt, which is one question with three answers, held out of the
+	 * list independently: a reader hunting dead weight wants only the unlinked, one tidying
+	 * the working shelf wants only the linked, and one auditing what every chat is carrying
+	 * wants only the globals.
+	 *
+	 * Global outranks linked rather than sitting on an axis of its own: a book in every chat
+	 * is already in every chat, so which cards also link it is not what this filter asks. The
+	 * `noun` is what the chips and the labels a screen reader gets are written from, since
+	 * "No in every chat books" is not a sentence.
+	 */
 	const LINK_STATES = [
-		{ id: 'linked', label: 'Linked' },
-		{ id: 'unlinked', label: 'Unlinked' }
+		{ id: 'global', label: 'In every chat', noun: 'global' },
+		{ id: 'linked', label: 'Linked', noun: 'linked' },
+		{ id: 'unlinked', label: 'Unlinked', noun: 'unlinked' }
 	] as const;
 	type LinkState = (typeof LINK_STATES)[number]['id'];
 
@@ -143,7 +152,11 @@
 	let query = $derived(foldForSearch(search.trim()));
 	let visible = $derived(
 		ordered.filter((book) => {
-			const state: LinkState = (links.get(book.id) ?? 0) > 0 ? 'linked' : 'unlinked';
+			const state: LinkState = book.global
+				? 'global'
+				: (links.get(book.id) ?? 0) > 0
+					? 'linked'
+					: 'unlinked';
 			if (hidden.includes(state)) return false;
 			return !query || searchTextOf(book).includes(query);
 		})
@@ -382,9 +395,13 @@
 
 				<div class="brw-sec">
 					<div class="brw-sec-head"><span class="brw-sec-title">Show</span></div>
-					<!-- Independent switches rather than one choice: what a reader wants left is
-					     either half, and a single "unlinked only" could not say the other one. -->
-					<div class="brw-opts" role="group" aria-label="Filter by whether a book is in use">
+					<!-- Independent switches rather than one choice: what a reader wants left is any
+					     of the three, and a single "globals only" could not say the other two. -->
+					<div
+						class="brw-opts brw-opts--3"
+						role="group"
+						aria-label="Filter by how a book reaches a chat"
+					>
 						{#each LINK_STATES as state (state.id)}
 							<button
 								type="button"
@@ -577,12 +594,12 @@
 				{#each LINK_STATES as state (state.id)}
 					{#if hidden.includes(state.id)}
 						<span class="brw-chip">
-							No {state.label.toLowerCase()}
+							No {state.noun} books
 							<button
 								type="button"
 								class="brw-chip-x"
 								onclick={() => toggleLinkState(state.id)}
-								aria-label="Show {state.label.toLowerCase()} lorebooks again"
+								aria-label="Show {state.noun} lorebooks again"
 							>
 								<Icon name="close" class="w-2.5 h-2.5" />
 							</button>
