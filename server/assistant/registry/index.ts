@@ -166,7 +166,7 @@ export function capabilityGroupCosts(): Record<string, number> {
 
 export { describeDataModel };
 export { getEntity } from './entities';
-export { branchStamp } from './chat-reads';
+export { branchStamp, chatLorebooks } from './chat-reads';
 // Read-parity helpers for the loop's workspace note: a full entry block must hand over
 // what read_entity hands over, or "treat it as read" claims more than was sent.
 export { readEntryImages } from './images';

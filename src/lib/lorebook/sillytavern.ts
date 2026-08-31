@@ -192,6 +192,16 @@ const MODELLED_KEYS = new Set([
 	...LOREBOOK_SCAN_FIELDS.map((f) => f.native)
 ]);
 
+/**
+ * The book-level keys a native World Info file is read for. Everything else at that level is
+ * a third-party tool's own metadata and rides in `book.extensions`, the way an entry's
+ * unmapped fields ride in `rest`, so importing a stranger's book and exporting it again does
+ * not strip whatever wrote it.
+ */
+const MODELLED_BOOK_KEYS = new Set([
+	'name', 'entries', 'extensions', 'scan_depth', 'recursive_scanning', 'description'
+]);
+
 /** Native World Info entry → our model. Everything unmapped is preserved verbatim in `rest`. */
 function fromNativeEntry(raw: Record<string, unknown>): LorebookEntry {
 	const rest: Record<string, unknown> = {};
@@ -352,8 +362,14 @@ export function parseLorebook(raw: unknown, fallbackName: string): Lorebook {
 		const book = createEmptyLorebook(asString(obj.name) || fallbackName);
 		// Absent = inherit our global setting (native World Info has no book-level scan depth).
 		book.scanDepth = asNumberOrNull(obj.scan_depth);
-		const ext: Record<string, unknown> =
-			obj.extensions && typeof obj.extensions === 'object' ? { ...(obj.extensions as Record<string, unknown>) } : {};
+		const ext: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(obj)) {
+			if (!MODELLED_BOOK_KEYS.has(k)) ext[k] = v;
+		}
+		// The file's own `extensions` bag wins a name it shares with a stray top-level key.
+		if (obj.extensions && typeof obj.extensions === 'object') {
+			Object.assign(ext, obj.extensions as Record<string, unknown>);
+		}
 		if (obj.description !== undefined) ext.description = obj.description;
 		// Recursive scan is a modelled field for us; lift it out of extensions (where an older
 		// import may have parked it) so the two can't drift, then honour a top-level flag too.
@@ -490,16 +506,18 @@ function toCharacterBookEntry(entry: LorebookEntry, i: number): Record<string, u
 
 /** Export a Lorebook as a character_book object for embedding in a Character Card V2/V3. */
 export function toCharacterBook(book: Lorebook): Record<string, unknown> {
-	const ext = book.extensions ?? {};
+	// Both are real character_book fields that parked in `extensions` on the way in, so they go
+	// back to their own keys; the rest of the bag rides on, as it does in the native export.
+	const { description, token_budget, ...ext } = book.extensions ?? {};
 	return {
 		name: book.name,
 		// Only emit an explicit positive scan depth. 0 = "whole chat" and null = "inherit".
 		// SillyTavern has no equivalent for either, so both export as absent (ST's global).
 		scan_depth: book.scanDepth != null && book.scanDepth > 0 ? book.scanDepth : undefined,
-		description: ext.description,
-		token_budget: ext.token_budget,
+		description,
+		token_budget,
 		recursive_scanning: book.recursiveScanning ?? undefined,
-		extensions: bookOverrideExtensions(book),
+		extensions: { ...ext, ...bookOverrideExtensions(book) },
 		entries: book.entries.map(toCharacterBookEntry)
 	};
 }

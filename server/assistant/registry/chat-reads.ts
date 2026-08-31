@@ -79,14 +79,21 @@ function claimedIds(chat: RawChat, key: 'lorebooks' | 'mutedLorebooks'): string[
  * ones it muted.
  *
  * The second spelling of `resolveLorebookLinks` (src/lib/lorebook/types.ts), which this side
- * cannot import. Every layer no card names has to be here: leave the globals out and the
+ * cannot import, and the ONE the server has: `read_chat_context` and the turn's workspace note
+ * both read it. Every layer no card names has to be here: leave the globals out and the
  * assistant reports a scene missing the books that are in ALL of them, leave the chat's own out
  * and it misses the lore this one story was given, leave the mutes out and it describes books
  * this story took back off, and none of those absences shows anywhere else.
+ *
+ * The globals lead in creation order, as the client resolves them: `getAllLorebooks` answers
+ * most-recently-written first, so taking that order would name the scene's books in a sequence
+ * that flips whenever one is edited and never matches the one lore is laid down in.
  */
-function chatLorebooks(chat: RawChat): RawLorebookBook[] {
+export function chatLorebooks(chat: RawChat): RawLorebookBook[] {
 	const all = serverDb.getAllLorebooks() as RawLorebookBook[];
-	const out = all.filter((b) => b.global);
+	const out = all
+		.filter((b) => b.global)
+		.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
 	const seen = new Set(out.map((b) => b.id));
 	const ids = new Set<string>();
 	if (chat.characterId) {

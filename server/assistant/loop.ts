@@ -10,13 +10,13 @@
 import { completeWithTools, isProvider, type RoutingConfig } from '../llm/registry';
 import type { GenerationTuning, LLMToolDef, LLMToolMessage, LLMToolResult, LLMToolStreamOptions } from '../llm/types';
 import { imageFileExists } from '../llm/media';
-import { branchStamp, buildTools, dispatch, getEntity, previewCall, readEntryImages, revokedToolNames, riskCeiling, versionSummary } from './registry';
+import { branchStamp, buildTools, chatLorebooks, dispatch, getEntity, previewCall, readEntryImages, revokedToolNames, riskCeiling, versionSummary } from './registry';
 import { stalenessNote, stampState } from './freshness';
 import { claimKey, collectStateClaims, WORKSPACE_NOTE_PREFIX, type ClaimSource } from './freshness-core';
 import type { SentAttachment } from '../../shared/assistant-attachments';
 import { disabledGroupIds } from './registry/groups';
 import { ESTIMATE_CHARS_PER_TOKEN, estimateTextTokens, estimateToolTokens, INLINE_CONTENT_TOKEN_LIMIT } from './registry/schema';
-import type { RawLibraryEntry, RawLorebookBook } from './rows';
+import type { RawChat, RawLibraryEntry, RawLorebookBook } from './rows';
 import { assistantSystemPrompt } from './systemPrompt';
 import { toolProgressText } from './toolProgress';
 import { serverDb, type AssistantFileRow } from '../db';
@@ -1264,19 +1264,17 @@ function renderEntryPointer(entryId: string): { line: string; label: string; ent
  *  resolves. The one line carries what the retired full block did: title, id, bound
  *  character, lorebooks, branch stamp. */
 function renderChatPointer(chatId: string): { line: string; label: string } | null {
-	const chat = serverDb.getChat(chatId) as { title: string; characterId: string | null } | null;
+	const chat = serverDb.getChat(chatId) as RawChat | null;
 	if (!chat) return null;
 	const details: string[] = [];
 	if (chat.characterId) {
 		const character = serverDb.getLibraryEntry(chat.characterId) as RawLibraryEntry | null;
-		if (character) {
-			details.push(`character: ${character.identity.name} (id: ${chat.characterId})`);
-			const names = (character.data?.lorebookIds ?? [])
-				.map((id) => (serverDb.getLorebook(id) as { name?: string } | null)?.name)
-				.filter((n): n is string => !!n);
-			if (names.length) details.push(`lorebooks: ${names.join(', ')}`);
-		}
+		if (character) details.push(`character: ${character.identity.name} (id: ${chat.characterId})`);
 	}
+	// Through the resolver, never off the character's link list: three of the four layers reach
+	// a prompt with no card naming them, and a mute takes one back out.
+	const names = chatLorebooks(chat).map((b) => b.name.trim() || 'Untitled lorebook');
+	if (names.length) details.push(`lorebooks: ${names.join(', ')}`);
 	const meta = details.length ? `: ${details.join('; ')}` : '';
 	return { line: `- Chat "${chat.title}" (id: ${chatId})${meta}${describeBranch(chatId)}`, label: chat.title };
 }
