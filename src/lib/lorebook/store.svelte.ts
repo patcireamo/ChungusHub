@@ -202,6 +202,69 @@ class LorebookStore {
 		return copy;
 	}
 
+	/**
+	 * Send entries to another book. A copy leaves them where they are; a move cuts them only
+	 * once the destination's write has come back. Returns how many arrived, since an id naming
+	 * an entry that has gone in the meantime is skipped rather than counted.
+	 *
+	 * **The destination is written FIRST and the source only after it returns**, the rule
+	 * `setCover` follows: a failure between the two costs a duplicate the reader can see and
+	 * delete, where the other order costs the entries themselves.
+	 *
+	 * A copy takes a fresh id and a move keeps its own. Sticky and cooldown windows are measured
+	 * per entry id across every book at once, and a scan's records are keyed by it too
+	 * (`lorebookHistory` and `selectFromBooks` in engine.ts), so a moved entry carries its own
+	 * timing along while two entries sharing an id would share one window and collapse into a
+	 * single record in the trace.
+	 */
+	async transferEntries(
+		fromId: string,
+		toId: string,
+		entryIds: string[],
+		mode: 'move' | 'copy'
+	): Promise<number> {
+		const from = this.getBook(fromId);
+		const to = this.getBook(toId);
+		if (!from || !to || from === to) return 0;
+		const ids = new Set(entryIds);
+		// Deep snapshots, never the live entries: they carry nested maps and arrays (keyRules'
+		// rule objects, rest's preserved SillyTavern values), and handing one object to two
+		// books would have both of them editing the same nested state.
+		const landing = from.entries
+			.filter((e) => ids.has(e.id))
+			.map((e) => {
+				const entry = $state.snapshot(e) as LorebookEntry;
+				return mode === 'copy' ? { ...entry, id: crypto.randomUUID() } : entry;
+			});
+		if (landing.length === 0) return 0;
+		await this.replaceEntries(to, [...to.entries, ...landing]);
+		if (mode === 'move') {
+			await this.replaceEntries(
+				from,
+				from.entries.filter((e) => !ids.has(e.id))
+			);
+		}
+		return landing.length;
+	}
+
+	/** Swap a book's entry list and send the row, putting the list back if that write fails.
+	 *  A book left holding entries the server never took would win the next `refresh` on its
+	 *  fresher timestamp, so the failure the reader was just told about would quietly come
+	 *  true on the next edit. */
+	private async replaceEntries(book: Lorebook, entries: LorebookEntry[]): Promise<void> {
+		const before = book.entries;
+		const stamp = book.updatedAt;
+		book.entries = entries;
+		try {
+			await this.writeNow(book);
+		} catch (error) {
+			book.entries = before;
+			book.updatedAt = stamp;
+			this._books = [...this._books];
+			throw error;
+		}
+	}
+
 	removeEntry(bookId: string, entryId: string): void {
 		const book = this.getBook(bookId);
 		if (!book) return;

@@ -21,6 +21,7 @@
 	import LorebookEntryRow from './LorebookEntryRow.svelte';
 	import LorebookActivationPanel from './LorebookActivationPanel.svelte';
 	import LorebookBindPicker from './LorebookBindPicker.svelte';
+	import LorebookTransferPicker from './LorebookTransferPicker.svelte';
 	import LorebookScanTester from './LorebookScanTester.svelte';
 	import { imageService, imageRejectionReason } from '$lib/services/imageService';
 	import { portraitFocusStyle } from '$lib/utils/portrait-focus';
@@ -339,6 +340,49 @@
 		for (const id of selectedIds) lorebookStore.removeEntry(selectedBook.id, id);
 		bulkDeleteOpen = false;
 		selectMode = false;
+	}
+
+	// ===== sending a selection to another book =====
+
+	/** Where a selection can go. Nowhere to send it means no buttons at all, the rule the
+	 *  composer's setup chip follows for its own lists: a drill into a list of nothing. */
+	let otherBooks = $derived(books.filter((b) => b.id !== bookId));
+	let moveOpen = $state(false);
+	let copyOpen = $state(false);
+	let transferBusy = $state(false);
+
+	/**
+	 * Send the selection to the book that was just picked.
+	 *
+	 * A move leaves selection mode, since the rows it was made of are no longer in this book;
+	 * a copy stays, because sending the same entries on to a second book is a run of presses.
+	 */
+	async function transfer(targetId: string, mode: 'move' | 'copy') {
+		if (!selectedBook || transferBusy) return;
+		const sourceId = selectedBook.id;
+		const ids = [...selectedIds];
+		const name = lorebookStore.getBook(targetId)?.name || 'Untitled lorebook';
+		moveOpen = false;
+		copyOpen = false;
+		transferBusy = true;
+		try {
+			const landed = await lorebookStore.transferEntries(sourceId, targetId, ids, mode);
+			if (landed === 0) {
+				// Both ends resolved a moment ago, so nothing landing means another device
+				// deleted the entries, or the book they were going to, while the panel stood.
+				toastStore.error('Nothing was left to send');
+				return;
+			}
+			const verb = mode === 'move' ? 'Moved' : 'Copied';
+			toastStore.success(
+				`${verb} ${landed} ${landed === 1 ? 'entry' : 'entries'} to "${name}"`
+			);
+			if (mode === 'move') selectMode = false;
+		} catch (error) {
+			toastStore.failed(mode === 'move' ? 'move those entries' : 'copy those entries', error);
+		} finally {
+			transferBusy = false;
+		}
 	}
 
 	// ===== housekeeping effects =====
@@ -919,6 +963,56 @@
 							>
 								Disable
 							</button>
+
+							<!-- Where the selection goes, between the two that change it in place and
+							     the one that destroys it. The verb is pressed here and the destination
+							     picked in the panel, so neither has to be read back out of the other.
+							     Both wear their words at every width, exactly as Enable and Disable do:
+							     two icons nobody can tell apart is not a saving on a phone. -->
+							{#if otherBooks.length > 0}
+								<BrowsePopover bind:open={moveOpen}>
+									{#snippet trigger({ toggle, open })}
+										<button
+											type="button"
+											class="brw-bulk-btn"
+											disabled={selectedIds.size === 0 || transferBusy}
+											onclick={toggle}
+											aria-haspopup="true"
+											aria-expanded={open}
+										>
+											Move to…
+										</button>
+									{/snippet}
+									<LorebookTransferPicker
+										bookId={selectedBook.id}
+										mode="move"
+										count={selectedIds.size}
+										onPick={(id) => transfer(id, 'move')}
+									/>
+								</BrowsePopover>
+
+								<BrowsePopover bind:open={copyOpen}>
+									{#snippet trigger({ toggle, open })}
+										<button
+											type="button"
+											class="brw-bulk-btn"
+											disabled={selectedIds.size === 0 || transferBusy}
+											onclick={toggle}
+											aria-haspopup="true"
+											aria-expanded={open}
+										>
+											Copy to…
+										</button>
+									{/snippet}
+									<LorebookTransferPicker
+										bookId={selectedBook.id}
+										mode="copy"
+										count={selectedIds.size}
+										onPick={(id) => transfer(id, 'copy')}
+									/>
+								</BrowsePopover>
+							{/if}
+
 							<button
 								type="button"
 								class="brw-bulk-btn brw-bulk-btn--danger"
@@ -1578,6 +1672,14 @@
 		margin: 0 0 0.5rem;
 		border: 1px solid color-mix(in srgb, var(--color-accent) 26%, transparent);
 		border-radius: var(--radius-md);
+	}
+
+	/* Move to… and Copy to… open the same list, so the one that is open holds the accent while
+	   its panel stands: without it the panel could belong to either button. */
+	.lb-bulk :global(.brw-bulk-btn[aria-expanded='true']) {
+		color: var(--color-text-primary);
+		border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+		background: color-mix(in srgb, var(--color-accent) 12%, transparent);
 	}
 
 	/* ===== entry rows ===== */
