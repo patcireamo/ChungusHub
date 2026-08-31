@@ -7,6 +7,9 @@
  * leaking titles. And the trace: every entry gets a record saying what happened to it, naming
  * the key that matched and the turn it matched in, because an entry that quietly fails to fire
  * is the hardest thing about a lorebook to debug.
+ *
+ * Three blocks at the foot answer the same two contracts from outside the Latin alphabet, from
+ * before the fields an entry now carries existed, and at the size a whole imported world is.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -25,6 +28,7 @@ import {
 	DEFAULT_LOREBOOK_GLOBAL_SETTINGS,
 	LOREBOOK_POSITION_AT_DEPTH,
 	lorebookHistory,
+	resolveKeyMatch,
 	type Lorebook,
 	type LorebookEntry,
 	type LorebookEntryRecord,
@@ -311,6 +315,15 @@ describe('per-key matching', () => {
 	test('a rule for a key the entry no longer has changes nothing', () => {
 		const b = book([{ content: 'c', key: ['wolf'], keyRules: { gone: { mode: 'start' } } }]);
 		expect(fired([b], ['a wolf howls'])).toEqual(['c']);
+	});
+
+	// A regex key IS its own text, so a key that merely looks like a path becomes a pattern:
+	// the one way a plain key silently changes what it means, and it has to read the same way
+	// in the scan and in the chip that labels it (architecture/lorebook.md coupling 5).
+	test('a key wrapped in slashes is a regex, and one merely holding a slash is not', () => {
+		const entryDefaults = { caseSensitive: false, matchWholeWords: true };
+		expect(resolveKeyMatch('/home/user/', undefined, entryDefaults).mode).toBe('regex');
+		expect(resolveKeyMatch('and/or', undefined, entryDefaults).mode).toBe('word');
 	});
 });
 
@@ -1010,5 +1023,80 @@ describe('recursion across books', () => {
 			'seed names alpha',
 			'alpha names beta'
 		]);
+	});
+});
+
+describe('keys outside the Latin alphabet', () => {
+	const fires = (key: string, text: string, over: Partial<LorebookEntry> = {}) =>
+		resolveLorebooks({ books: [book([{ key: [key], content: 'lore', ...over }])], messages: [text] }).text;
+
+	// Whole-word matching wraps a key in letter/number boundaries, so every script that writes
+	// its letters differently is a way for that wrapper to be subtly wrong.
+	test('a Latin key with diacritics matches as a whole word', () => {
+		expect(fires('ejderha', 'bir ejderha gördüm')).toBe('lore');
+	});
+
+	test('an emoji key matches, since nothing around it is a letter', () => {
+		expect(fires('🐉', 'look, a 🐉 over there')).toBe('lore');
+	});
+
+	test('a key standing between spaces matches in any script', () => {
+		expect(fires('龍', 'the 龍 flew')).toBe('lore');
+	});
+
+	// The escape hatch for a language that does not space its words: neighbouring kana and
+	// kanji are letters, so whole words finds no boundary and substring matching is the answer
+	// an author has until the entry says otherwise.
+	test('a key inside unspaced text fires once the entry asks for substring matching', () => {
+		expect(fires('龍', '古の龍が空を飛んだ', { matchWholeWords: false })).toBe('lore');
+	});
+});
+
+describe('rows written before the fields they answer to existed', () => {
+	// Nothing normalises a book on load, so an entry stored before a field was modelled has to
+	// keep reading as "inherit / all" rather than as a decision its author never made.
+	test('an entry predating every optional field still fires, and absent means all kinds', () => {
+		const ancient = {
+			id: 'e1',
+			comment: 'Ancient',
+			key: ['dragon'],
+			keysecondary: [],
+			selectiveLogic: 0,
+			content: 'lore',
+			constant: false,
+			disable: false,
+			order: 100,
+			probability: 100,
+			useProbability: true,
+			caseSensitive: null,
+			matchWholeWords: null,
+			rest: {}
+		} as unknown as LorebookEntry;
+		const b = createEmptyLorebook('Old');
+		b.entries = [ancient];
+		expect(resolveLorebooks({ books: [b], messages: ['a dragon'] }).text).toBe('lore');
+		expect(resolveLorebooks({ books: [b], messages: ['a dragon'], trigger: 'impersonate' }).text).toBe('lore');
+	});
+
+	// A book that stores a concrete value is overriding, not inheriting, whatever the defaults
+	// say today: the shelf's own layer moving must never reach into a book that answered first.
+	test('a book holding concrete values does not follow a changed default', () => {
+		const settings = { ...DEFAULT_LOREBOOK_GLOBAL_SETTINGS, matchWholeWords: false };
+		const stated = book([{ key: ['art'], content: 'lore' }]);
+		stated.matchWholeWords = true;
+		expect(resolveLorebooks({ books: [stated], messages: ['cartography'], settings }).text).toBe('');
+		expect(resolveLorebooks({ books: [book([{ key: ['art'], content: 'lore' }])], messages: ['cartography'], settings }).text).toBe('lore');
+	});
+});
+
+describe('an archive-sized book', () => {
+	// A book this size is a whole world imported in one go, and the scan runs on every send and
+	// behind every token meter. The bound is loose on purpose: what it catches is a scan that
+	// went quadratic in entries, not a machine having a slow second.
+	test('four thousand entries do not take the scan down', () => {
+		const big = book(Array.from({ length: 4000 }, (_, i) => ({ key: [`k${i}`], content: `c${i}` })));
+		const started = Date.now();
+		expect(resolveLorebooks({ books: [big], messages: ['nothing matches here'] }).text).toBe('');
+		expect(Date.now() - started).toBeLessThan(8000);
 	});
 });

@@ -81,7 +81,7 @@ The settings ride the settings spine (`backupSettings`) and the server reads the
 - A new write into the data dir that does **not** go through `broadcastSync` has to call `backupService.markChanged()` itself. Missing it means the schedule never hears about that data, and the failure is silent in the worst direction: the file is simply never in a snapshot.
 - The job-child branch in `index.ts` must stay above `serverDb.open()`, and the pre-upgrade snapshot must stay above it too.
 - Never make the restore swap run in a live server "because it would be nicer". Re-read the paragraph above first; the file lock is measurable, not folklore.
-- A new JSON column that can hold an image path needs an entry in `IMAGE_BEARING`; a new **key** inside an existing one needs nothing, which is the point of matching path shapes. A new image **category** needs one too: `IMAGE_PATH_RE` spells `IMAGE_CATEGORIES` (config.ts) out, and a category it does not name is a folder no snapshot ever copies.
+- A new JSON column that can hold an image path needs an entry in `IMAGE_BEARING`; a new **key** inside an existing one needs nothing, which is the point of matching path shapes. A new image **category** needs one too: `IMAGE_PATH_RE` spells `IMAGE_CATEGORIES` (config.ts) out, and a category it does not name is a folder no snapshot ever copies. [`src/lib/contracts.test.ts`](../src/lib/contracts.test.ts) holds the alternation to that list, and the client's own union to it as well (architecture/server-core.md coupling 5).
 - Snapshots hold API keys in plaintext, exactly as the data dir does. Anything that moves the store somewhere new (a sync folder, a network share) is a security decision, not a convenience one.
 
 ## Hand-kept couplings

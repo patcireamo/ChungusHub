@@ -18,7 +18,13 @@ import {
 } from './prompt-assembly';
 import { countTokens } from '$lib/tokenizer/count';
 import type { LLMMessage } from '$lib/types/llm';
-import { createEmptyLorebook, createEmptyLorebookEntry, type Lorebook, type LorebookEntry } from '$lib/lorebook/types';
+import {
+	createEmptyLorebook,
+	createEmptyLorebookEntry,
+	DEFAULT_LOREBOOK_GLOBAL_SETTINGS,
+	type Lorebook,
+	type LorebookEntry
+} from '$lib/lorebook/types';
 
 const MODEL = 'gpt-4o';
 
@@ -1102,6 +1108,58 @@ describe('the lorebook trace assembly hands back', () => {
 			})
 		);
 		expect(a.messages[0].content).toContain('the wolves circle');
+	});
+
+	// The scan reads the whole path and the trim shortens what is SENT, so lore is admitted on
+	// evidence the model never sees. Deliberate (the scan window is its own setting), and the
+	// reason a stored trace can name a turn that is not in the prompt: narrow the scan to what
+	// survived the trim and a long chat quietly stops firing the entries it was written for.
+	test('an entry fires on a turn the trim then drops from the request', () => {
+		const p = preset([item('<world>{{lorebook}}</world>'), item('{{chatHistory}}')]);
+		const long = [
+			msg('m0', 'user', 'the sigil glows'),
+			...Array.from({ length: 30 }, (_, i) => msg(`m${i + 1}`, i % 2 ? 'assistant' : 'user', `turn ${i} of many words here`))
+		];
+		const book = lorebook([{ comment: 'Sigil', content: 'The sigil burns.', key: ['sigil'] }]);
+		book.scanDepth = 0;
+		const a = assemblePrompt(
+			input(p, { lorebooks: [book], chatMessages: long, contextBudget: 120, postProcessing: { mode: 'none' } })
+		);
+		expect(a.messages[0].content).toContain('The sigil burns.');
+		expect(a.trimmedMessages).toBeGreaterThan(0);
+		expect(a.messages.some((m) => m.content === 'the sigil glows')).toBe(false);
+	});
+
+	// The lore allowance is a share of the prompt budget, so a small one has to drop whole
+	// entries rather than cut them, keep the lowest `order` (which is what priority means here)
+	// and say which ones it dropped, or a book silently shrinks with nothing on screen.
+	test('a small lore budget drops entries whole, lowest order first, and says so', () => {
+		const fat = lorebook(
+			Array.from({ length: 8 }, (_, i) => ({
+				comment: `P${i}`,
+				content: `Paragraph ${i} ${'lorem ipsum dolor sit amet '.repeat(12)}`,
+				constant: true,
+				order: i
+			}))
+		);
+		const p = preset([item('{{lorebook}}')]);
+		const uncapped = assemblePrompt(input(p, { lorebooks: [fat], postProcessing: { mode: 'none' } }));
+		expect(uncapped.lorebook.records.filter((r) => r.status === 'trimmed')).toHaveLength(0);
+		expect(uncapped.messages[0].content.split('\n\n')).toHaveLength(8);
+
+		const capped = assemblePrompt(
+			input(p, {
+				lorebooks: [fat],
+				contextBudget: 4000,
+				lorebookSettings: { ...DEFAULT_LOREBOOK_GLOBAL_SETTINGS, budgetPercent: 2 },
+				postProcessing: { mode: 'none' }
+			})
+		);
+		const kept = capped.messages[0].content.split('\n\n').filter(Boolean);
+		expect(capped.lorebook.records.filter((r) => r.status === 'trimmed').length).toBeGreaterThan(0);
+		expect(kept[0]).toContain('Paragraph 0');
+		// Separators priced in, so the block cannot outgrow its allowance by its own glue.
+		expect(countTokens(capped.messages[0].content, MODEL)).toBeLessThanOrEqual(Math.floor((4000 * 2) / 100));
 	});
 
 	test('one assembly resolves the lorebook once, however many times the tag appears', () => {

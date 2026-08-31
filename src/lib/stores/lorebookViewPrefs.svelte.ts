@@ -51,7 +51,7 @@ const DEFAULTS: LorebookViewState = {
 	perPage: 50
 };
 
-function normalize(raw: unknown): LorebookViewState {
+export function normalizeLorebookViewState(raw: unknown): LorebookViewState {
 	// A bare string is the stored order from before this held anything else.
 	const blob = (typeof raw === 'string' ? { order: raw } : (raw ?? {})) as Partial<LorebookViewState>;
 	return {
@@ -79,7 +79,7 @@ class LorebookViewPrefs {
 	}
 
 	async syncReload(): Promise<void> {
-		const state = normalize(await readSetting<unknown>(SETTINGS_KEY, null));
+		const state = normalizeLorebookViewState(await readSetting<unknown>(SETTINGS_KEY, null));
 		this.order = state.order;
 		this.viewMode = state.viewMode;
 		this.cardSize = state.cardSize;

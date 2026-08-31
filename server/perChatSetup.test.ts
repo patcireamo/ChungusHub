@@ -161,7 +161,10 @@ describe('a chat born with a claim', () => {
 			connection: 'conn-1',
 			persona: 'persona-1',
 			preset: 'preset-1',
-			lorebooks: ['book-1', 'book-2']
+			lorebooks: ['book-1', 'book-2'],
+			// The list whose loss is silent AND wrong in the dangerous direction: a dropped mute
+			// puts lore back into a story the reader took it out of.
+			mutedLorebooks: ['book-3']
 		});
 		const chat = serverDb.getChat(makeChat(written)) as { featureState: string | null };
 		expect(chat.featureState).toBe(written);

@@ -220,6 +220,21 @@ describe('resolveLorebookLinks', () => {
 		expect(backwards.map((b) => b.id)).toEqual(['first', 'second']);
 	});
 
+	// The clause that actually carries that promise: a folder import stamps a run of books in
+	// the same millisecond, so creation order alone leaves them in whatever order each caller's
+	// array happened to be in, which is the divergence the sort exists to close.
+	test('globals made in the same millisecond resolve in one fixed sequence', () => {
+		const alpha = { id: 'alpha', global: true, createdAt: 100 };
+		const beta = { id: 'beta', global: true, createdAt: 100 };
+		const gamma = { id: 'gamma', global: true, createdAt: 100 };
+		expect(resolveLorebookLinks(shelf(gamma, alpha, beta), cardsOnly([])).map((b) => b.id)).toEqual(
+			['alpha', 'beta', 'gamma']
+		);
+		expect(resolveLorebookLinks(shelf(beta, gamma, alpha), cardsOnly([])).map((b) => b.id)).toEqual(
+			['alpha', 'beta', 'gamma']
+		);
+	});
+
 	test('a global book a card also links appears once', () => {
 		const books = shelf({ id: 'world', global: true }, { id: 'card' });
 		expect(resolveLorebookLinks(books, cardsOnly(['world', 'card'])).map((b) => b.id)).toEqual([

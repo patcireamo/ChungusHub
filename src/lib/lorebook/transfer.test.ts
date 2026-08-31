@@ -9,6 +9,10 @@
  * the two is then a duplicate the reader can see and delete, rather than entries that left
  * one book without ever arriving in the other.
  *
+ * The harness is the real store over an in-memory server, so two blocks at the foot ride it for
+ * the rest of what a write owes: a book another device deleted takes no writes and says so, and
+ * a book of this one's own is deleted with a keystroke still scheduled for it.
+ *
  * Runes are compile-time macros and nothing compiles a store under `bun test`, so `$state` is
  * shimmed BEFORE the module loads, the way chat-setup-birth.test.ts does. `$state.snapshot`
  * clones for real rather than returning its argument: the store detaches every entry it hands
@@ -62,6 +66,11 @@ mock.module('$lib/services/database', () => ({
 				breakWriteOf = null;
 				throw new Error('the write failed');
 			}
+			// The real SQL is `UPDATE … WHERE id = ?`, which changes nothing against a row that
+			// is gone and reports nothing about it, so the server turns that silence into a
+			// throw (server/db.ts, driven in server/lorebookRows.test.ts). A fake that upserted
+			// here would report a destination write landing in a book that no longer exists.
+			if (!rows.has(book.id)) throw new Error(`updateLorebook: no lorebook with id ${book.id}`);
 			rows.set(book.id, copy(book));
 		},
 		deleteLorebook: async (id: string) => {
@@ -251,5 +260,60 @@ describe('a write that fails partway', () => {
 
 		expect(titles(to.id)).toEqual([]);
 		expect(titles(from.id)).toEqual(['Alpha']);
+	});
+
+	// The same failure arriving from the other device rather than from a broken connection, and
+	// the one that would cost the entries outright: a destination write reporting nothing is the
+	// step after which the source is cut.
+	test('a destination another device deleted keeps the entries in the source', async () => {
+		const from = await book('Source', [entry('Alpha'), entry('Beta')]);
+		const to = await book('Target', []);
+		rows.delete(to.id);
+
+		await expect(
+			lorebookStore.transferEntries(from.id, to.id, ids(from.id), 'move')
+		).rejects.toThrow();
+		await lorebookStore.refresh();
+
+		expect(lorebookStore.books.flatMap((b) => b.entries.map((e) => e.comment)).sort()).toEqual([
+			'Alpha',
+			'Beta'
+		]);
+	});
+
+	test('an ordinary edit to a book another device deleted fails loudly', async () => {
+		// The cheaper half of the same cause: a write resolving against a row that is gone leaves
+		// the keystrokes nowhere while the editor still shows them.
+		const target = await book('Notes', [entry('Alpha')]);
+		rows.delete(target.id);
+		lorebookStore.updateEntry(target.id, target.entries[0].id, { comment: 'edited here' });
+
+		await expect(lorebookStore.flush()).rejects.toThrow();
+	});
+});
+
+describe('a book on the shelf', () => {
+	// The write is debounced, so a delete lands while one is still scheduled. Left standing, the
+	// timer writes a book the reader deleted back onto the server.
+	test('deleting cancels its pending write instead of resurrecting the row', async () => {
+		const doomed = await book('Doomed', [entry('Alpha')]);
+		lorebookStore.updateEntry(doomed.id, doomed.entries[0].id, { comment: 'edited' });
+
+		await lorebookStore.deleteBook(doomed.id);
+		await lorebookStore.flush();
+
+		expect(rows.has(doomed.id)).toBe(false);
+		expect(lorebookStore.getBook(doomed.id)).toBeNull();
+	});
+
+	// Off stores as NOTHING, so every book made before the switch existed keeps the row it
+	// always had rather than growing a key that says it is not switched on.
+	test('the every-chat switch stores as nothing when it goes off', async () => {
+		const world = await book('World', []);
+		await lorebookStore.setGlobal(world.id, true);
+		expect(rows.get(world.id)!.global).toBe(true);
+
+		await lorebookStore.setGlobal(world.id, false);
+		expect(rows.get(world.id)!.global).toBeUndefined();
 	});
 });

@@ -13,7 +13,8 @@ import {
 	DEFAULT_CHAT_FEATURE_STATE,
 	normalizeChatFeatureState,
 	pushSteeringHistoryEntry,
-	withLorebookClaim
+	withLorebookClaim,
+	withLorebookMute
 } from './chat';
 
 describe('normalizeChatFeatureState: degrading to defaults', () => {
@@ -242,6 +243,75 @@ describe('withLorebookClaim', () => {
 
 	test('detaching leaves the mutes alone', () => {
 		expect(withLorebookClaim(state(['a'], ['b']), 'a', false).mutedLorebooks).toEqual(['b']);
+	});
+});
+
+describe('withLorebookMute', () => {
+	const state = (lorebooks: string[], mutedLorebooks: string[] = []) =>
+		normalizeChatFeatureState({ lorebooks, mutedLorebooks });
+
+	test('muting appends without duplicating what is already there', () => {
+		expect(withLorebookMute(state([], ['a']), 'b', true).mutedLorebooks).toEqual(['a', 'b']);
+		expect(withLorebookMute(state([], ['a']), 'a', true).mutedLorebooks).toEqual(['a']);
+	});
+
+	test('letting a book back in takes it off and leaves the rest in order', () => {
+		expect(withLorebookMute(state([], ['a', 'b', 'c']), 'b', false).mutedLorebooks).toEqual([
+			'a',
+			'c'
+		]);
+	});
+
+	// The same rule from the other end: an id in both lists reads on screen as a book this
+	// story attached while the resolver, which subtracts last, keeps it out of every prompt.
+	test('muting an attached book clears this chat\'s own claim on it', () => {
+		const next = withLorebookMute(state(['a', 'b']), 'a', true);
+		expect(next.mutedLorebooks).toEqual(['a']);
+		expect(next.lorebooks).toEqual(['b']);
+	});
+
+	test('letting a book back in leaves the attached list alone', () => {
+		expect(withLorebookMute(state(['a'], ['b']), 'b', false).lorebooks).toEqual(['a']);
+	});
+});
+
+// The invariant belongs to the PAIR of lists rather than to either one, which is why there are
+// two transforms and why every door writes through them: a door that edited one list by hand is
+// the door that loses it.
+describe('the two lorebook transforms, together', () => {
+	const STARTS: [string[], string[]][] = [
+		[[], []],
+		[['a'], []],
+		[[], ['a']],
+		[['a'], ['a']]
+	];
+
+	test('neither transform can leave a book in both lists, from any starting state', () => {
+		for (const [lorebooks, mutedLorebooks] of STARTS) {
+			const start = normalizeChatFeatureState({ lorebooks, mutedLorebooks });
+			for (const on of [true, false]) {
+				for (const next of [withLorebookClaim(start, 'a', on), withLorebookMute(start, 'a', on)]) {
+					expect(
+						next.lorebooks.filter((id) => next.mutedLorebooks.includes(id)),
+						`${JSON.stringify(start)} -> ${on}`
+					).toEqual([]);
+				}
+			}
+		}
+	});
+
+	// The forbidden state is reachable in stored data (two devices, or a blob written by hand),
+	// and either press has to be able to resolve it rather than pass it through.
+	test('a blob already holding a book in both lists is settled by either press', () => {
+		const both = normalizeChatFeatureState({ lorebooks: ['a'], mutedLorebooks: ['a'] });
+		expect(withLorebookClaim(both, 'a', true)).toMatchObject({
+			lorebooks: ['a'],
+			mutedLorebooks: []
+		});
+		expect(withLorebookMute(both, 'a', true)).toMatchObject({
+			lorebooks: [],
+			mutedLorebooks: ['a']
+		});
 	});
 });
 

@@ -1083,6 +1083,38 @@ describe('per-chat setup (architecture/ui-shell-settings.md)', () => {
 		expect(resolver, "the chat's own books").toContain("claimedIds(chat, 'lorebooks')");
 		expect(resolver, 'the books the chat muted').toContain("claimedIds(chat, 'mutedLorebooks')");
 	});
+
+	// The client half of the same problem, one step further down. `LorebookLinks` requires all
+	// three keys, so the type already stops a call site OMITTING a layer; what it cannot stop is
+	// one passing `chat: []` / `muted: []`, which compiles, reads as a chat that claims nothing,
+	// and silently prices or builds a prompt without the books this story was given or with the
+	// ones it took back out. So every site that resolves has to be SEEN reading both claims.
+	test("every resolve of a chat's books reads the chat's own two layers", () => {
+		// The resolver and the store method over it: both take the links as an argument, which is
+		// the whole point of coupling 1, so neither reads a chat at all.
+		const OWNS_THE_RESOLVER = ['src/lib/lorebook/types.ts', 'src/lib/lorebook/store.svelte.ts'];
+		const code = new Map<string, string>();
+		for (const line of codeLines(join(ROOT, 'src'), (n) => n.endsWith('.ts') || n.endsWith('.svelte'))) {
+			const file = line.file.slice(line.file.indexOf('src/'));
+			if (file.endsWith('.test.ts') || OWNS_THE_RESOLVER.includes(file)) continue;
+			code.set(file, `${code.get(file) ?? ''}\n${line.text}`);
+		}
+		const sites = [...code].filter(([, text]) => /booksForChat\(|resolveLorebookLinks\(/.test(text));
+		expect(sites.length, "nothing resolves a chat's books, so this scan is stale").toBeGreaterThan(0);
+		for (const [file, text] of sites) {
+			// The memory store carries both on its own `ChatCtx`, like every other claim it holds
+			// (architecture/memory.md), because it resolves for a chat it was handed rather than
+			// for the open one.
+			expect(
+				/chatLorebookClaim|ctx\.lorebookIds/.test(text),
+				`${file} resolves without naming the books this chat attached`
+			).toBe(true);
+			expect(
+				/chatMutedLorebookClaim|ctx\.mutedLorebookIds/.test(text),
+				`${file} resolves without naming the books this chat muted`
+			).toBe(true);
+		}
+	});
 });
 
 describe('prompt target (architecture/prompt-pipeline.md #10)', () => {
@@ -1407,6 +1439,42 @@ describe('thumbnail convention (architecture/server-core.md #7)', () => {
 		const [type] = scan(source, /const THUMBNAIL_TYPE = 'image\/([a-z0-9]+)'/g, 'the thumbnail type');
 		const [ext] = scan(source, /const THUMBNAIL_EXTENSION = '\.([a-z0-9]+)'/g, 'the thumbnail extension');
 		expect(ext).toBe(type);
+	});
+});
+
+describe('image categories (architecture/server-core.md #5, architecture/backups.md)', () => {
+	// One list, three hand-kept copies, and none of them can import another: the client never
+	// reaches server code, and the snapshot's reconcile matches the SHAPE of a stored path with
+	// a regex rather than walking the schema. Both absences are silent. A category the client
+	// alone knows is an upload the server refuses; a category the pattern does not name is a
+	// folder no snapshot ever copies, which is a picture the user loses on a restore.
+	const categories = (source: string, re: RegExp, what: string): string[] =>
+		scan(block(source, re, what), /'([a-z]+)'/g, `${what}'s entries`).sort();
+
+	const server = () =>
+		categories(
+			read('server', 'config.ts'),
+			/export const IMAGE_CATEGORIES = \[[\s\S]*?\] as const;/,
+			'IMAGE_CATEGORIES'
+		);
+
+	test('the client knows exactly the categories the server stores', () => {
+		expect(
+			categories(
+				read('src', 'lib', 'services', 'imageService.ts'),
+				/export type ImageCategory =[\s\S]*?;/,
+				"the client's ImageCategory union"
+			)
+		).toEqual(server());
+	});
+
+	test("the snapshot's path pattern names every one of them", () => {
+		const [alternation] = scan(
+			read('server', 'backup', 'inventory.ts'),
+			/images\\\/\(\?:([a-z|]+)\)/g,
+			"IMAGE_PATH_RE's category alternation"
+		);
+		expect(alternation.split('|').sort()).toEqual(server());
 	});
 });
 
