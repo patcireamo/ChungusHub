@@ -2698,6 +2698,8 @@ class ServerDatabase {
 	insertLorebook(book: Record<string, unknown>): void {
 		const payload = {
 			name: book.name,
+			cover: book.cover,
+			coverFocus: book.coverFocus,
 			scanDepth: book.scanDepth,
 			recursiveScanning: book.recursiveScanning,
 			maxRecursionSteps: book.maxRecursionSteps,
@@ -2717,6 +2719,8 @@ class ServerDatabase {
 	updateLorebook(book: Record<string, unknown>): void {
 		const payload = {
 			name: book.name,
+			cover: book.cover,
+			coverFocus: book.coverFocus,
 			scanDepth: book.scanDepth,
 			recursiveScanning: book.recursiveScanning,
 			maxRecursionSteps: book.maxRecursionSteps,
@@ -2733,6 +2737,12 @@ class ServerDatabase {
 	}
 
 	deleteLorebook(id: string): void {
+		// The cover is the book's own file (an upload lands on this book alone), so it goes
+		// with the row. The sweep lives HERE rather than in each caller because both doors
+		// reach this method: the client store over the RPC bridge, and the assistant's
+		// delete_entity. Nothing else can reach images/lorebooks/, so one missed here sits
+		// on disk forever.
+		const cover = (this.getLorebook(id) as { cover?: string } | null)?.cover;
 		// Just drop the book. A character/persona may keep this id in data.lorebookIds, but
 		// every reader resolves links against existing books (prompt-builder, the store's
 		// resolveBooks, the assistant, the link picker and both link counts) and skips ids with
@@ -2742,6 +2752,7 @@ class ServerDatabase {
 		// scope would leave other devices' library caches stale and resurrect the id on a later
 		// save. Read-time filtering is the single, consistent source of truth.
 		this.execute('DELETE FROM lorebooks WHERE id = ?', [id]);
+		if (cover) deleteImage(cover);
 	}
 
 	// ===== STEERING NOTES =====

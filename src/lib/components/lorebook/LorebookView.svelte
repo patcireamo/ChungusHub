@@ -15,9 +15,14 @@
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import { holdMsForBlast } from '$lib/components/ui/HoldToConfirmButton.svelte';
 	import BrowsePopover from '$lib/components/library/BrowsePopover.svelte';
+	import Spinner from '$lib/components/ui/Spinner.svelte';
+	import PortraitFramingDialog from '$lib/components/library/PortraitFramingDialog.svelte';
 	import LorebookEntryRow from './LorebookEntryRow.svelte';
 	import LorebookActivationPanel from './LorebookActivationPanel.svelte';
 	import LorebookScanTester from './LorebookScanTester.svelte';
+	import { imageService, imageRejectionReason } from '$lib/services/imageService';
+	import { portraitFocusStyle } from '$lib/utils/portrait-focus';
+	import { toastStore } from '$lib/stores/toast.svelte';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 	import { downloadLorebook } from '$lib/lorebook/io';
@@ -94,6 +99,56 @@
 				)
 			: []
 	);
+
+	// ===== the cover =====
+
+	let coverPath = $derived(selectedBook?.cover);
+	/** The thumbnail, not the stored file: this box is 17rem at its widest, and the server
+	 *  answers with the original where a thumbnail was never written. The framing dialog
+	 *  reads the original instead, since that is the screen the picture is judged on. */
+	let coverUrl = $derived(imageService.thumbnailUrl(coverPath));
+	let coverInput = $state<HTMLInputElement | null>(null);
+	let coverBusy = $state(false);
+	let framingOpen = $state(false);
+
+	async function onCoverPick(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file || !selectedBook) return;
+		const refused = imageRejectionReason(file);
+		if (refused) {
+			toastStore.error(refused);
+			return;
+		}
+		coverBusy = true;
+		try {
+			await lorebookStore.setCover(selectedBook.id, file);
+		} catch (error) {
+			toastStore.failed(`save "${file.name}"`, error);
+		} finally {
+			coverBusy = false;
+		}
+	}
+
+	async function removeCover(e: MouseEvent) {
+		// The frame behind these two buttons opens the file picker.
+		e.stopPropagation();
+		if (!selectedBook) return;
+		coverBusy = true;
+		try {
+			await lorebookStore.setCover(selectedBook.id, null);
+		} catch (error) {
+			toastStore.failed('remove that cover', error);
+		} finally {
+			coverBusy = false;
+		}
+	}
+
+	function openFraming(e: MouseEvent) {
+		e.stopPropagation();
+		framingOpen = true;
+	}
 
 	/** The one settings strip above the list: both layers of the activation cascade. */
 	let stripOpen = $state(false);
@@ -412,12 +467,53 @@
 		     what it HOLDS on the right, the split the character editor's identity pane uses. -->
 		<div class="lb-page panel-scroll">
 			<div class="lb-rail">
-				<!-- A cover plate, and only that. A book has no picture, so this carries nothing and
-				     is deliberately not a control: no hover, no cursor, nothing to press, or it
-				     reads as a picture button that does nothing. It exists so the three editors'
-				     rails begin the same way. -->
-				<div class="lb-plate" aria-hidden="true">
-					<Icon name="bookOpen" class="w-10 h-10" strokeWidth={1.25} />
+				<!-- The book's cover, in the slot and the shape the other two editors open a
+				     portrait in: press to pick one, the two corner actions to drop it or aim it.
+				     Empty it keeps the book glyph rather than a photo one, since a plate with
+				     nothing on it should still say what kind of thing this page is about. -->
+				<div
+					class="lb-plate portrait-frame"
+					class:is-empty={!coverUrl}
+					role="button"
+					tabindex="0"
+					onclick={() => coverInput?.click()}
+					onkeydown={(e) => e.key === 'Enter' && coverInput?.click()}
+					aria-label={coverUrl ? 'Change cover' : 'Add a cover'}
+					aria-disabled={coverBusy}
+				>
+					{#if coverBusy}
+						<Spinner size="md" />
+					{:else if coverUrl}
+						<img
+							src={coverUrl}
+							alt={selectedBook.name || 'lorebook'}
+							class="lb-plate-art"
+							style={portraitFocusStyle(selectedBook.coverFocus)}
+						/>
+						<span class="lb-plate-veil">Change cover</span>
+						<button
+							type="button"
+							class="portrait-overlay-action lb-plate-act lb-plate-act--x"
+							onclick={removeCover}
+							aria-label="Remove cover"
+						>
+							<Icon name="close" class="w-3.5 h-3.5" />
+						</button>
+						<button
+							type="button"
+							class="portrait-overlay-action lb-plate-act lb-plate-act--crop"
+							onclick={openFraming}
+							aria-label="Adjust framing"
+							title="Adjust framing"
+						>
+							<Icon name="crop" class="w-3.5 h-3.5" />
+						</button>
+					{:else}
+						<span class="lb-plate-add">
+							<Icon name="bookOpen" class="w-10 h-10" strokeWidth={1.25} />
+							<span>Add cover</span>
+						</span>
+					{/if}
 				</div>
 
 				<!-- The book's identity. The name is a labelled field and not a second heading:
@@ -777,6 +873,25 @@
 	{/if}
 </div>
 
+<input
+	bind:this={coverInput}
+	type="file"
+	accept="image/*"
+	class="hidden"
+	onchange={onCoverPick}
+/>
+
+{#if coverPath}
+	<PortraitFramingDialog
+		open={framingOpen}
+		imagePath={coverPath}
+		name={selectedBook?.name || 'Untitled lorebook'}
+		focus={selectedBook?.coverFocus}
+		onSave={(focus) => lorebookStore.setCoverFocus(bookId, focus)}
+		onClose={() => (framingOpen = false)}
+	/>
+{/if}
+
 <ConfirmDialog
 	open={bookDeleteOpen}
 	title="Delete lorebook"
@@ -921,12 +1036,14 @@
 	   the panes are stacked, exactly as their portrait is: at full width a 3:4 plate would be
 	   taller than the phone it is on. */
 	.lb-plate {
+		position: relative;
 		display: grid;
 		width: 100%;
 		max-width: 15rem;
 		margin: 0 auto 0.5rem;
 		aspect-ratio: 3 / 4;
 		place-items: center;
+		overflow: hidden;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-lg);
 		background:
@@ -937,6 +1054,92 @@
 			),
 			var(--color-bg-tertiary);
 		color: color-mix(in srgb, var(--color-text-muted) 70%, transparent);
+		cursor: pointer;
+		transition:
+			border-color 150ms ease,
+			box-shadow 150ms ease;
+	}
+
+	.lb-plate:hover,
+	.lb-plate:focus-visible {
+		border-color: var(--color-accent);
+		outline: 0;
+		box-shadow: var(--shadow-md);
+	}
+
+	/* Cover fit, aimed by the stored framing: this box and the shelf row's square disagree
+	   about shape, and a centred crop is right in only one of them. */
+	.lb-plate-art {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+
+	/* The empty plate is the only state that says what a press does, since a plate carrying
+	   art already shows it under the veil below. */
+	.lb-plate-add {
+		display: grid;
+		justify-items: center;
+		gap: 0.35rem;
+		font-family: var(--font-ui);
+		font-size: 0.75rem;
+		transition: color 150ms ease;
+	}
+
+	.lb-plate.is-empty:hover .lb-plate-add {
+		color: var(--color-accent);
+	}
+
+	.lb-plate-veil {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: flex-end;
+		justify-content: center;
+		padding-bottom: 0.65rem;
+		background: linear-gradient(to top, rgb(0 0 0 / 0.7), rgb(0 0 0 / 0.1) 45%, transparent);
+		font-family: var(--font-ui);
+		font-size: 0.75rem;
+		color: rgb(255 255 255 / 0.9);
+		opacity: 0;
+		transition: opacity 150ms ease;
+	}
+
+	.lb-plate:hover .lb-plate-veil {
+		opacity: 1;
+	}
+
+	/* The corner pair the two library editors wear, same glyphs in the same corners: the
+	   frame's own .portrait-frame rule is what reveals them, touch screens included. */
+	.lb-plate-act {
+		position: absolute;
+		padding: 0.25rem;
+		border-radius: var(--radius-full);
+		background: rgb(0 0 0 / 0.5);
+		color: rgb(255 255 255 / 0.8);
+		transition:
+			background 130ms ease,
+			color 130ms ease;
+	}
+
+	.lb-plate-act--x {
+		top: 0.375rem;
+		right: 0.375rem;
+	}
+
+	.lb-plate-act--x:hover {
+		background: var(--color-error);
+		color: #fff;
+	}
+
+	.lb-plate-act--crop {
+		bottom: 0.375rem;
+		right: 0.375rem;
+	}
+
+	.lb-plate-act--crop:hover {
+		background: rgb(0 0 0 / 0.75);
+		color: #fff;
 	}
 
 	@container browse (min-width: 860px) {

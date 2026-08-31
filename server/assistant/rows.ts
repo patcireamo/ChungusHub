@@ -106,6 +106,10 @@ export type RawLorebookEntry = {
 export type RawLorebookBook = {
 	id: string;
 	name: string;
+	/** Cover art (`images/lorebooks/<file>`) and its framing. Set from the editor alone, but
+	 *  read back here: an edit that reads a row and writes it whole must carry them along. */
+	cover?: string;
+	coverFocus?: { x: number; y: number; zoom: number };
 	scanDepth: number | null;
 	recursiveScanning: boolean | null;
 	maxRecursionSteps: number | null;

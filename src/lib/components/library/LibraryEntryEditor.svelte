@@ -406,6 +406,8 @@
 					onTraitChange={handleTraitChange}
 					onImageSelect={handleImageSelect}
 					onImageRemove={handleImageRemove}
+					onPortraitFocusChange={(focus) =>
+						characterLibraryStore.setPortraitFocus(entryId, focus)}
 					onTagsChange={handleTagsChange}
 					onAlternateGreetingsChange={handleAlternateGreetingsChange}
 					onGalleryAdd={handleGalleryAdd}

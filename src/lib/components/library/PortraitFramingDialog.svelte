@@ -5,7 +5,6 @@
 	import Slider from '$lib/components/ui/Slider.svelte';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
 	import { imageService } from '$lib/services/imageService';
-	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import {
 		DEFAULT_PORTRAIT_FOCUS,
@@ -20,16 +19,20 @@
 
 	interface Props {
 		open: boolean;
-		entryId: string;
 		/** Stored path of the portrait being aimed. */
 		imagePath: string;
 		name: string;
 		/** The framing as stored, which is what reopening starts from. */
 		focus: PortraitFocus | undefined;
+		/** Where the framing goes. `null` is the centred default, which every caller stores
+		 *  as nothing: an untouched picture must leave no row behind. The dialog owns the
+		 *  geometry and never the storage, which is what lets a lorebook cover and a
+		 *  character portrait be aimed by the same screen. */
+		onSave: (focus: PortraitFocus | null) => Promise<void>;
 		onClose: () => void;
 	}
 
-	let { open, entryId, imagePath, name, focus, onClose }: Props = $props();
+	let { open, imagePath, name, focus, onSave, onClose }: Props = $props();
 
 	/**
 	 * The lenses. Every box the app draws a portrait in sits between these two ratios: 2:3
@@ -185,7 +188,7 @@
 		if (saving) return;
 		saving = true;
 		try {
-			await characterLibraryStore.setPortraitFocus(entryId, isDefault ? null : draft);
+			await onSave(isDefault ? null : draft);
 			onClose();
 		} catch (error) {
 			toastStore.failed('save that framing', error);

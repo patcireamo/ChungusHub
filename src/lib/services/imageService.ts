@@ -8,7 +8,13 @@
 import { apiGet, apiSend, apiUpload, fileUrl, getClientId } from '$lib/services/transport';
 
 /** Which entity an image belongs to. Decides its images/<category>/ folder server-side. */
-export type ImageCategory = 'characters' | 'personas' | 'backgrounds' | 'chat' | 'presets';
+export type ImageCategory =
+	| 'characters'
+	| 'personas'
+	| 'backgrounds'
+	| 'chat'
+	| 'presets'
+	| 'lorebooks';
 
 const THUMBNAIL_MAX_SIZE = 800;
 /** Thumbnails are webp, always, and that is a different decision from the stored format

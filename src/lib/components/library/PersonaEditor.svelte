@@ -403,7 +403,7 @@
 	{#if snapshot.imageUrl}
 		<PortraitFramingDialog
 			open={showFraming}
-			entryId={entry.id}
+			onSave={(next) => characterLibraryStore.setPortraitFocus(entry.id, next)}
 			imagePath={snapshot.imageUrl}
 			name={snapshot.name}
 			focus={snapshot.portraitFocus}

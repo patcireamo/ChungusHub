@@ -19,8 +19,12 @@ import type { SnapshotSummary } from '../../shared/backups';
  *
  * The character class stops at a quote, a backslash and a slash, which is exactly what a
  * filename cannot contain. Background art keeps a human name and may carry spaces.
+ *
+ * The alternation is `IMAGE_CATEGORIES` (config.ts) spelled out, and must be kept with it: a
+ * category this pattern does not name is a folder no snapshot ever copies.
  */
-const IMAGE_PATH_RE = /images\/(?:characters|personas|backgrounds|chat|presets)\/[^"\\/]+/g;
+const IMAGE_PATH_RE =
+	/images\/(?:characters|personas|backgrounds|chat|presets|lorebooks)\/[^"\\/]+/g;
 
 /** Columns whose text may name an image, table by table. Adding a JSON column that can
  *  carry one needs an entry here; adding a KEY inside an existing one needs nothing. */
@@ -29,6 +33,7 @@ const IMAGE_BEARING = [
 	{ table: 'assistant_messages', column: 'images_json' },
 	{ table: 'character_library', column: 'data_json' },
 	{ table: 'character_versions', column: 'data_json' },
+	{ table: 'lorebooks', column: 'data_json' },
 	{ table: 'settings', column: 'value' },
 	{ table: 'chats', column: 'settings_json' }
 ] as const;

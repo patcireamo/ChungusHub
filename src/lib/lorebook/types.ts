@@ -14,6 +14,7 @@
  */
 
 import type { CharacterTraits } from '$lib/types/library';
+import type { PortraitFocus } from '$lib/utils/portrait-focus';
 
 /**
  * SillyTavern's selectiveLogic enum: how primary and secondary keys combine.
@@ -457,6 +458,15 @@ export interface LorebookGlobalSettings {
 export interface Lorebook {
 	id: string;
 	name: string;
+	/**
+	 * Cover art, as the stored `images/lorebooks/<file>` path. Absent = no cover, which is
+	 * what every book made or imported before this carries. It never reaches a model and
+	 * never leaves in an export: a World Info file is JSON, and the picture is a file.
+	 */
+	cover?: string;
+	/** Where the cover's boxes aim inside it, the framing every portrait in the app uses.
+	 *  Absent = the centred cover fit. Belongs to the picture, so replacing one drops it. */
+	coverFocus?: PortraitFocus;
 	/**
 	 * How many of the most recent messages to scan for keywords. 0 = scan the whole chat,
 	 * null = inherit the global setting. (Books saved before the global settings existed

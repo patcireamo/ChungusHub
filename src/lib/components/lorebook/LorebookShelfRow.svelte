@@ -1,8 +1,11 @@
 <script lang="ts">
 	/**
 	 * One book on the Lorebooks shelf. The Library list row's geometry with the portrait
-	 * replaced by a glyph tile, since a book has no picture and a shelf of empty frames
-	 * would be a taller list saying nothing.
+	 * replaced by a square tile: it holds the book's cover where there is one and the book
+	 * glyph where there is not, so a shelf where nobody set a cover is still a list of text
+	 * rows rather than a column of empty frames. Square, not the 3:4 a cover is authored at,
+	 * because the tile's job here is recognition at a glance and every row must stay the
+	 * same height whether or not the book carries art.
 	 *
 	 * The meta line answers the two questions a shelf is scanned for: how big the book is,
 	 * and whether anything carries it. It deliberately does NOT price the book in tokens:
@@ -11,6 +14,8 @@
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import LibraryEntryMenu from '$lib/components/library/LibraryEntryMenu.svelte';
+	import { imageService } from '$lib/services/imageService';
+	import { portraitFocusStyle } from '$lib/utils/portrait-focus';
 	import type { Lorebook } from '$lib/lorebook/types';
 
 	interface Props {
@@ -37,6 +42,7 @@
 		onDelete
 	}: Props = $props();
 
+	let cover = $derived(imageService.thumbnailUrl(book.cover));
 	let count = $derived(book.entries.length);
 	let size = $derived(count === 0 ? 'Empty' : `${count} ${count === 1 ? 'entry' : 'entries'}`);
 
@@ -59,7 +65,16 @@
 	<div
 		class="relative w-10 h-10 shrink-0 grid place-items-center rounded-[var(--radius-md)] bg-bg-tertiary text-text-muted overflow-hidden"
 	>
-		<Icon name="bookOpen" class="w-5 h-5" strokeWidth={1.5} />
+		{#if cover}
+			<img
+				src={cover}
+				alt=""
+				class="w-full h-full object-cover"
+				style={portraitFocusStyle(book.coverFocus)}
+			/>
+		{:else}
+			<Icon name="bookOpen" class="w-5 h-5" strokeWidth={1.5} />
+		{/if}
 		{#if selectionMode}
 			<!-- Selection checkbox; the whole row toggles, this is just the indicator. -->
 			<div class="absolute inset-0 grid place-items-center bg-black/35">

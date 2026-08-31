@@ -245,7 +245,14 @@ export function resolveBackupDir(): string {
 // relative path stored in the DB (images/<category>/<file>) encodes the category, so
 // serving, copying, and deleting all derive it from the path.
 export const IMAGES_ROOT = join(DATA_DIR, 'images');
-export const IMAGE_CATEGORIES = ['characters', 'personas', 'backgrounds', 'chat', 'presets'] as const;
+export const IMAGE_CATEGORIES = [
+	'characters',
+	'personas',
+	'backgrounds',
+	'chat',
+	'presets',
+	'lorebooks'
+] as const;
 export type ImageCategory = (typeof IMAGE_CATEGORIES)[number];
 
 // Files the user attaches to a Chungus Assistant tab as reference material. Read-only for

@@ -7,7 +7,9 @@
  * before navigation.
  */
 import { db } from '$lib/services/database';
+import { imageService } from '$lib/services/imageService';
 import { DebouncedWriter } from '$lib/utils/debounced-write';
+import type { PortraitFocus } from '$lib/utils/portrait-focus';
 import type { Lorebook, LorebookEntry } from './types';
 import { createEmptyLorebook, createEmptyLorebookEntry, resolveLorebookLinks } from './types';
 
@@ -122,6 +124,33 @@ class LorebookStore {
 		this.touch(book);
 	}
 
+	/**
+	 * Put a cover on the book, or take it off with `null`. A discrete act, so it writes at
+	 * once rather than sitting in the typing debounce, and the file it replaces goes only
+	 * after the row naming the new one has landed.
+	 *
+	 * The framing is dropped either way: coordinates chosen for one picture mean nothing on
+	 * the next, which is the rule the library's portraits follow (architecture/library.md).
+	 */
+	async setCover(id: string, file: File | null): Promise<void> {
+		const book = this.getBook(id);
+		if (!book) return;
+		const previous = book.cover;
+		const next = file ? await imageService.saveImage(file, 'lorebooks') : undefined;
+		book.cover = next;
+		book.coverFocus = undefined;
+		await this.writeNow(book);
+		if (previous && previous !== next) await imageService.deleteImage(previous);
+	}
+
+	/** Aim the cover. Discrete too, and the centred default stores as nothing. */
+	async setCoverFocus(id: string, focus: PortraitFocus | null): Promise<void> {
+		const book = this.getBook(id);
+		if (!book) return;
+		book.coverFocus = focus ?? undefined;
+		await this.writeNow(book);
+	}
+
 	addEntry(bookId: string): LorebookEntry | null {
 		const book = this.getBook(bookId);
 		if (!book) return null;
@@ -163,6 +192,15 @@ class LorebookStore {
 		if (!book || !entry) return;
 		Object.assign(entry, updates);
 		this.touch(book);
+	}
+
+	/** Send the whole book now and cancel its pending write: this call carries every field,
+	 *  so a timer left standing would repeat the same row to every device a moment later. */
+	private async writeNow(book: Lorebook): Promise<void> {
+		this.writer.cancel(book.id);
+		book.updatedAt = Date.now();
+		this._books = [...this._books];
+		await db.updateLorebook(book);
 	}
 
 	private async writeBook(bookId: string): Promise<void> {

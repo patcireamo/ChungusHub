@@ -54,6 +54,7 @@
 		onTraitChange: (traitKey: keyof CharacterTraits, value: string) => void;
 		onImageSelect: (file: File) => Promise<void>;
 		onImageRemove: () => Promise<void>;
+		onPortraitFocusChange: (focus: PortraitFocus | null) => Promise<void>;
 		onTagsChange: (tags: string[]) => void;
 		onAlternateGreetingsChange: (greetings: string[]) => void;
 		onGalleryAdd: (files: File[]) => Promise<void>;
@@ -80,6 +81,7 @@
 		onTraitChange,
 		onImageSelect,
 		onImageRemove,
+		onPortraitFocusChange,
 		onTagsChange,
 		onAlternateGreetingsChange,
 		onGalleryAdd,
@@ -735,7 +737,7 @@
 {#if imageUrl}
 	<PortraitFramingDialog
 		open={showFraming}
-		entryId={entityId}
+		onSave={onPortraitFocusChange}
 		imagePath={imageUrl}
 		{name}
 		focus={portraitFocus}
