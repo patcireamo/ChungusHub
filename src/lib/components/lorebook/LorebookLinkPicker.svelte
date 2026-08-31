@@ -9,7 +9,7 @@
 	import { foldForSearch } from '$lib/components/library/browse';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { sortLorebooks } from '$lib/lorebook/types';
-	import { lorebookSortPref } from '$lib/stores/lorebookSort.svelte';
+	import { lorebookViewPrefs } from '$lib/stores/lorebookViewPrefs.svelte';
 	import { uiStore } from '$lib/stores/ui.svelte';
 
 	interface Props {
@@ -35,7 +35,7 @@
 	// svelte-ignore state_referenced_locally -- freezing the open-time order is the point
 	const linkedAtOpen = new Set(selected);
 	let ordered = $derived(
-		sortLorebooks(books, lorebookSortPref.order).sort(
+		sortLorebooks(books, lorebookViewPrefs.order).sort(
 			(a, b) => Number(linkedAtOpen.has(b.id)) - Number(linkedAtOpen.has(a.id))
 		)
 	);

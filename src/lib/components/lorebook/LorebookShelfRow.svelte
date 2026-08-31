@@ -71,6 +71,7 @@
 				alt=""
 				class="w-full h-full object-cover"
 				style={portraitFocusStyle(book.coverFocus)}
+				loading="lazy"
 			/>
 		{:else}
 			<Icon name="bookOpen" class="w-5 h-5" strokeWidth={1.5} />

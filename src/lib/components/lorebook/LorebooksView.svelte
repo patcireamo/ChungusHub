@@ -16,14 +16,22 @@
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import { holdMsForBlast } from '$lib/components/ui/HoldToConfirmButton.svelte';
 	import BrowsePopover from '$lib/components/library/BrowsePopover.svelte';
-	import { foldForSearch } from '$lib/components/library/browse';
+	import LibraryPager from '$lib/components/library/LibraryPager.svelte';
+	import { foldForSearch, CARD_SIZE_MAP, PER_PAGE_OPTIONS } from '$lib/components/library/browse';
 	import LorebookShelfRow from './LorebookShelfRow.svelte';
+	import LorebookGalleryCard from './LorebookGalleryCard.svelte';
+	import LorebookGridCard from './LorebookGridCard.svelte';
 	import LorebookActivationPanel from './LorebookActivationPanel.svelte';
+	import { rangeReset } from '$lib/actions/rangeReset';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 	import { downloadLorebook, downloadLorebooks, readLorebookFile } from '$lib/lorebook/io';
 	import { activationSummary, lorebookDeleteMessage, sortLorebooks } from '$lib/lorebook/types';
-	import { lorebookSortPref, LOREBOOK_SORT_OPTIONS } from '$lib/stores/lorebookSort.svelte';
+	import {
+		lorebookViewPrefs,
+		LOREBOOK_SORT_OPTIONS,
+		LOREBOOK_VIEW_DEFAULTS
+	} from '$lib/stores/lorebookViewPrefs.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { uiStore } from '$lib/stores/ui.svelte';
@@ -68,7 +76,15 @@
 
 	let search = $state('');
 	let filterOpen = $state(false);
+	let viewOpen = $state(false);
 	let moreOpen = $state(false);
+	let currentPage = $state(1);
+
+	/** Every narrowing and every reordering sends the reader back to the first page: the row
+	 *  they were looking at is not on page four of a list that just changed under them. */
+	function resetPage() {
+		currentPage = 1;
+	}
 
 	/** The defaults page, a drill-down over the shelf. It lives HERE and not inside a book,
 	 *  because a layer every book falls back to is a property of the archive: reaching it
@@ -89,11 +105,14 @@
 
 	function toggleLinkState(state: LinkState) {
 		hidden = hidden.includes(state) ? hidden.filter((s) => s !== state) : [...hidden, state];
+		resetPage();
 	}
 
 	// The shelf's order is the app-wide lorebook display preference, shared with the character
-	// editor's link picker: two views of one shelf.
-	let ordered = $derived(sortLorebooks(books, lorebookSortPref.order));
+	// editor's link picker: two views of one shelf. Layout, card size and per-page belong to
+	// this shelf alone, since the picker is a popover with one shape.
+	let ordered = $derived(sortLorebooks(books, lorebookViewPrefs.order));
+	let cardMinWidth = $derived(CARD_SIZE_MAP[lorebookViewPrefs.cardSize] ?? 160);
 
 	/**
 	 * What the shelf's search reads: the book's name plus its INDEX, its entry titles and
@@ -134,6 +153,15 @@
 	// Library's own funnel draws.
 	let filtersActive = $derived(hidden.length > 0 || query.length > 0);
 
+	let totalPages = $derived(Math.max(1, Math.ceil(visible.length / lorebookViewPrefs.perPage)));
+	let safePage = $derived(Math.min(currentPage, totalPages));
+	let paged = $derived(
+		visible.slice(
+			(safePage - 1) * lorebookViewPrefs.perPage,
+			safePage * lorebookViewPrefs.perPage
+		)
+	);
+
 	// ===== bulk selection =====
 
 	let selectionMode = $state(false);
@@ -163,7 +191,7 @@
 		if (!selectionMode && !defaultsOpen) return;
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key !== 'Escape') return;
-			if (filterOpen || moreOpen || bulkDeleteOpen || deleteId) return;
+			if (filterOpen || viewOpen || moreOpen || bulkDeleteOpen || deleteId) return;
 			// Consume the press so the workspace's global Esc doesn't also close the Library.
 			e.preventDefault();
 			e.stopPropagation();
@@ -300,7 +328,11 @@
 				<Icon name="search" class="brw-search-icon w-3.5 h-3.5" />
 				<input
 					type="text"
-					bind:value={search}
+					value={search}
+					oninput={(e) => {
+						search = (e.target as HTMLInputElement).value;
+						resetPage();
+					}}
 					placeholder="Search {books.length} lorebook{books.length === 1 ? '' : 's'}…"
 					aria-label="Search lorebooks by name, entry title or keyword"
 					class="input-base"
@@ -334,10 +366,13 @@
 							<button
 								type="button"
 								role="radio"
-								aria-checked={lorebookSortPref.order === option.id}
+								aria-checked={lorebookViewPrefs.order === option.id}
 								class="brw-opt"
-								class:is-active={lorebookSortPref.order === option.id}
-								onclick={() => lorebookSortPref.set(option.id)}
+								class:is-active={lorebookViewPrefs.order === option.id}
+								onclick={() => {
+									lorebookViewPrefs.setOrder(option.id);
+									resetPage();
+								}}
 							>
 								{option.label}
 							</button>
@@ -359,6 +394,106 @@
 								onclick={() => toggleLinkState(state.id)}
 							>
 								{state.label}
+							</button>
+						{/each}
+					</div>
+				</div>
+			</BrowsePopover>
+
+			<!-- View options: how the shelf is drawn. Its own disclosure and not the funnel's,
+			     the same split the Library's two tabs draw: one popover narrows the list, the
+			     other only changes how what is left is shown. -->
+			<BrowsePopover bind:open={viewOpen}>
+				{#snippet trigger({ toggle, open: isOpen })}
+					<button
+						type="button"
+						class="brw-btn"
+						class:is-active={isOpen}
+						onclick={toggle}
+						aria-haspopup="true"
+						aria-expanded={isOpen}
+						aria-label="View options"
+						title="View options"
+					>
+						<Icon name="sliders" class="w-4 h-4" />
+					</button>
+				{/snippet}
+
+				<div class="brw-sec">
+					<div class="brw-sec-head"><span class="brw-sec-title">Layout</span></div>
+					<div class="brw-opts brw-opts--3" role="group" aria-label="View mode">
+						<button
+							type="button"
+							class="brw-opt"
+							class:is-active={lorebookViewPrefs.viewMode === 'grid'}
+							onclick={() => lorebookViewPrefs.setViewMode('grid')}
+							aria-pressed={lorebookViewPrefs.viewMode === 'grid'}
+						>
+							<Icon name="grid" class="w-3.5 h-3.5" />
+							Grid
+						</button>
+						<button
+							type="button"
+							class="brw-opt"
+							class:is-active={lorebookViewPrefs.viewMode === 'gallery'}
+							onclick={() => lorebookViewPrefs.setViewMode('gallery')}
+							aria-pressed={lorebookViewPrefs.viewMode === 'gallery'}
+						>
+							<Icon name="gallery" class="w-3.5 h-3.5" />
+							Gallery
+						</button>
+						<button
+							type="button"
+							class="brw-opt"
+							class:is-active={lorebookViewPrefs.viewMode === 'list'}
+							onclick={() => lorebookViewPrefs.setViewMode('list')}
+							aria-pressed={lorebookViewPrefs.viewMode === 'list'}
+						>
+							<Icon name="list" class="w-3.5 h-3.5" />
+							List
+						</button>
+					</div>
+				</div>
+
+				{#if lorebookViewPrefs.viewMode === 'grid'}
+					<div class="brw-sec">
+						<div class="brw-sec-head"><span class="brw-sec-title">Card size</span></div>
+						<div class="flex items-center gap-2.5">
+							<Icon name="image" class="w-4 h-4 text-text-muted shrink-0" />
+							<input
+								type="range"
+								min="1"
+								max="5"
+								value={lorebookViewPrefs.cardSize}
+								oninput={(e) =>
+									lorebookViewPrefs.setCardSize(
+										parseInt((e.target as HTMLInputElement).value, 10)
+									)}
+								use:rangeReset={{
+									defaultValue: LOREBOOK_VIEW_DEFAULTS.cardSize,
+									apply: (v) => lorebookViewPrefs.setCardSize(v)
+								}}
+								class="brw-range"
+								aria-label="Card size"
+							/>
+						</div>
+					</div>
+				{/if}
+
+				<div class="brw-sec">
+					<div class="brw-sec-head"><span class="brw-sec-title">Per page</span></div>
+					<div class="brw-opts brw-opts--3">
+						{#each PER_PAGE_OPTIONS as count (count)}
+							<button
+								type="button"
+								class="brw-opt"
+								class:is-active={lorebookViewPrefs.perPage === count}
+								onclick={() => {
+									lorebookViewPrefs.setPerPage(count);
+									resetPage();
+								}}
+							>
+								{count}
 							</button>
 						{/each}
 					</div>
@@ -460,6 +595,7 @@
 					onclick={() => {
 						search = '';
 						hidden = [];
+						resetPage();
 					}}
 				>
 					Clear
@@ -565,6 +701,7 @@
 							onclick={() => {
 								search = '';
 								hidden = [];
+								resetPage();
 							}}
 						>
 							Clear all filters
@@ -572,9 +709,43 @@
 					{/snippet}
 				</EmptyState>
 			</div>
+		{:else if lorebookViewPrefs.viewMode === 'grid'}
+			<div
+				class="brw-grid"
+				style="grid-template-columns: repeat(auto-fill, minmax({cardMinWidth}px, 1fr));"
+			>
+				{#each paged as book (book.id)}
+					<LorebookGridCard
+						{book}
+						{selectionMode}
+						selected={selectedIds.has(book.id)}
+						onToggleSelect={toggleSelect}
+						onOpen={open}
+						onExport={exportOne}
+						onDelete={(id) => (deleteId = id)}
+					/>
+				{/each}
+			</div>
+			{@render pager()}
+		{:else if lorebookViewPrefs.viewMode === 'gallery'}
+			<div class="brw-grid" style="grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));">
+				{#each paged as book (book.id)}
+					<LorebookGalleryCard
+						{book}
+						links={links.get(book.id) ?? 0}
+						{selectionMode}
+						selected={selectedIds.has(book.id)}
+						onToggleSelect={toggleSelect}
+						onOpen={open}
+						onExport={exportOne}
+						onDelete={(id) => (deleteId = id)}
+					/>
+				{/each}
+			</div>
+			{@render pager()}
 		{:else}
 			<div class="flex flex-col divide-y divide-border-subtle">
-				{#each visible as book (book.id)}
+				{#each paged as book (book.id)}
 					<LorebookShelfRow
 						{book}
 						links={links.get(book.id) ?? 0}
@@ -587,9 +758,26 @@
 					/>
 				{/each}
 			</div>
+			{@render pager()}
 		{/if}
 	</div>
 </div>
+
+<!-- Drawn under all three layouts, so the way to page a shelf is in the same place whichever
+     shape it is wearing. -->
+{#snippet pager()}
+	{#if totalPages > 1}
+		<div class="brw-pager">
+			<span class="brw-pager-count">
+				Showing {(safePage - 1) * lorebookViewPrefs.perPage + 1}-{Math.min(
+					safePage * lorebookViewPrefs.perPage,
+					visible.length
+				)} of {visible.length}
+			</span>
+			<LibraryPager page={safePage} {totalPages} onPage={(p) => (currentPage = p)} />
+		</div>
+	{/if}
+{/snippet}
 
 <input
 	bind:this={fileInput}
