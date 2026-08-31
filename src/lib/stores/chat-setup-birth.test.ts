@@ -506,7 +506,8 @@ describe('the lorebooks a chat leaves out', () => {
 
 		expect(claims(chatId).mutedLorebooks).toEqual(['book-1']);
 		expect(claims(other).mutedLorebooks).toEqual([]);
-		// Muting says nothing about what this story attached: two lists, two answers.
+		// Muting a book nothing attached leaves the claim list alone: it names what this story
+		// added, and a book it never added is not one of them.
 		expect(claims(chatId).lorebooks).toEqual([]);
 	});
 
@@ -517,7 +518,7 @@ describe('the lorebooks a chat leaves out', () => {
 		expect(claims(chatId).mutedLorebooks).toEqual([]);
 	});
 
-	// The one place the two lists meet, and the reason attaching writes through the shared
+	// The one place the two lists meet, and the reason each door writes through its own pure
 	// transform: a book in both would read as attached and reach no prompt.
 	test('attaching a muted book clears the mute', async () => {
 		const chatId = await plainChat();
@@ -525,6 +526,15 @@ describe('the lorebooks a chat leaves out', () => {
 		await chatStore.toggleChatLorebook(chatId, 'book-1');
 		expect(claims(chatId).lorebooks).toEqual(['book-1']);
 		expect(claims(chatId).mutedLorebooks).toEqual([]);
+	});
+
+	test('muting an attached book clears the attach', async () => {
+		const chatId = await plainChat();
+		await chatStore.toggleChatLorebook(chatId, 'book-1');
+		await chatStore.toggleChatLorebook(chatId, 'book-2');
+		await chatStore.toggleChatLorebookMute(chatId, 'book-1');
+		expect(claims(chatId).mutedLorebooks).toEqual(['book-1']);
+		expect(claims(chatId).lorebooks).toEqual(['book-2']);
 	});
 
 	test('two presses landing inside one round trip both take', async () => {

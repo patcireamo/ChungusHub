@@ -253,6 +253,28 @@ export function withLorebookClaim(
 	};
 }
 
+/**
+ * Take one book back out of a chat's finished list, or let it back in. The twin of the
+ * transform above, and the reason there are two of them: the invariant is a property of the
+ * pair of lists, so a door that wrote one of them by hand is the door that loses it.
+ *
+ * **Muting clears this chat's own claim on the same book.** Same rule from the other end.
+ */
+export function withLorebookMute(
+	state: ChatFeatureState,
+	bookId: string,
+	on: boolean
+): ChatFeatureState {
+	if (!on) return { ...state, mutedLorebooks: state.mutedLorebooks.filter((id) => id !== bookId) };
+	return {
+		...state,
+		lorebooks: state.lorebooks.filter((id) => id !== bookId),
+		mutedLorebooks: state.mutedLorebooks.includes(bookId)
+			? state.mutedLorebooks
+			: [...state.mutedLorebooks, bookId]
+	};
+}
+
 /** One file the user attached to a chat message. Images only for now; the kind
  *  field leaves room for other media without another schema change. */
 export interface MessageAttachment {

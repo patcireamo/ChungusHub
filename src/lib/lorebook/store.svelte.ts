@@ -145,15 +145,34 @@ class LorebookStore {
 	 *
 	 * The framing is dropped either way: coordinates chosen for one picture mean nothing on
 	 * the next, which is the rule the library's portraits follow (architecture/library.md).
+	 *
+	 * A write that fails puts the book back and drops the file it just uploaded, the rollback
+	 * `replaceEntries` does: nothing but `deleteLorebook` can reach `images/lorebooks/`, so a
+	 * file no row names sits on that disk forever.
 	 */
 	async setCover(id: string, file: File | null): Promise<void> {
-		const book = this.getBook(id);
-		if (!book) return;
-		const previous = book.cover;
+		if (!this.getBook(id)) return;
 		const next = file ? await imageService.saveImage(file, 'lorebooks') : undefined;
+		const book = this.getBook(id);
+		if (!book) {
+			if (next) await imageService.deleteImage(next);
+			return;
+		}
+		const previous = book.cover;
+		const focus = book.coverFocus;
+		const stamp = book.updatedAt;
 		book.cover = next;
 		book.coverFocus = undefined;
-		await this.writeNow(book);
+		try {
+			await this.writeNow(id);
+		} catch (error) {
+			book.cover = previous;
+			book.coverFocus = focus;
+			book.updatedAt = stamp;
+			this._books = [...this._books];
+			if (next) await imageService.deleteImage(next);
+			throw error;
+		}
 		if (previous && previous !== next) await imageService.deleteImage(previous);
 	}
 
@@ -163,7 +182,7 @@ class LorebookStore {
 		const book = this.getBook(id);
 		if (!book) return;
 		book.global = on || undefined;
-		await this.writeNow(book);
+		await this.writeNow(id);
 	}
 
 	/** Aim the cover. Discrete too, and the centred default stores as nothing. */
@@ -171,7 +190,7 @@ class LorebookStore {
 		const book = this.getBook(id);
 		if (!book) return;
 		book.coverFocus = focus ?? undefined;
-		await this.writeNow(book);
+		await this.writeNow(id);
 	}
 
 	addEntry(bookId: string): LorebookEntry | null {
@@ -216,6 +235,11 @@ class LorebookStore {
 	 * (`lorebookHistory` and `selectFromBooks` in engine.ts), so a moved entry carries its own
 	 * timing along while two entries sharing an id would share one window and collapse into a
 	 * single record in the trace.
+	 *
+	 * **An id the destination already holds is not appended again.** Retrying the failure above
+	 * is the ordinary way to reach it, and one book holding an id twice is a delete that takes
+	 * both rows, an edit that reaches only the first, and one shared sticky window. The cut still
+	 * runs, since finishing the move is what the retry was for.
 	 */
 	async transferEntries(
 		fromId: string,
@@ -227,36 +251,45 @@ class LorebookStore {
 		const to = this.getBook(toId);
 		if (!from || !to || from === to) return 0;
 		const ids = new Set(entryIds);
+		const moving = from.entries.filter((e) => ids.has(e.id));
+		if (moving.length === 0) return 0;
+		const held = new Set(to.entries.map((e) => e.id));
 		// Deep snapshots, never the live entries: they carry nested maps and arrays (keyRules'
 		// rule objects, rest's preserved SillyTavern values), and handing one object to two
 		// books would have both of them editing the same nested state.
-		const landing = from.entries
-			.filter((e) => ids.has(e.id))
+		const landing = moving
 			.map((e) => {
 				const entry = $state.snapshot(e) as LorebookEntry;
 				return mode === 'copy' ? { ...entry, id: crypto.randomUUID() } : entry;
-			});
-		if (landing.length === 0) return 0;
-		await this.replaceEntries(to, [...to.entries, ...landing]);
+			})
+			.filter((e) => !held.has(e.id));
+		if (landing.length > 0) await this.replaceEntries(toId, [...to.entries, ...landing]);
 		if (mode === 'move') {
-			await this.replaceEntries(
-				from,
-				from.entries.filter((e) => !ids.has(e.id))
-			);
+			// Re-resolved across that write: a `refresh` inside it replaces the list, and the
+			// pre-await copy of the source would then cut rows off a book nothing draws.
+			const source = this.getBook(fromId);
+			if (source) {
+				await this.replaceEntries(
+					fromId,
+					source.entries.filter((e) => !ids.has(e.id))
+				);
+			}
 		}
-		return landing.length;
+		return moving.length;
 	}
 
 	/** Swap a book's entry list and send the row, putting the list back if that write fails.
 	 *  A book left holding entries the server never took would win the next `refresh` on its
 	 *  fresher timestamp, so the failure the reader was just told about would quietly come
 	 *  true on the next edit. */
-	private async replaceEntries(book: Lorebook, entries: LorebookEntry[]): Promise<void> {
+	private async replaceEntries(bookId: string, entries: LorebookEntry[]): Promise<void> {
+		const book = this.getBook(bookId);
+		if (!book) throw new Error(`replaceEntries: no lorebook with id ${bookId}`);
 		const before = book.entries;
 		const stamp = book.updatedAt;
 		book.entries = entries;
 		try {
-			await this.writeNow(book);
+			await this.writeNow(bookId);
 		} catch (error) {
 			book.entries = before;
 			book.updatedAt = stamp;
@@ -281,9 +314,13 @@ class LorebookStore {
 	}
 
 	/** Send the whole book now and cancel its pending write: this call carries every field,
-	 *  so a timer left standing would repeat the same row to every device a moment later. */
-	private async writeNow(book: Lorebook): Promise<void> {
-		this.writer.cancel(book.id);
+	 *  so a timer left standing would repeat the same row to every device a moment later.
+	 *  Resolved by id here, exactly as `writeBook` below: callers cross awaits of their own,
+	 *  and a `refresh` inside one replaces the list, detaching a book captured before it. */
+	private async writeNow(bookId: string): Promise<void> {
+		const book = this.getBook(bookId);
+		if (!book) return;
+		this.writer.cancel(bookId);
 		book.updatedAt = Date.now();
 		this._books = [...this._books];
 		await db.updateLorebook(book);

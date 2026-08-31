@@ -4,6 +4,7 @@ import {
 	normalizeChatFeatureState,
 	pushSteeringHistoryEntry,
 	withLorebookClaim,
+	withLorebookMute,
 	type ChatFeatureState,
 	type ImpersonatePerspective
 } from '$lib/types/chat';
@@ -916,15 +917,13 @@ class ChatStore {
 	}
 
 	/** Leave a book this story inherits out of it, or let it back in. The only door to that
-	 *  list, and it never touches the claim beside it: what a chat added and what it left out
-	 *  are two answers, and the resolver subtracts this one last. */
+	 *  list, and it writes through `withLorebookMute` for the reason the attach above writes
+	 *  through its twin: an id in both lists reads as attached and reaches no prompt. */
 	async toggleChatLorebookMute(chatId: string, bookId: string): Promise<void> {
 		return this.queueFeatureStateWrite(chatId, async () => {
 			const current = await this.freshFeatureState(chatId);
-			const mutedLorebooks = current.mutedLorebooks.includes(bookId)
-				? current.mutedLorebooks.filter((id) => id !== bookId)
-				: [...current.mutedLorebooks, bookId];
-			await this.writeFeatureState(chatId, { ...current, mutedLorebooks });
+			const on = !current.mutedLorebooks.includes(bookId);
+			await this.writeFeatureState(chatId, withLorebookMute(current, bookId, on));
 		});
 	}
 

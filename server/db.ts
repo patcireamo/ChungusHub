@@ -659,8 +659,10 @@ class ServerDatabase {
 		return this.db.query(sql).all(...(params as never[])) as T;
 	}
 
-	private execute(sql: string, params: unknown[] = []): void {
-		this.db.query(sql).run(...(params as never[]));
+	/** Answers how many rows the statement changed, for the writers that have to refuse a
+	 *  row that was not there. */
+	private execute(sql: string, params: unknown[] = []): number {
+		return this.db.query(sql).run(...(params as never[])).changes;
 	}
 
 	/** Row-at-a-time read, for the one caller that has to touch every message body in the
@@ -2675,8 +2677,19 @@ class ServerDatabase {
 
 	// ===== LOREBOOKS =====
 
+	/**
+	 * A row whose payload will not parse is reported and left exactly as it is, never guessed
+	 * at: it reads as no book rather than taking the shelf, every generation in the install and
+	 * its own delete down with it.
+	 */
 	private mapLorebook(row: { id: string; data_json: string; created_at: number; updated_at: number }): unknown {
-		const parsed = JSON.parse(row.data_json) as Record<string, unknown>;
+		let parsed: Record<string, unknown>;
+		try {
+			parsed = JSON.parse(row.data_json) as Record<string, unknown>;
+		} catch (e) {
+			console.error(`[db] corrupt lorebook ${row.id}:`, e instanceof Error ? e.message : e);
+			return null;
+		}
 		return { id: row.id, ...parsed, createdAt: row.created_at, updatedAt: row.updated_at };
 	}
 
@@ -2684,7 +2697,7 @@ class ServerDatabase {
 		const rows = this.select<{ id: string; data_json: string; created_at: number; updated_at: number }[]>(
 			'SELECT * FROM lorebooks ORDER BY updated_at DESC'
 		);
-		return rows.map((r) => this.mapLorebook(r));
+		return rows.map((r) => this.mapLorebook(r)).filter((b) => b !== null);
 	}
 
 	getLorebook(id: string): unknown {
@@ -2695,7 +2708,17 @@ class ServerDatabase {
 		return rows[0] ? this.mapLorebook(rows[0]) : null;
 	}
 
+	/** A cover names a file in the book's OWN folder and nothing else: `deleteLorebook` unlinks
+	 *  whatever the row says, so another category's path would sweep a character's portrait. */
+	private assertLorebookCover(cover: unknown): void {
+		if (cover === undefined || cover === null) return;
+		if (typeof cover !== 'string' || !/^images\/lorebooks\/[^/\\]+$/.test(cover)) {
+			throw new Error(`Lorebook cover must be images/lorebooks/<file>, got: ${JSON.stringify(cover)}`);
+		}
+	}
+
 	insertLorebook(book: Record<string, unknown>): void {
+		this.assertLorebookCover(book.cover);
 		const payload = {
 			name: book.name,
 			global: book.global,
@@ -2718,6 +2741,7 @@ class ServerDatabase {
 	}
 
 	updateLorebook(book: Record<string, unknown>): void {
+		this.assertLorebookCover(book.cover);
 		const payload = {
 			name: book.name,
 			global: book.global,
@@ -2731,11 +2755,15 @@ class ServerDatabase {
 			entries: book.entries,
 			extensions: book.extensions
 		};
-		this.execute('UPDATE lorebooks SET data_json = ?, updated_at = ? WHERE id = ?', [
+		const changed = this.execute('UPDATE lorebooks SET data_json = ?, updated_at = ? WHERE id = ?', [
 			JSON.stringify(payload),
 			Date.now(),
 			book.id
 		]);
+		// A book deleted on another device takes no writes, and SQLite says nothing about it.
+		// Silence here is an edit that reached nothing, and in a transfer it is the destination
+		// write "succeeding" before the source is cut.
+		if (changed === 0) throw new Error(`updateLorebook: no lorebook with id ${String(book.id)}`);
 	}
 
 	deleteLorebook(id: string): void {
@@ -2754,7 +2782,15 @@ class ServerDatabase {
 		// scope would leave other devices' library caches stale and resurrect the id on a later
 		// save. Read-time filtering is the single, consistent source of truth.
 		this.execute('DELETE FROM lorebooks WHERE id = ?', [id]);
-		if (cover) deleteImage(cover);
+		if (cover) {
+			try {
+				deleteImage(cover);
+			} catch (e) {
+				// The row is already gone and its delete autocommitted. A file the OS refuses to
+				// unlink must not cost the sync hint, the backup stamp or the rest of a selection.
+				console.error(`[db] lorebook ${id}: cover ${cover} could not be deleted:`, e instanceof Error ? e.message : e);
+			}
+		}
 	}
 
 	// ===== STEERING NOTES =====
