@@ -255,6 +255,12 @@ class UiStore {
 		this.newChatCharacterId = null;
 	}
 
+	/** The flow's two steps ARE two shelves, so reaching any other one ends it: its banner over
+	 *  a list with no persona to pick is a step nobody can take and no way to leave it. */
+	private endFlowOffShelf(tab: LibraryTab) {
+		if (this.newChatStep && tab !== 'characters' && tab !== 'personas') this.clearNewChat();
+	}
+
 	toggleLibrary(flushFn?: () => void) {
 		if (this.libraryOpen) this.closeLibrary();
 		else this.openLibrary(flushFn);
@@ -270,6 +276,7 @@ class UiStore {
 		if (this.libraryTab === tab) return;
 		if (this.navBlocked()) return;
 		flushFn?.();
+		this.endFlowOffShelf(tab);
 		this.libraryTab = tab;
 		// The centered editor belongs to the tab it was opened from, so dismiss it and the
 		// dock and the editor never show different shelves of the Library.
@@ -291,6 +298,7 @@ class UiStore {
 	/** The Lorebooks shelf: the third tab of the Library, where books are browsed. */
 	openLorebooks(flushFn?: () => void) {
 		if (this.navBlocked()) return;
+		this.endFlowOffShelf('lorebooks');
 		this.libraryTab = 'lorebooks';
 		this.openEditor(null, null);
 		this.openLibrary(flushFn);
@@ -306,6 +314,9 @@ class UiStore {
 	 *  book). The shelf consumes `pendingLorebookId` so an id naming nothing is dropped
 	 *  rather than opening an editor over a book that is gone. */
 	openLorebook(bookId: string, flushFn?: () => void) {
+		// Asked BEFORE the id is written, the order `openLibraryEntry` keeps: a refused request
+		// that armed it anyway would throw an editor open the next time the shelf is reached.
+		if (this.navBlocked()) return;
 		this.pendingLorebookId = bookId;
 		this.openLorebooks(flushFn);
 	}

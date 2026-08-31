@@ -215,9 +215,11 @@ export const SHORTCUTS: ShortcutDef[] = [
 		binding: { mod: true, key: 'l' },
 		run: () => {
 			// Through setLibraryTab rather than a bare assignment: that is the one door that
-			// lowers whichever centered editor the shelf being left had raised.
+			// lowers whichever centered editor the shelf being left had raised. Then OPEN, as
+			// the Personas row beside it does: a key named for a shelf has to end on that shelf,
+			// and a toggle here shuts the panel whenever another shelf was already up.
 			uiStore.setLibraryTab('characters', flush);
-			uiStore.toggleLibrary(flush);
+			uiStore.openLibrary(flush);
 		}
 	},
 	{

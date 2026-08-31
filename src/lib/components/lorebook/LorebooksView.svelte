@@ -9,6 +9,7 @@
 	 * A press opens the book's editor over the chat (uiStore.lorebookEditorId), the same slot
 	 * and the same reason as the character editor: a book is a document, and the dock is a shelf.
 	 */
+	import { tick } from 'svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -91,6 +92,17 @@
 	 *  through one book's editor made it unreachable with an empty shelf, and made an
 	 *  app-wide change look like something being done to the book whose name was on screen. */
 	let defaultsOpen = $state(false);
+	let defaultsRow = $state<HTMLButtonElement | null>(null);
+	let defaultsBack = $state<HTMLButtonElement | null>(null);
+
+	/** Either end of this navigation unmounts the block the press came from, so the keyboard is
+	 *  carried across by hand: left alone it would land on `<body>` and have to Tab back in. */
+	async function setDefaults(open: boolean) {
+		defaultsOpen = open;
+		await tick();
+		if (open) defaultsBack?.focus();
+		else defaultsRow?.focus();
+	}
 
 	/**
 	 * How a book reaches a prompt, which is one question with three answers, held out of the
@@ -201,6 +213,9 @@
 	// Esc steps back out of the defaults page, or out of selection mode, but only when
 	// nothing above it (a popover or a confirm dialog, which consume Esc themselves) is open.
 	$effect(() => {
+		// An open book is the top-most surface and answers Escape itself. This listener is on
+		// `document`, which fires before its window handler, so it stands down while one is up.
+		if (uiStore.lorebookEditorId) return;
 		if (!selectionMode && !defaultsOpen) return;
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key !== 'Escape') return;
@@ -208,7 +223,7 @@
 			// Consume the press so the workspace's global Esc doesn't also close the Library.
 			e.preventDefault();
 			e.stopPropagation();
-			if (defaultsOpen) defaultsOpen = false;
+			if (defaultsOpen) void setDefaults(false);
 			else toggleSelectionMode();
 		};
 		document.addEventListener('keydown', onKey);
@@ -227,10 +242,15 @@
 		uiStore.lorebookEditorId = id;
 	}
 
-	/** A fresh book opens straight into its editor, which is where it is named. */
+	/** A fresh book opens straight into its editor, which is where it is named. Nothing opens
+	 *  when the row never reached the server: an editor over a book that is not on disk. */
 	async function newBook() {
-		const book = await lorebookStore.createBook('');
-		open(book.id);
+		try {
+			const book = await lorebookStore.createBook('');
+			open(book.id);
+		} catch (err) {
+			toastStore.failed('create a lorebook', err);
+		}
 	}
 
 	async function onFiles(e: Event) {
@@ -325,7 +345,8 @@
 			<button
 				type="button"
 				class="brw-btn"
-				onclick={() => (defaultsOpen = false)}
+				bind:this={defaultsBack}
+				onclick={() => void setDefaults(false)}
 				aria-label="Back to lorebooks"
 				title="Back (Esc)"
 			>
@@ -572,7 +593,12 @@
 		     the layer every book falls back to is worth stating, and its line already says what
 		     it holds. Drawn with no books too, since how books will behave is decidable before
 		     there is a book to try it on. -->
-		<button type="button" class="brw-bar strip-head lbd-row" onclick={() => (defaultsOpen = true)}>
+		<button
+			type="button"
+			class="brw-bar strip-head lbd-row"
+			bind:this={defaultsRow}
+			onclick={() => void setDefaults(true)}
+		>
 			<Icon name="settings" class="w-4 h-4 text-text-muted flex-shrink-0" />
 			<span class="strip-title">Global Settings</span>
 			<span class="strip-sum">
@@ -708,21 +734,37 @@
 				</EmptyState>
 			</div>
 		{:else if visible.length === 0}
+			<!-- Names the narrowing that actually emptied the shelf and offers a way out of each
+			     one that is on, the line the entry list one panel away draws: a list the funnel
+			     emptied must not send the reader to clear a search that was never in the way. -->
 			<div class="grid place-items-center h-full">
-				<EmptyState icon="search" size="sm" title="No matches">
-					No lorebooks match your current filters.
+				<EmptyState icon="search" size="sm">
+					{query ? `Nothing matches “${search.trim()}”.` : 'Every lorebook here is hidden.'}
 					{#snippet actions()}
-						<Button
-							variant="ghost"
-							size="sm"
-							onclick={() => {
-								search = '';
-								hidden = [];
-								resetPage();
-							}}
-						>
-							Clear all filters
-						</Button>
+						{#if query}
+							<Button
+								variant="ghost"
+								size="sm"
+								onclick={() => {
+									search = '';
+									resetPage();
+								}}
+							>
+								Clear search
+							</Button>
+						{/if}
+						{#if hidden.length > 0}
+							<Button
+								variant="ghost"
+								size="sm"
+								onclick={() => {
+									hidden = [];
+									resetPage();
+								}}
+							>
+								Show all
+							</Button>
+						{/if}
 					{/snippet}
 				</EmptyState>
 			</div>

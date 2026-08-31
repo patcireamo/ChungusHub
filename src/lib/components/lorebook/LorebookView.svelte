@@ -131,7 +131,13 @@
 	 *  typed, lower the editor, and drop the Library too where it cannot dock beside the chat
 	 *  it just opened, which is the recipe the Library's own character pick follows. */
 	async function openChat(chatId: string) {
-		await lorebookStore.flush();
+		try {
+			await lorebookStore.flush();
+		} catch (error) {
+			// The book stays open, so what was typed is still on screen to try again with.
+			toastStore.failed('save this lorebook', error);
+			return;
+		}
 		uiStore.lorebookEditorId = null;
 		await chatStore.selectChat(chatId);
 		if (!viewport.canDockSettings) uiStore.closeLibrary();
@@ -226,6 +232,12 @@
 		framingOpen = true;
 	}
 
+	// The dialog is drawn against the cover, so a cover that goes takes it with it. Left standing,
+	// the flag would outlive the picture and open the framing on its own over the next one picked.
+	$effect(() => {
+		if (!coverPath) framingOpen = false;
+	});
+
 	/** The one settings strip above the list: both layers of the activation cascade. */
 	let stripOpen = $state(false);
 	/** The scan tester below it: closed until the reader asks what fires. */
@@ -313,12 +325,12 @@
 
 	function bulkSet(patch: { disable: boolean }) {
 		if (!selectedBook) return;
-		for (const id of selectedIds) lorebookStore.updateEntry(selectedBook.id, id, patch);
+		lorebookStore.updateEntries(selectedBook.id, selectedIds, patch);
 	}
 
 	function bulkDelete() {
 		if (!selectedBook) return;
-		for (const id of selectedIds) lorebookStore.removeEntry(selectedBook.id, id);
+		lorebookStore.removeEntries(selectedBook.id, selectedIds);
 		bulkDeleteOpen = false;
 		selectMode = false;
 	}
@@ -427,9 +439,15 @@
 
 	async function deleteBook() {
 		if (!selectedBook) return;
+		// Read before the close: lowering the editor detaches this view from its book.
+		const id = selectedBook.id;
 		bookDeleteOpen = false;
 		onClose();
-		await lorebookStore.deleteBook(selectedBook.id);
+		try {
+			await lorebookStore.deleteBook(id);
+		} catch (error) {
+			toastStore.failed('delete that lorebook', error);
+		}
 	}
 
 	// ===== entry actions =====
@@ -680,7 +698,7 @@
 							class="lb-bind-add"
 							bind:this={bindAnchor}
 							onclick={() => (bindOpen = !bindOpen)}
-							aria-haspopup="dialog"
+							aria-haspopup="true"
 							aria-expanded={bindOpen}
 							title="Attach this book to a character, a persona or a chat"
 						>
@@ -1086,7 +1104,7 @@
 {#if bindOpen && selectedBook}
 	<div
 		class="bind-pop surface-float"
-		role="dialog"
+		role="group"
 		aria-label="Bind this lorebook"
 		tabindex="-1"
 		bind:this={bindPanel}

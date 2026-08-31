@@ -60,11 +60,14 @@
 	let chats = $derived.by(() => {
 		if (!isPersona) return chatStore.chats.filter((c) => c.characterId === entry.id);
 		// Resolved once rather than once per chat: what a story that named nobody plays as is
-		// the same answer for every one of them, and most stories name nobody.
+		// the same answer for every one of them, and most stories name nobody. A claim is then
+		// one set lookup, where asking the resolver per chat walks the whole library per chat.
 		const followsThis = personaEntryFor(null)?.id === entry.id;
+		const live = new Set(characterLibraryStore.personas.map((p) => p.id));
 		return chatStore.chats.filter((c) => {
 			const claimed = chatPersonaClaim(c);
-			return claimed ? personaEntryFor(claimed)?.id === entry.id : followsThis;
+			// A claim naming a persona that is gone reads as no claim, the resolver's own rule.
+			return claimed && live.has(claimed) ? claimed === entry.id : followsThis;
 		});
 	});
 

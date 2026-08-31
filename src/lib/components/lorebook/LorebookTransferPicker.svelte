@@ -153,6 +153,9 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.15rem;
+		/* Room for the focus ring, which the app draws outside the row it belongs to: this box
+		   scrolls, so it clips on both axes and a ring with nothing around it loses its sides. */
+		padding: 0.25rem;
 		max-height: min(17rem, 42dvh);
 		overflow-y: auto;
 	}
@@ -185,9 +188,9 @@
 		}
 	}
 
-	.lbt-row:hover,
-	.lbt-row:focus-visible {
-		outline: 0;
+	/* Hover alone tints the row: focus keeps the app's own ring, or a keyboard walking a long
+	   destination list cannot tell where it is once the pointer has been near it. */
+	.lbt-row:hover {
 		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
 	}
 

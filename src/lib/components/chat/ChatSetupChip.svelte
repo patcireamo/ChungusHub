@@ -199,6 +199,14 @@
 		return undefined;
 	}
 
+	/** Held out, as the row may say it. A mute outlives whatever brought the book (a switch
+	 *  turned off, a card that unlinked it) and is inert from then on, so an id nothing brings
+	 *  reads as a plain unpicked book. The press asks the same question, or a row with no mark
+	 *  would answer with an unmute nothing on screen shows. */
+	function isMuted(book: { id: string; global?: boolean }): boolean {
+		return mutedBookIds.has(book.id) && !!heldBy(book);
+	}
+
 	// ===== The categories =====
 
 	/** A single-claim category's picked set: the one thing it claimed, or nothing. */
@@ -323,7 +331,7 @@
 					id: book.id,
 					name: book.name.trim() || 'Untitled lorebook',
 					held: heldBy(book),
-					muted: mutedBookIds.has(book.id)
+					muted: isMuted(book)
 				})),
 				picked: claimedBookIds,
 				multi: true,
@@ -464,7 +472,7 @@
 		const book = books.find((b) => b.id === bookId);
 		const heldElsewhere = !!book && !!heldBy(book) && !claimedBookIds.has(bookId);
 		try {
-			if (mutedBookIds.has(bookId) || heldElsewhere) {
+			if ((book && isMuted(book)) || heldElsewhere) {
 				await chatStore.toggleChatLorebookMute(chat.id, bookId);
 			} else {
 				await chatStore.toggleChatLorebook(chat.id, bookId);

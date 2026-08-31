@@ -299,18 +299,42 @@ class LorebookStore {
 	}
 
 	removeEntry(bookId: string, entryId: string): void {
+		this.removeEntries(bookId, [entryId]);
+	}
+
+	/** Drop a whole selection at once: one reassignment of the reactive list and one scheduled
+	 *  write, where the single-entry call looped is one of each per entry, so three hundred rows
+	 *  is three hundred re-renders of the book drawing them. */
+	removeEntries(bookId: string, entryIds: Iterable<string>): void {
 		const book = this.getBook(bookId);
 		if (!book) return;
-		book.entries = book.entries.filter((e) => e.id !== entryId);
+		const gone = new Set(entryIds);
+		const kept = book.entries.filter((e) => !gone.has(e.id));
+		if (kept.length === book.entries.length) return;
+		book.entries = kept;
 		this.touch(book);
 	}
 
 	updateEntry(bookId: string, entryId: string, updates: Partial<Omit<LorebookEntry, 'id'>>): void {
+		this.updateEntries(bookId, [entryId], updates);
+	}
+
+	/** Patch a whole selection at once, for the reason `removeEntries` above is one call. */
+	updateEntries(
+		bookId: string,
+		entryIds: Iterable<string>,
+		updates: Partial<Omit<LorebookEntry, 'id'>>
+	): void {
 		const book = this.getBook(bookId);
-		const entry = book?.entries.find((e) => e.id === entryId);
-		if (!book || !entry) return;
-		Object.assign(entry, updates);
-		this.touch(book);
+		if (!book) return;
+		const ids = new Set(entryIds);
+		let changed = false;
+		for (const entry of book.entries) {
+			if (!ids.has(entry.id)) continue;
+			Object.assign(entry, updates);
+			changed = true;
+		}
+		if (changed) this.touch(book);
 	}
 
 	/** Send the whole book now and cancel its pending write: this call carries every field,
