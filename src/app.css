@@ -744,6 +744,22 @@
 		flex: 1;
 	}
 
+	/* WHAT is being edited, in the one place the three editors are identical: the bar. A
+	   character, a persona and a lorebook share this chrome by design, so without a mark the
+	   reader has to read the page under it to know which one they opened. The glyphs are the
+	   ones the app already means those things by (users / user / bookOpen), so the mark is
+	   recognised rather than learned. */
+	.editor-header-glyph {
+		flex-shrink: 0;
+		display: grid;
+		place-items: center;
+		width: 1.75rem;
+		height: 1.75rem;
+		border-radius: var(--radius-md);
+		background: color-mix(in srgb, var(--color-bg-tertiary) 70%, transparent);
+		color: var(--color-text-muted);
+	}
+
 	/* The subject: the entry's name, or the open book's. */
 	.editor-header-name {
 		margin: 0;

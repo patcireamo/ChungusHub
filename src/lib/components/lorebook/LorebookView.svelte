@@ -349,6 +349,11 @@
 		     subject, what acts on it trails right, and the way out ends the row. -->
 		<header class="editor-header">
 			<div class="editor-header-identity">
+				<!-- A book, said in the glyph the shelf and the Bound to chips already use, since
+				     this bar is the character editor's too. -->
+				<span class="editor-header-glyph" aria-hidden="true">
+					<Icon name="bookOpen" class="w-4 h-4" strokeWidth={1.5} />
+				</span>
 				<h2 class="editor-header-name" class:is-untitled={!selectedBook.name}>
 					{selectedBook.name || 'Untitled lorebook'}
 				</h2>
@@ -403,39 +408,63 @@
 				</button>
 			</div>
 		</header>
-		<!-- Everything below lives in ONE scroll: the settings strip, controls, entries. -->
+		<!-- One scroll, two columns once the panel can hold them: what the book IS on the left,
+		     what it HOLDS on the right, the split the character editor's identity pane uses. -->
 		<div class="lb-page panel-scroll">
-			<div class="lb-page-inner">
-				<!-- The book's identity: named here, then what it is made of and who carries it. -->
-				<div class="lb-title">
-					<input
-						bind:this={nameEl}
-						class="lb-title-name"
-						value={selectedBook.name}
-						oninput={(e) =>
-							lorebookStore.updateBookMeta(selectedBook.id, {
-								name: (e.target as HTMLInputElement).value
-							})}
-						placeholder="Name this book…"
-						aria-label="Lorebook name"
-					/>
-					<!-- An empty book says so in the empty state below; twice would be noise. -->
-					{#if composition.length > 0}
-						<p class="lb-title-meta">
-							{#each composition as part (part.kind)}
-								<span class="lb-title-stat">
-									<span class="lb-dot lb-dot-{part.kind}"></span>{part.count}
-									{part.kind}
-								</span>
-							{/each}
-							<span class="lb-title-tokens">~{tokens} tokens</span>
+			<div class="lb-rail">
+				<!-- The book's identity. The name is a labelled field and not a second heading:
+				     the bar above already says it, and saying it twice in two sizes is what made
+				     this page read as one title with a title under it. -->
+				<div class="lb-ident">
+					<div>
+						<!-- The character editor's own Name field, to the class: two editors sharing a
+						     bar must not hold two opinions about what a field looks like. -->
+						<label
+							for="lb-name-{selectedBook.id}"
+							class="block text-sm font-ui font-medium text-text-primary mb-1.5"
+						>
+							Name
+						</label>
+						<input
+							bind:this={nameEl}
+							id="lb-name-{selectedBook.id}"
+							type="text"
+							value={selectedBook.name}
+							oninput={(e) =>
+								lorebookStore.updateBookMeta(selectedBook.id, {
+									name: (e.target as HTMLInputElement).value
+								})}
+							placeholder="Name this book…"
+							class="input-base w-full px-3 py-2 text-text-primary font-ui text-sm placeholder:text-text-muted"
+						/>
+					</div>
+					<!-- One line for how big it is and whether anything carries it. The natures are
+					     spelled out only where there is more than one, since "3 entries · 3 keyword"
+					     says the same number twice. An empty book says so in the empty state below. -->
+					{#if total > 0 || linked.length === 0}
+						<p class="lb-ident-meta">
+							{#if total > 0}
+								<span class="lb-stat">{total} {total === 1 ? 'entry' : 'entries'}</span>
+								{#if composition.length > 1}
+									{#each composition as part (part.kind)}
+										<span class="lb-stat">
+											<span class="lb-dot lb-dot-{part.kind}"></span>{part.count}
+											{part.kind}
+										</span>
+									{/each}
+								{/if}
+								<span class="lb-stat lb-stat--tokens">~{tokens} tokens</span>
+							{/if}
+							{#if linked.length === 0}
+								<span class="lb-stat lb-stat--quiet">Not linked</span>
+							{/if}
 						</p>
 					{/if}
-					<div class="lb-bound">
-						<span class="lb-bound-cap section-label">Bound to</span>
-						{#if linked.length === 0}
-							<span class="lb-bound-none">Link it from a character or persona</span>
-						{:else}
+					<!-- Only when something carries it: an empty row spends a line saying nothing,
+					     and the line above already says it is not linked. -->
+					{#if linked.length > 0}
+						<div class="lb-bound">
+							<span class="section-label">Bound to</span>
 							<div class="lb-chips">
 								{#each linked as en (en.id)}
 									<button
@@ -453,8 +482,8 @@
 									</button>
 								{/each}
 							</div>
-						{/if}
-					</div>
+						</div>
+					{/if}
 				</div>
 
 				<section class="lb-strip">
@@ -503,7 +532,10 @@
 						<LorebookScanTester book={selectedBook} />
 					{/if}
 				</section>
+			</div>
 
+			<!-- What the book holds: the second column, and the whole page on a narrow panel. -->
+			<div class="lb-page-inner">
 				{#if total === 0}
 					<div class="py-14">
 						<EmptyState icon="feather" size="sm" title="No entries yet">
@@ -773,20 +805,77 @@
 />
 
 <style>
-	/* ===== the single scroll column ===== */
+	/* ===== one scroll, one or two columns ===== */
 
 	.lb-page {
 		flex: 1;
 		min-height: 0;
 		overscroll-behavior: contain;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		align-content: start;
+		gap: 0.75rem;
+		padding: 0.75rem 0.75rem 3rem;
 	}
 
-	/* One measured column: the page reads as a document, not a stretched sheet. */
+	/* What the book IS, beside what it HOLDS. A container query and not a viewport one: this
+	   panel is as wide as the chat column, so a window that is wide with both docks open must
+	   not be told it has room for two columns. */
+	@container browse (min-width: 860px) {
+		.lb-page {
+			grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
+			gap: 1.5rem;
+			padding: 1.5rem 1.5rem 3rem;
+		}
+
+		/* It holds still while the entries scroll past it: what a book is does not move. */
+		.lb-rail {
+			position: sticky;
+			top: 0;
+			align-self: start;
+		}
+
+		/* Side by side there is nothing above the entries to be separated from, and the gap
+		   would start the list a row lower than the rail it is beside. */
+		.lb-controls {
+			padding-top: 0;
+		}
+	}
+
+	.lb-rail {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		min-width: 0;
+		container-type: inline-size;
+		container-name: lbrail;
+	}
+
+	/* In a rail the strip's summary takes its own line under the name: a hint clipped to three
+	   words is not a hint, and it is the whole reason a fold can stay folded. Full width, which
+	   the rail is on a narrow panel, keeps it on the name's line where it belongs. */
+	@container lbrail (max-width: 26rem) {
+		.lb-strip-head {
+			flex-wrap: wrap;
+			row-gap: 0.15rem;
+		}
+
+		.lb-strip-head .strip-title {
+			flex: 1;
+		}
+
+		.lb-strip-head .strip-sum {
+			flex: 0 0 100%;
+			order: 3;
+			text-align: left;
+		}
+	}
+
+	/* One measured column: the entries read as a document, not a stretched sheet. */
 	.lb-page-inner {
 		width: 100%;
 		max-width: 52rem;
 		margin-inline: auto;
-		padding: 0.75rem 0.75rem 3rem;
 	}
 
 	/* ===== the book's own actions menu ===== */
@@ -810,64 +899,45 @@
 		color: var(--color-error);
 	}
 
-	/* ===== the book's own title ===== */
+	/* ===== the book's identity, at the head of the rail ===== */
 
-	.lb-title {
+	.lb-ident {
 		display: flex;
 		flex-direction: column;
-		align-items: flex-start;
-		gap: 0.3rem;
-		margin-bottom: 0.9rem;
+		align-items: stretch;
+		gap: 0.35rem;
 	}
 
-	/* The page's heading, editable in place: it reads as the book's name first and a
-	   field second. The surface reaches out of the column so the text stays on its edge. */
-	.lb-title-name {
-		width: calc(100% + 1rem);
-		margin-inline: -0.5rem;
-		padding: 0.15rem 0.5rem;
-		border: 0;
-		border-radius: var(--radius-md);
-		background: transparent;
-		font-family: var(--font-ui);
-		font-size: 1.15rem;
-		font-weight: 600;
-		letter-spacing: -0.01em;
-		color: var(--color-text-primary);
-		outline: none;
-		transition: background-color 140ms ease, box-shadow 140ms ease;
-	}
-
-	.lb-title-name::placeholder {
-		font-style: italic;
-		font-weight: 400;
-		color: var(--color-text-muted);
-	}
-
-	.lb-title-name:hover {
-		background: color-mix(in srgb, var(--color-bg-tertiary) 60%, transparent);
-	}
-
-	.lb-title-name:focus {
-		background: color-mix(in srgb, var(--color-bg-tertiary) 45%, transparent);
-		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent);
-	}
-
-	.lb-title-meta {
+	.lb-ident-meta {
 		display: flex;
 		align-items: center;
-		gap: 0.65rem;
+		gap: 0.4rem;
 		flex-wrap: wrap;
-		margin: 0;
+		margin: 0.15rem 0 0;
 		font-family: var(--font-ui);
 		font-size: 0.6875rem;
 		color: var(--color-text-muted);
 	}
 
-	.lb-title-stat {
+	.lb-stat {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.3rem;
+	}
+
+	/* Drawn by the part that follows, so the line has no trailing separator to trim. */
+	.lb-stat + .lb-stat::before {
+		content: '·';
+		opacity: 0.75;
+	}
+
+	.lb-stat--tokens {
+		font-family: var(--font-mono);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.lb-stat--quiet {
+		font-style: italic;
 	}
 
 	/* The three natures, in the entry rows' own colours. */
@@ -890,29 +960,13 @@
 		background: var(--color-border);
 	}
 
-	.lb-title-tokens {
-		font-family: var(--font-mono);
-		font-variant-numeric: tabular-nums;
-	}
-
-	/* Label and value on one line: who carries this book is a fact, not a paragraph. */
+	/* Label over the chips: in a rail there is no room to sit them side by side, and who
+	   carries the book is a list rather than a value. */
 	.lb-bound {
 		display: flex;
-		align-items: baseline;
-		gap: 0.5rem;
-		margin-top: 0.15rem;
-	}
-
-	/* Typography comes from the global .section-label. */
-	.lb-bound-cap {
-		flex-shrink: 0;
-	}
-
-	.lb-bound-none {
-		font-family: var(--font-ui);
-		font-size: 0.6875rem;
-		font-style: italic;
-		color: var(--color-text-muted);
+		flex-direction: column;
+		gap: 0.3rem;
+		margin-top: 0.35rem;
 	}
 
 	.lb-chips {
@@ -945,10 +999,9 @@
 
 	/* ===== the settings strip ===== */
 
-	/* Close enough to read as one stack: Activation states the rules and Test scan tries them,
-	   so the two are one subject and the space below them is where the page changes subject. */
+	/* Close enough to read as one stack with the identity above them: what the book is, what
+	   it runs with, what it fires on. The rail's own gap spaces them. */
 	.lb-strip {
-		margin-bottom: 0.5rem;
 		border: 1px solid var(--color-border-subtle);
 		border-radius: var(--radius-lg);
 		background: var(--color-card-bg);
@@ -969,9 +1022,10 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		/* Padding, not margin: it cannot collapse into the strip above, so the gap that separates
-		   the book's settings from its entries is the one written here. Several times the space
-		   between the strips themselves, which is what makes the two zones read apart. */
+		/* Padding, not margin: stacked, it cannot collapse into the rail above it, so the gap
+		   that separates the book's settings from its entries is the one written here. Several
+		   times the space between the strips themselves, which is what makes the zones read
+		   apart. Side by side it is dropped, above. */
 		padding: 1.25rem 0 0.5rem;
 	}
 

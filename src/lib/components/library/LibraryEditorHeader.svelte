@@ -124,6 +124,11 @@
 
 <header class="editor-header">
 	<div class="editor-header-identity">
+		<!-- Which of the three editors this is. The bar is shared with the open lorebook's, so
+		     the glyph is what answers that without reading the page under it. -->
+		<span class="editor-header-glyph" aria-hidden="true">
+			<Icon name={entryType === 'persona' ? 'user' : 'users'} class="w-4 h-4" strokeWidth={1.5} />
+		</span>
 		<!-- Muted "name me" placeholder only while the entry is brand-new; once saved without a
 		     name, its fallback ("Unnamed Character") reads as a normal name. -->
 		<h2 class="editor-header-name" class:is-untitled={!name && isNew}>{name || fallbackName}</h2>
