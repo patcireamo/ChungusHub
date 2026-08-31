@@ -20,13 +20,17 @@
 		 *  The item stays on screen and goes inert: this sentence is its tooltip, and the tap
 		 *  that cannot hover gets it as a refusal instead. */
 		deleteBlockedReason?: string;
-		/** Present on characters only: adds the SillyTavern export item. */
+		/** Adds the export item. Characters open a dialog from it, so the label carries the
+		 *  ellipsis that promises one; a row whose export downloads on the press names itself
+		 *  through `exportLabel` instead, or the same act promises a dialog on one shelf and
+		 *  not on the next. */
 		onExport?: () => void;
+		exportLabel?: string;
 		/** Extra classes for the trigger button (lets card/list style it differently). */
 		triggerClass?: string;
 	}
 
-	let { entryType, isFavorite = false, onToggleFavorite, onDuplicate, onConvert, onDelete, deleteBlockedReason, onExport, triggerClass = '' }: Props = $props();
+	let { entryType, isFavorite = false, onToggleFavorite, onDuplicate, onConvert, onDelete, deleteBlockedReason, onExport, exportLabel = 'Export…', triggerClass = '' }: Props = $props();
 
 	let open = $state(false);
 	let triggerRef = $state<HTMLButtonElement | null>(null);
@@ -179,7 +183,7 @@
 				class="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs font-ui text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition-colors"
 			>
 				<Icon name="download" class="w-3.5 h-3.5" />
-				Export…
+				{exportLabel}
 			</button>
 		{/if}
 		<button

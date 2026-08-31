@@ -66,7 +66,7 @@
 			uiStore.closeLibrary();
 			return;
 		}
-		uiStore.libraryTab = 'characters';
+		uiStore.setLibraryTab('characters', () => lorebookStore.flush());
 		uiStore.openLibrary(() => lorebookStore.flush());
 	}
 

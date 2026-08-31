@@ -15,12 +15,17 @@ function sanitizeFilename(name: string): string {
 	return cleaned || 'lorebook';
 }
 
+/** The anchor is put in the page before it is clicked and taken out after: a detached one
+ *  plus an immediate revoke drops the download on a blob big enough to matter, which an
+ *  archive of books is. Same shape as the library's own `triggerDownload`. */
 function save(filename: string, blob: Blob): void {
 	const url = URL.createObjectURL(blob);
-	const a = document.createElement('a');
-	a.href = url;
-	a.download = filename;
-	a.click();
+	const anchor = document.createElement('a');
+	anchor.href = url;
+	anchor.download = filename;
+	document.body.appendChild(anchor);
+	anchor.click();
+	anchor.remove();
 	URL.revokeObjectURL(url);
 }
 
@@ -41,18 +46,21 @@ export function downloadLorebook(book: Lorebook): void {
  * inside, which is what SillyTavern's importer and our own both read.
  *
  * Nothing dedupes book names, so two books called the same thing would land as one
- * entry and the archive would quietly hold fewer files than the reader selected.
+ * entry and the archive would quietly hold fewer files than the reader selected. The
+ * suffix is probed rather than counted, or a shelf already holding "Asami(2)" would
+ * collide with the name minted for the second "Asami".
  */
 export function downloadLorebooks(books: Lorebook[]): void {
 	if (books.length === 1) return downloadLorebook(books[0]);
 	const encoder = new TextEncoder();
-	const taken = new Map<string, number>();
+	const taken = new Set<string>();
 	const entries = books.map((book) => {
 		const base = sanitizeFilename(book.name);
-		const seen = taken.get(base) ?? 0;
-		taken.set(base, seen + 1);
+		let name = base;
+		for (let n = 2; taken.has(name); n++) name = `${base}(${n})`;
+		taken.add(name);
 		return {
-			name: `${seen === 0 ? base : `${base}(${seen + 1})`}.json`,
+			name: `${name}.json`,
 			data: encoder.encode(JSON.stringify(toNativeWorldInfo(book), null, 2))
 		};
 	});

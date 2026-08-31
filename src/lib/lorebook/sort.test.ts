@@ -12,12 +12,13 @@
  * `order`, the sequence the entries actually reach the prompt in, so two rows the chosen order
  * cannot separate hold still instead of sitting in whatever sequence they were stored in.
  * `natureOf` rides here too, because the Show filter and the entry row's own switch have to
- * read a row the same way.
+ * read a row the same way, and so does `lorebookDeleteMessage`, the one sentence the shelf's
+ * row menu and the open book's own menu both say before a book goes.
  */
 
 import { describe, expect, test } from 'bun:test';
 
-import { natureOf, sortEntries, sortLorebooks } from './types';
+import { lorebookDeleteMessage, natureOf, sortEntries, sortLorebooks } from './types';
 
 /** Only the two fields the sort reads; `sortLorebooks` is typed to accept exactly this much. */
 function book(name: string, createdAt = 0) {
@@ -195,5 +196,41 @@ describe('natureOf', () => {
 	// kind it would have been. Hiding "Off" has to take it with them.
 	test('off wins over always when an entry is both', () => {
 		expect(natureOf({ constant: true, disable: true })).toBe('off');
+	});
+});
+
+describe('lorebookDeleteMessage', () => {
+	const book = (name: string, entries: number) => ({
+		name,
+		entries: Array.from({ length: entries }, () => ({}) as never)
+	});
+
+	test('names the book and what goes with it', () => {
+		expect(lorebookDeleteMessage(book('Kaldoria', 12), 0)).toBe(
+			'Delete "Kaldoria" and its 12 entries? This cannot be undone.'
+		);
+	});
+
+	test('an empty book holds nothing, so it says nothing about entries', () => {
+		expect(lorebookDeleteMessage(book('Kaldoria', 0), 0)).toBe(
+			'Delete "Kaldoria"? This cannot be undone.'
+		);
+	});
+
+	test('a nameless book is named the way every list names it', () => {
+		expect(lorebookDeleteMessage(book('', 1), 0)).toBe(
+			'Delete "Untitled lorebook" and its 1 entry? This cannot be undone.'
+		);
+	});
+
+	// The half that decides whether the reader stops: both surfaces have to say it, and both
+	// have to say it in English on either side of one.
+	test('says who carries it, singular and plural', () => {
+		expect(lorebookDeleteMessage(book('Kaldoria', 2), 1)).toBe(
+			'Delete "Kaldoria" and its 2 entries? It is bound to 1 character or persona. This cannot be undone.'
+		);
+		expect(lorebookDeleteMessage(book('Kaldoria', 2), 3)).toBe(
+			'Delete "Kaldoria" and its 2 entries? It is bound to 3 characters or personas. This cannot be undone.'
+		);
 	});
 });

@@ -101,6 +101,7 @@
 		>
 			<LibraryEntryMenu
 				onExport={() => onExport(book.id)}
+				exportLabel="Export World Info"
 				onDelete={() => onDelete(book.id)}
 				triggerClass="icon-btn !w-8 !h-8 !rounded-[var(--radius-md)] text-text-muted hover:!bg-bg-tertiary hover:!text-text-primary"
 			/>

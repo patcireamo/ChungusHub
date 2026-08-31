@@ -11,7 +11,6 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import Spinner from '$lib/components/ui/Spinner.svelte';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import { holdMsForBlast } from '$lib/components/ui/HoldToConfirmButton.svelte';
 	import BrowsePopover from '$lib/components/library/BrowsePopover.svelte';
@@ -27,6 +26,7 @@
 	import { workspaceFocus } from '$lib/stores/workspaceFocus.svelte';
 	import { countTokens } from '$lib/tokenizer';
 	import {
+		lorebookDeleteMessage,
 		natureOf,
 		partitionEntries,
 		resolveBookActivation,
@@ -49,6 +49,7 @@
 
 	const reduce =
 		typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+	const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 
 	let books = $derived(lorebookStore.books);
 	let selectedBook = $derived(books.find((b) => b.id === bookId) ?? null);
@@ -244,12 +245,15 @@
 		search = '';
 		selectMode = false;
 	});
-	// A book with no name is one the shelf just made, so the caret lands where it is named.
+	// A book with no name is one still waiting to be named, so the caret lands there. Not on
+	// a touch screen, where a caret answers by putting the keyboard over the page that was
+	// asked for, the same rule the book switcher's own search follows.
 	// The book is read inside the tick, not in the effect body: every keystroke anywhere in
 	// it reassigns the store's list, and an effect tracking that would yank the caret back
 	// to the title on each one.
 	$effect(() => {
 		const id = bookId;
+		if (coarse) return;
 		void tick().then(() => {
 			if (!lorebookStore.getBook(id)?.name) nameEl?.focus();
 		});
@@ -272,13 +276,9 @@
 		if (selectedBook) downloadLorebook(selectedBook);
 	}
 
-	let bookDeleteMessage = $derived.by(() => {
-		const b = selectedBook;
-		if (!b) return '';
-		const n = b.entries.length;
-		const held = n > 0 ? ` and its ${n} ${n === 1 ? 'entry' : 'entries'}` : '';
-		return `Delete "${b.name || 'Untitled lorebook'}"${held}? This cannot be undone.`;
-	});
+	let bookDeleteMessage = $derived(
+		selectedBook ? lorebookDeleteMessage(selectedBook, linked.length) : ''
+	);
 
 	async function deleteBook() {
 		if (!selectedBook) return;
@@ -385,7 +385,7 @@
 		<header class="overlay-header">
 			<div class="overlay-crumb">
 				<span class="overlay-crumb-label">Lorebooks</span>
-				<span class="overlay-crumb-sep">/</span>
+				<span class="overlay-crumb-sep" aria-hidden="true">/</span>
 				<LorebookBookSwitcher
 					book={selectedBook}
 					{books}

@@ -121,8 +121,14 @@ const FOCUS_KEYS: Record<string, Direction> = {
 };
 
 /** A chat genuinely on screen, which is what the transcript's own keys need: the story map
- *  and the other overlays cover the column and carry their own search. */
-const chatOnScreen = () => Boolean(chatStore.activeChatId) && !uiStore.activeOverlay;
+ *  and the other overlays cover the column and carry their own search, and so does either
+ *  centered editor, which is why the two ids are read here and not only `activeOverlay`.
+ *  Without them Ctrl+F opens find in a chat nobody can see and takes the caret with it. */
+const chatOnScreen = () =>
+	Boolean(chatStore.activeChatId) &&
+	!uiStore.activeOverlay &&
+	!uiStore.libraryEditorId &&
+	!uiStore.lorebookEditorId;
 
 export const SHORTCUTS: ShortcutDef[] = [
 	// ===== Getting around =====
@@ -208,7 +214,9 @@ export const SHORTCUTS: ShortcutDef[] = [
 		label: 'Library: Characters',
 		binding: { mod: true, key: 'l' },
 		run: () => {
-			uiStore.libraryTab = 'characters';
+			// Through setLibraryTab rather than a bare assignment: that is the one door that
+			// lowers whichever centered editor the shelf being left had raised.
+			uiStore.setLibraryTab('characters', flush);
 			uiStore.toggleLibrary(flush);
 		}
 	},

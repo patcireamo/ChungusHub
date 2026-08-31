@@ -20,7 +20,7 @@
 	import LorebookShelfRow from './LorebookShelfRow.svelte';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { downloadLorebook, downloadLorebooks, readLorebookFile } from '$lib/lorebook/io';
-	import { sortLorebooks } from '$lib/lorebook/types';
+	import { lorebookDeleteMessage, sortLorebooks } from '$lib/lorebook/types';
 	import { lorebookSortPref, LOREBOOK_SORT_OPTIONS } from '$lib/stores/lorebookSort.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
@@ -29,11 +29,15 @@
 	let books = $derived(lorebookStore.books);
 
 	/** bookId → how many characters and personas carry it. One pass over the library rather
-	 *  than a filter per row, which would walk the whole library once for every book. */
+	 *  than a filter per row, which would walk the whole library once for every book. An
+	 *  entry counts once however many times its own link list names the book, or a row would
+	 *  claim two carriers where one stands. */
 	let links = $derived.by(() => {
 		const counts = new Map<string, number>();
 		for (const entry of characterLibraryStore.entries) {
-			for (const id of entry.data.lorebookIds ?? []) counts.set(id, (counts.get(id) ?? 0) + 1);
+			for (const id of new Set(entry.data.lorebookIds ?? [])) {
+				counts.set(id, (counts.get(id) ?? 0) + 1);
+			}
 		}
 		return counts;
 	});
@@ -91,7 +95,9 @@
 	function searchTextOf(book: (typeof books)[number]): string {
 		const cached = index.get(book.id);
 		if (cached && cached.stamp === book.updatedAt) return cached.text;
-		const parts = [book.name];
+		// The fallback name is searchable too, or the one word an unnamed book is listed
+		// under is the one word that cannot find it here while it finds it in the switcher.
+		const parts = [book.name || 'Untitled lorebook'];
 		for (const entry of book.entries) {
 			if (entry.comment) parts.push(entry.comment);
 			parts.push(...entry.key, ...entry.keysecondary);
@@ -161,7 +167,7 @@
 		uiStore.lorebookEditorId = id;
 	}
 
-	/** A fresh book opens straight into its editor, which lands the caret in its name. */
+	/** A fresh book opens straight into its editor, which is where it is named. */
 	async function newBook() {
 		const book = await lorebookStore.createBook('');
 		open(book.id);
@@ -200,46 +206,52 @@
 
 	let deleteId = $state<string | null>(null);
 	let deleteTarget = $derived(deleteId ? lorebookStore.getBook(deleteId) : null);
-	let deleteMessage = $derived.by(() => {
-		const book = deleteTarget;
-		if (!book) return '';
-		const n = book.entries.length;
-		const held = n > 0 ? ` and its ${n} ${n === 1 ? 'entry' : 'entries'}` : '';
-		const carried = links.get(book.id) ?? 0;
-		const bound =
-			carried === 0
-				? ''
-				: ` ${carried === 1 ? 'One character or persona links' : `${carried} characters and personas link`} to it.`;
-		return `Delete "${book.name || 'Untitled lorebook'}"${held}?${bound} This cannot be undone.`;
-	});
+	let deleteMessage = $derived(
+		deleteTarget ? lorebookDeleteMessage(deleteTarget, links.get(deleteTarget.id) ?? 0) : ''
+	);
 
 	async function confirmDelete() {
 		if (!deleteId) return;
 		const id = deleteId;
 		deleteId = null;
-		// The editor is over this shelf when a delete is fired from inside it, so the book
-		// going means the editor has nothing left to show.
+		// The editor stands over this shelf, so a book going means it has nothing left to show.
 		if (uiStore.lorebookEditorId === id) uiStore.lorebookEditorId = null;
-		await lorebookStore.deleteBook(id);
+		try {
+			await lorebookStore.deleteBook(id);
+		} catch (err) {
+			toastStore.failed('delete that lorebook', err);
+		}
 	}
 
 	let bulkDeleteOpen = $state(false);
 	let bulkEntryCount = $derived(selected.reduce((sum, b) => sum + b.entries.length, 0));
+	/** What the press destroys, and it is whichever count is larger: twenty empty books are
+	 *  still twenty books, and one book of nine hundred entries is still a big loss. Priced
+	 *  on entries alone, a shelf of small books would clear on a single click. */
+	let bulkBlast = $derived(Math.max(selected.length, bulkEntryCount));
 	let bulkDeleteMessage = $derived.by(() => {
 		const n = selected.length;
-		const base = `Delete ${n} lorebook${n === 1 ? '' : 's'} and their ${bulkEntryCount} ${bulkEntryCount === 1 ? 'entry' : 'entries'}? This cannot be undone.`;
+		// A selection of empty books holds nothing, so it says nothing about entries: "and
+		// their 0 entries" states a loss that is not there.
+		const held =
+			bulkEntryCount > 0
+				? ` and their ${bulkEntryCount} ${bulkEntryCount === 1 ? 'entry' : 'entries'}`
+				: '';
 		const carried = selected.filter((b) => (links.get(b.id) ?? 0) > 0).length;
-		return carried === 0
-			? base
-			: `${base} ${carried} of them ${carried === 1 ? 'is' : 'are'} in use.`;
+		const bound = carried > 0 ? ` ${carried} of them ${carried === 1 ? 'is' : 'are'} in use.` : '';
+		return `Delete ${n} lorebook${n === 1 ? '' : 's'}${held}?${bound} This cannot be undone.`;
 	});
 
 	async function confirmBulkDelete() {
 		const ids = selected.map((b) => b.id);
 		bulkDeleteOpen = false;
 		if (ids.includes(uiStore.lorebookEditorId ?? '')) uiStore.lorebookEditorId = null;
-		for (const id of ids) await lorebookStore.deleteBook(id);
-		toastStore.success(`Deleted ${ids.length} lorebook${ids.length === 1 ? '' : 's'}`);
+		try {
+			await lorebookStore.deleteBooks(ids);
+			toastStore.success(`Deleted ${ids.length} lorebook${ids.length === 1 ? '' : 's'}`);
+		} catch (err) {
+			toastStore.failed('delete those lorebooks', err);
+		}
 		selectionMode = false;
 		selectedIds = new Set();
 	}
@@ -525,8 +537,10 @@
 	onchange={onFiles}
 />
 
+<!-- Open on the resolved book, not on the id: one deleted on another device while the
+     question stands would otherwise leave a dialog with a blank message in it. -->
 <ConfirmDialog
-	open={deleteId !== null}
+	open={deleteTarget !== null}
 	title="Delete lorebook"
 	message={deleteMessage}
 	confirmLabel="Delete"
@@ -544,7 +558,7 @@
 	confirmLabel="Delete {selected.length}"
 	variant="danger"
 	destructive
-	holdMs={holdMsForBlast(bulkEntryCount)}
+	holdMs={holdMsForBlast(bulkBlast)}
 	onConfirm={confirmBulkDelete}
 	onCancel={() => (bulkDeleteOpen = false)}
 />

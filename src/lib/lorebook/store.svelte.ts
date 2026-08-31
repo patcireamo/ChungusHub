@@ -86,9 +86,17 @@ class LorebookStore {
 	}
 
 	async deleteBook(id: string): Promise<void> {
-		this.writer.cancel(id);
-		this._books = this._books.filter((b) => b.id !== id);
-		await db.deleteLorebook(id);
+		return this.deleteBooks([id]);
+	}
+
+	/** Every delete goes through here, one reassignment of the reactive list however many
+	 *  books go: a per-book assignment turns a fifty-book selection into fifty re-renders
+	 *  of the shelf that is showing them. */
+	async deleteBooks(ids: string[]): Promise<void> {
+		const gone = new Set(ids);
+		for (const id of ids) this.writer.cancel(id);
+		this._books = this._books.filter((b) => !gone.has(b.id));
+		for (const id of ids) await db.deleteLorebook(id);
 	}
 
 	// ===== mutations (debounced write-through) =====

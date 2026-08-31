@@ -279,6 +279,9 @@ class UiStore {
 	// Open the Library on the entry's tab, deep-linking to its editor (the view opens
 	// it on mount via pendingLibraryEntryId).
 	openLibraryEntry(entryId: string, entityType: 'character' | 'persona', flushFn?: () => void) {
+		// Asked BEFORE the editors are lowered, not by openLibrary below: the blocker reads
+		// `libraryEditorId`, so clearing it first would answer its own question with a no.
+		if (this.navBlocked()) return;
 		this.pendingLibraryEntryId = entryId;
 		this.libraryTab = entityType === 'persona' ? 'personas' : 'characters';
 		this.openEditor(null, null);
@@ -287,6 +290,7 @@ class UiStore {
 
 	/** The Lorebooks shelf: the third tab of the Library, where books are browsed. */
 	openLorebooks(flushFn?: () => void) {
+		if (this.navBlocked()) return;
 		this.libraryTab = 'lorebooks';
 		this.openEditor(null, null);
 		this.openLibrary(flushFn);

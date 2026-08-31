@@ -886,6 +886,26 @@ export function sortLorebooks<T extends Pick<Lorebook, 'name' | 'createdAt'>>(
 	});
 }
 
+/**
+ * The one wording of what deleting a book costs, read by both surfaces that offer it: the
+ * shelf's row menu and the open book's own actions menu. Two copies would let the menu
+ * standing beside the book's own name be the one that forgot to say who carries it, which
+ * is the half where the warning matters most.
+ *
+ * `links` is a count of characters and personas, each counted once, so it says the same
+ * number the book page's Bound to row shows.
+ */
+export function lorebookDeleteMessage(
+	book: Pick<Lorebook, 'name' | 'entries'>,
+	links: number
+): string {
+	const n = book.entries.length;
+	const held = n > 0 ? ` and its ${n} ${n === 1 ? 'entry' : 'entries'}` : '';
+	const s = links === 1 ? '' : 's';
+	const bound = links > 0 ? ` It is bound to ${links} character${s} or persona${s}.` : '';
+	return `Delete "${book.name || 'Untitled lorebook'}"${held}?${bound} This cannot be undone.`;
+}
+
 /** Parse a comma-separated keyword string into a trimmed, non-empty list. */
 export function parseKeys(input: string): string[] {
 	return input
