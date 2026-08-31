@@ -412,6 +412,14 @@
 		     what it HOLDS on the right, the split the character editor's identity pane uses. -->
 		<div class="lb-page panel-scroll">
 			<div class="lb-rail">
+				<!-- A cover plate, and only that. A book has no picture, so this carries nothing and
+				     is deliberately not a control: no hover, no cursor, nothing to press, or it
+				     reads as a picture button that does nothing. It exists so the three editors'
+				     rails begin the same way. -->
+				<div class="lb-plate" aria-hidden="true">
+					<Icon name="bookOpen" class="w-10 h-10" strokeWidth={1.25} />
+				</div>
+
 				<!-- The book's identity. The name is a labelled field and not a second heading:
 				     the bar above already says it, and saying it twice in two sizes is what made
 				     this page read as one title with a title under it. -->
@@ -840,6 +848,14 @@
 		.lb-controls {
 			padding-top: 0;
 		}
+
+		/* The rule between the panes, drawn on this side and only side by side, the character
+		   editor's own: stacked, the two follow each other down the page and a line across the
+		   middle would read as a divider inside the book's identity. */
+		.lb-page-inner {
+			border-left: 1px solid var(--color-border-subtle);
+			padding-left: 1.5rem;
+		}
 	}
 
 	.lb-rail {
@@ -871,11 +887,11 @@
 		}
 	}
 
-	/* One measured column: the entries read as a document, not a stretched sheet. */
+	/* The entries take the column they are given, the way the character editor's fields take
+	   theirs: a measure of their own would leave a wide panel mostly empty, and an entry row
+	   is a title over a line of keys rather than prose that needs a short line. */
 	.lb-page-inner {
-		width: 100%;
-		max-width: 52rem;
-		margin-inline: auto;
+		min-width: 0;
 	}
 
 	/* ===== the book's own actions menu ===== */
@@ -900,6 +916,35 @@
 	}
 
 	/* ===== the book's identity, at the head of the rail ===== */
+
+	/* The other two editors open on a picture, so the rail does too. Capped and centred while
+	   the panes are stacked, exactly as their portrait is: at full width a 3:4 plate would be
+	   taller than the phone it is on. */
+	.lb-plate {
+		display: grid;
+		width: 100%;
+		max-width: 15rem;
+		margin: 0 auto 0.5rem;
+		aspect-ratio: 3 / 4;
+		place-items: center;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		background:
+			linear-gradient(
+				160deg,
+				color-mix(in srgb, var(--color-accent) 10%, transparent),
+				transparent 62%
+			),
+			var(--color-bg-tertiary);
+		color: color-mix(in srgb, var(--color-text-muted) 70%, transparent);
+	}
+
+	@container browse (min-width: 860px) {
+		.lb-plate {
+			max-width: none;
+			margin-inline: 0;
+		}
+	}
 
 	.lb-ident {
 		display: flex;

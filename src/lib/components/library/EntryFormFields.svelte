@@ -513,7 +513,7 @@
 	<div class="space-y-4 lg:sticky lg:top-6 lg:self-start">
 		<!-- Portrait -->
 		<div
-			class="portrait-frame relative w-full max-w-[15rem] mx-auto lg:mx-0 aspect-[3/4] rounded-[var(--radius-lg)] overflow-hidden border border-border bg-bg-tertiary group/portrait cursor-pointer transition-all hover:border-accent hover:shadow-md"
+			class="portrait-frame relative w-full max-w-[15rem] lg:max-w-none mx-auto lg:mx-0 aspect-[3/4] rounded-[var(--radius-lg)] overflow-hidden border border-border bg-bg-tertiary group/portrait cursor-pointer transition-all hover:border-accent hover:shadow-md"
 			role="button"
 			tabindex="0"
 			onclick={handleImageClick}

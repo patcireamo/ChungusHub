@@ -293,7 +293,7 @@
 				<!-- Identity pane: portrait + name, matching the character editor's layout. -->
 				<div class="space-y-4 lg:sticky lg:top-6 lg:self-start">
 					<div
-						class="portrait-frame relative w-full max-w-[15rem] mx-auto lg:mx-0 aspect-[3/4] rounded-[var(--radius-lg)] overflow-hidden border border-border bg-bg-tertiary group/portrait cursor-pointer transition-all hover:border-accent hover:shadow-md"
+						class="portrait-frame relative w-full max-w-[15rem] lg:max-w-none mx-auto lg:mx-0 aspect-[3/4] rounded-[var(--radius-lg)] overflow-hidden border border-border bg-bg-tertiary group/portrait cursor-pointer transition-all hover:border-accent hover:shadow-md"
 						role="button"
 						tabindex="0"
 						onclick={handleImageClick}
@@ -355,8 +355,11 @@
 					</div>
 				</div>
 
-				<!-- Fields pane: the single description field. -->
-				<div class="min-w-0 space-y-5">
+				<!-- Fields pane: the single description field. The rule between the panes is drawn
+				     on this side and only once the grid is side by side, the character editor's own
+				     rule: stacked, the panes follow each other down the page and a line across the
+				     middle would read as a divider inside the identity. -->
+				<div class="min-w-0 space-y-5 lg:border-l lg:border-border-subtle lg:pl-6">
 					<div class="space-y-3">
 						<div class="w-full flex items-center gap-1.5 py-0.5">
 							<Icon name="user" class="w-3.5 h-3.5 text-accent" />
