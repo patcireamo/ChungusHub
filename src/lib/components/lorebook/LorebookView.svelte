@@ -5,7 +5,8 @@
 	 * same split the character editor and its browse list use.
 	 *
 	 * Which book is open belongs to `uiStore.lorebookEditorId`, never to this component, so
-	 * a deep link, a shelf press and the header's switcher are all the same act.
+	 * a deep link and a shelf press are the same act. Picking another book is the shelf's
+	 * job alone, exactly as it is for a character: the header states what is open.
 	 */
 	import { tick } from 'svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -17,7 +18,6 @@
 	import LorebookEntryRow from './LorebookEntryRow.svelte';
 	import LorebookActivationPanel from './LorebookActivationPanel.svelte';
 	import LorebookScanTester from './LorebookScanTester.svelte';
-	import LorebookBookSwitcher from './LorebookBookSwitcher.svelte';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 	import { downloadLorebook } from '$lib/lorebook/io';
@@ -40,7 +40,7 @@
 	} from '$lib/stores/lorebookEntryPrefs.svelte';
 
 	interface Props {
-		/** The book being edited. Owned by uiStore, so the switcher only reassigns it. */
+		/** The book being edited. Owned by uiStore, so the shelf alone reassigns it. */
 		bookId: string;
 		onClose: () => void;
 	}
@@ -247,7 +247,7 @@
 	});
 	// A book with no name is one still waiting to be named, so the caret lands there. Not on
 	// a touch screen, where a caret answers by putting the keyboard over the page that was
-	// asked for, the same rule the book switcher's own search follows.
+	// asked for.
 	// The book is read inside the tick, not in the effect body: every keystroke anywhere in
 	// it reassigns the store's list, and an effect tracking that would yank the caret back
 	// to the title on each one.
@@ -261,7 +261,7 @@
 	// Commit pending debounced writes when the view unmounts.
 	$effect(() => () => void lorebookStore.flush());
 
-	// ===== the actions menu (everything you can do TO the book the switcher names) =====
+	// ===== the actions menu (everything you can do TO the book the header names) =====
 
 	let actionsOpen = $state(false);
 	let bookDeleteOpen = $state(false);
@@ -380,23 +380,21 @@
 
 <div class="brw">
 	{#if selectedBook}
-		<!-- The shelf's name leads, the open book is the subject, and the menu acts on the
-		     book it names, so switcher and menu ride the subject line together. -->
-		<header class="overlay-header">
-			<div class="overlay-crumb">
-				<span class="overlay-crumb-label">Lorebooks</span>
-				<span class="overlay-crumb-sep" aria-hidden="true">/</span>
-				<LorebookBookSwitcher
-					book={selectedBook}
-					{books}
-					onSelect={(id) => (uiStore.lorebookEditorId = id)}
-				/>
+		<!-- The centered editors' shared bar (app.css, .editor-header): the open book is the
+		     subject, what acts on it trails right, and the way out ends the row. -->
+		<header class="editor-header">
+			<div class="editor-header-identity">
+				<h2 class="editor-header-name" class:is-untitled={!selectedBook.name}>
+					{selectedBook.name || 'Untitled lorebook'}
+				</h2>
+			</div>
+			<div class="editor-header-actions">
 				<div class="lb-acts">
 					<BrowsePopover bind:open={actionsOpen} variant="menu">
 						{#snippet trigger({ toggle, open })}
 							<button
 								type="button"
-								class="overlay-action-btn"
+								class="editor-header-btn"
 								onclick={toggle}
 								aria-haspopup="menu"
 								aria-expanded={open}
@@ -426,16 +424,19 @@
 						</button>
 					</BrowsePopover>
 				</div>
+
+				<span class="editor-header-divider"></span>
+
+				<button
+					type="button"
+					class="editor-header-btn"
+					onclick={onClose}
+					aria-label="Close lorebook"
+					title="Close (Esc)"
+				>
+					<Icon name="close" class="w-[1.15rem] h-[1.15rem]" strokeWidth={1.5} />
+				</button>
 			</div>
-			<button
-				type="button"
-				class="overlay-action-btn"
-				onclick={onClose}
-				aria-label="Close lorebook"
-				title="Close (Esc)"
-			>
-				<Icon name="close" class="w-[1.15rem] h-[1.15rem]" strokeWidth={1.5} />
-			</button>
 		</header>
 		<!-- Everything below lives in ONE scroll: the settings strip, controls, entries. -->
 		<div class="lb-page panel-scroll">
@@ -823,7 +824,7 @@
 		padding: 0.75rem 0.75rem 3rem;
 	}
 
-	/* ===== the actions menu beside the subject ===== */
+	/* ===== the book's own actions menu ===== */
 
 	/* The panel anchors here, so it drops under the button and not off the panel's edge. */
 	.lb-acts {

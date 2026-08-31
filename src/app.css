@@ -717,6 +717,111 @@
 		color: var(--color-text-secondary);
 	}
 
+	/* Shared header for the centered editors: a library entry, an open lorebook. One
+	   row, the subject's own name on the left and the tools that act on it trailing
+	   right, the close X last behind a divider. It is taller and painted where the
+	   overlay header above is neither, because these stand over the chat as documents
+	   rather than as panels of the shell, and the two must not read as one surface
+	   opened twice. Everything an editor has that the others do not (a save state, a
+	   favourite, a link chip) stays in its own component. */
+	.editor-header {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		min-height: 3.75rem;
+		padding: 0.6rem 1rem 0.6rem 1.5rem;
+		border-bottom: 1px solid var(--color-border-subtle);
+		background: var(--color-bg-secondary);
+	}
+
+	.editor-header-identity {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		min-width: 0;
+		flex: 1;
+	}
+
+	/* The subject: the entry's name, or the open book's. */
+	.editor-header-name {
+		margin: 0;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--font-ui);
+		font-size: 1.05rem;
+		font-weight: 650;
+		color: var(--color-text-primary);
+	}
+
+	.editor-header-name.is-untitled {
+		color: var(--color-text-muted);
+		font-weight: 500;
+		font-style: italic;
+	}
+
+	.editor-header-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		flex-shrink: 0;
+	}
+
+	/* Between what acts on the subject and the way out of it. */
+	.editor-header-divider {
+		width: 1px;
+		height: 1.35rem;
+		margin: 0 0.3rem;
+		background: var(--color-border-subtle);
+	}
+
+	.editor-header-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.25rem;
+		height: 2.25rem;
+		border-radius: var(--radius-md);
+		color: var(--color-text-muted);
+		cursor: pointer;
+		transition: background-color 140ms ease, color 140ms ease, transform 120ms ease;
+	}
+
+	.editor-header-btn:hover,
+	.editor-header-btn.is-open,
+	.editor-header-btn[aria-expanded='true'] {
+		color: var(--color-text-primary);
+		background: color-mix(in srgb, var(--color-bg-tertiary) 86%, transparent);
+	}
+
+	.editor-header-btn:active {
+		transform: translateY(1px);
+	}
+
+	/* Narrow screens: the bar tightens, icons stay, nothing wraps. */
+	@media (max-width: 640px) {
+		.editor-header {
+			min-height: 3.25rem;
+			padding: 0.5rem 0.6rem 0.5rem 0.9rem;
+			gap: 0.5rem;
+		}
+
+		.editor-header-name {
+			font-size: 0.92rem;
+		}
+
+		.editor-header-actions {
+			gap: 0.15rem;
+		}
+
+		.editor-header-divider {
+			margin: 0 0.15rem;
+		}
+	}
+
 	.prose {
 		max-width: min(var(--spacing-content-max), 100%);
 		color: var(--color-text-primary);

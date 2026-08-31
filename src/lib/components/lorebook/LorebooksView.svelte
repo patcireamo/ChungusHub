@@ -77,8 +77,8 @@
 		hidden = hidden.includes(state) ? hidden.filter((s) => s !== state) : [...hidden, state];
 	}
 
-	// The shelf's order is the app-wide lorebook display preference, shared with the editor's
-	// switcher and the character editor's link picker: three views of one shelf.
+	// The shelf's order is the app-wide lorebook display preference, shared with the character
+	// editor's link picker: two views of one shelf.
 	let ordered = $derived(sortLorebooks(books, lorebookSortPref.order));
 
 	/**
@@ -96,7 +96,7 @@
 		const cached = index.get(book.id);
 		if (cached && cached.stamp === book.updatedAt) return cached.text;
 		// The fallback name is searchable too, or the one word an unnamed book is listed
-		// under is the one word that cannot find it here while it finds it in the switcher.
+		// under is the one word that cannot find it.
 		const parts = [book.name || 'Untitled lorebook'];
 		for (const entry of book.entries) {
 			if (entry.comment) parts.push(entry.comment);

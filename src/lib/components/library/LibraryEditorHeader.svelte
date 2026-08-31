@@ -122,11 +122,11 @@
 	}
 </script>
 
-<header class="edh">
-	<div class="edh-identity">
+<header class="editor-header">
+	<div class="editor-header-identity">
 		<!-- Muted "name me" placeholder only while the entry is brand-new; once saved without a
 		     name, its fallback ("Unnamed Character") reads as a normal name. -->
-		<h2 class="edh-name" class:is-empty={!name && isNew}>{name || fallbackName}</h2>
+		<h2 class="editor-header-name" class:is-untitled={!name && isNew}>{name || fallbackName}</h2>
 		{@render badge?.()}
 		{#if isNew}
 			<span class="edh-pill">New</span>
@@ -143,7 +143,7 @@
 		{/if}
 	</div>
 
-	<div class="edh-actions">
+	<div class="editor-header-actions">
 		{#if !isNew}
 			{@render primaryAction?.()}
 		{/if}
@@ -181,7 +181,7 @@
 		</div>
 
 		{#if isNew}
-			<span class="edh-divider"></span>
+			<span class="editor-header-divider"></span>
 			<button type="button" class="edh-btn" disabled={busy} onclick={onDiscardNew}>
 				Discard
 			</button>
@@ -192,7 +192,7 @@
 		{:else}
 			<button
 				type="button"
-				class="edh-icon"
+				class="editor-header-btn"
 				class:is-favorite={isFavorite}
 				onclick={onToggleFavorite}
 				aria-label={isFavorite ? 'Unfavorite' : 'Favorite'}
@@ -205,7 +205,7 @@
 			<div class="edh-anchor" bind:this={menuRef}>
 				<button
 					type="button"
-					class="edh-icon"
+					class="editor-header-btn"
 					class:is-open={menuOpen}
 					onclick={() => (menuOpen = !menuOpen)}
 					aria-haspopup="menu"
@@ -251,9 +251,15 @@
 				{/if}
 			</div>
 
-			<span class="edh-divider"></span>
+			<span class="editor-header-divider"></span>
 
-			<button type="button" class="edh-icon" onclick={onClose} aria-label="Close editor" title="Close">
+			<button
+				type="button"
+				class="editor-header-btn"
+				onclick={onClose}
+				aria-label="Close editor"
+				title="Close"
+			>
 				<Icon name="close" class="w-[1.15rem] h-[1.15rem]" />
 			</button>
 		{/if}
@@ -261,43 +267,11 @@
 </header>
 
 <style>
-	.edh {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem;
-		min-height: 3.75rem;
-		padding: 0.6rem 1rem 0.6rem 1.5rem;
-		border-bottom: 1px solid var(--color-border-subtle);
-		background: var(--color-bg-secondary);
-	}
+	/* The bar itself, its identity cluster, its name, its icon buttons and the divider
+	   are the shared .editor-header language in app.css, so this header and the open
+	   lorebook's are one surface. What is below belongs to a library entry alone. */
 
 	/* ---- Identity cluster ---- */
-
-	.edh-identity {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		min-width: 0;
-		flex: 1;
-	}
-
-	.edh-name {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-family: var(--font-ui);
-		font-size: 1.05rem;
-		font-weight: 650;
-		color: var(--color-text-primary);
-	}
-
-	.edh-name.is-empty {
-		color: var(--color-text-muted);
-		font-weight: 500;
-		font-style: italic;
-	}
 
 	.edh-pill {
 		flex-shrink: 0;
@@ -342,50 +316,15 @@
 
 	/* ---- Action cluster ---- */
 
-	.edh-actions {
-		display: flex;
-		align-items: center;
-		gap: 0.3rem;
-		flex-shrink: 0;
-	}
-
 	.edh-anchor {
 		position: relative;
 	}
 
-	.edh-divider {
-		width: 1px;
-		height: 1.35rem;
-		margin: 0 0.3rem;
-		background: var(--color-border-subtle);
-	}
-
-	.edh-icon {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 2.25rem;
-		height: 2.25rem;
-		border-radius: var(--radius-md);
-		color: var(--color-text-muted);
-		transition: background-color 140ms ease, color 140ms ease, transform 120ms ease;
-	}
-
-	.edh-icon:hover,
-	.edh-icon.is-open {
-		color: var(--color-text-primary);
-		background: color-mix(in srgb, var(--color-bg-tertiary) 86%, transparent);
-	}
-
-	.edh-icon:active {
-		transform: translateY(1px);
-	}
-
-	.edh-icon.is-favorite {
+	.editor-header-btn.is-favorite {
 		color: var(--color-error);
 	}
 
-	.edh-icon.is-favorite:hover {
+	.editor-header-btn.is-favorite:hover {
 		background: color-mix(in srgb, var(--color-error) 12%, transparent);
 	}
 
@@ -549,16 +488,6 @@
 	/* ---- Narrow screens: labels drop, icons stay, one row holds. ---- */
 
 	@media (max-width: 640px) {
-		.edh {
-			min-height: 3.25rem;
-			padding: 0.5rem 0.6rem 0.5rem 0.9rem;
-			gap: 0.5rem;
-		}
-
-		.edh-name {
-			font-size: 0.92rem;
-		}
-
 		.edh-status-text,
 		.edh-chip-label {
 			display: none;
@@ -567,14 +496,6 @@
 		.edh-chip {
 			padding: 0 0.55rem;
 			gap: 0.3rem;
-		}
-
-		.edh-actions {
-			gap: 0.15rem;
-		}
-
-		.edh-divider {
-			margin: 0 0.15rem;
 		}
 	}
 </style>

@@ -364,7 +364,7 @@
 		uiStore.openSettings();
 	}
 
-	// ===== preset switcher (the subtitle dropdown, mirroring Lorebook's book switcher) =====
+	// ===== preset switcher (the subject dropdown on the overlay's own header) =====
 	// Selection rides an inline switcher here so the header reads like the other overlays;
 	// PresetManager (in the header's trailing slot) still owns every lifecycle action.
 	let allPresets = $derived(presetService.getAllPresets());
@@ -690,8 +690,8 @@
 		overflow: hidden;
 	}
 
-	/* Preset switcher: the subject dropdown (mirrors the Lorebook book switcher).
-	   The button itself is the shared .overlay-switch recipe. */
+	/* Preset switcher: the subject dropdown. The button itself is the shared
+	   .overlay-switch recipe. */
 	.pcv-switcher {
 		position: relative;
 		min-width: 0;
