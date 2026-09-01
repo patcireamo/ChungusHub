@@ -1066,8 +1066,7 @@
 														: 'Alternate with corrections'}
 												</p>
 												<p class="text-xs text-text-muted mt-1">
-													Say what to change. The reply is sent as it stands, so anything you don't
-													mention stays as it is.
+													Say what to change. The last reply is sent as is.
 												</p>
 											</div>
 											<div class="p-1.5 space-y-1.5">
