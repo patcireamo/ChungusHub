@@ -666,6 +666,150 @@ describe('assemblePrompt: continue-in-place', () => {
 	});
 });
 
+describe('assemblePrompt: corrections', () => {
+	const SUBJECT = msg('a9', 'assistant', 'The knight drew his blade and waited.');
+	const DIRECTION = 'Make him hesitate instead.';
+	const correcting = (instruction = DIRECTION, message: any = SUBJECT) => ({ message, instruction });
+
+	/** A prompt-scope rule that hides text from the model without touching storage: the exact
+	 *  shape a correction must not round-trip through, or the hidden half is deleted for good. */
+	const STRIPPER: any = {
+		id: 'r1',
+		name: 'strip',
+		description: '',
+		enabled: true,
+		pattern: '<hidden>.*?</hidden>',
+		flags: 'g',
+		replacement: '',
+		targets: ['assistant'],
+		scopes: ['prompt']
+	};
+
+	test('the reply and the direction close the prompt, in that order', () => {
+		const a = assemblePrompt(
+			input(preset([item('Rules.'), item('{{chatHistory}}'), item('Post-history.')]), {
+				chatMessages: CHAT,
+				postProcessing: { mode: 'none' },
+				correction: correcting()
+			})
+		);
+		expect(a.messages[a.messages.length - 2]).toEqual({ role: 'assistant', content: SUBJECT.content });
+		expect(a.messages[a.messages.length - 1]).toEqual({ role: 'user', content: DIRECTION });
+	});
+
+	test('the reply is sent as stored bytes: a prompt-scope rule never rewrites it', () => {
+		const hiding = msg('a9', 'assistant', 'He drew his blade.<hidden>ooc note</hidden>');
+		const a = assemblePrompt(
+			input(preset([item('Rules.')]), {
+				postProcessing: { mode: 'none' },
+				regexRules: [STRIPPER],
+				correction: correcting(DIRECTION, hiding)
+			})
+		);
+		// Sent whole, because the rewrite that comes back REPLACES this row: sending the
+		// stripped form would delete what the rule was only hiding.
+		expect(a.messages[a.messages.length - 2]).toEqual({ role: 'assistant', content: hiding.content });
+	});
+
+	test('continue still applies that same rule, which is the difference being kept', () => {
+		const hiding = msg('a9', 'assistant', 'He drew his blade.<hidden>ooc note</hidden>');
+		const a = assemblePrompt(
+			input(preset([item('Rules.')], { continuePrompt: 'Go on.' }), {
+				postProcessing: { mode: 'none' },
+				regexRules: [STRIPPER],
+				continuation: hiding
+			})
+		);
+		expect(a.messages[a.messages.length - 2]).toEqual({
+			role: 'assistant',
+			content: 'He drew his blade.'
+		});
+	});
+
+	test('self-refs in the reply are left alone too, for the same reason', () => {
+		const a = assemblePrompt(
+			input(preset([item('Rules.')]), {
+				resolvedCharacters: [{ name: 'Kael', traits: {} } as any],
+				resolvedPersona: { name: 'Mara', traits: {} } as any,
+				postProcessing: { mode: 'none' },
+				correction: correcting(DIRECTION, msg('a9', 'assistant', '{{char}} looked at {{user}}.'))
+			})
+		);
+		expect(a.messages[a.messages.length - 2].content).toBe('{{char}} looked at {{user}}.');
+	});
+
+	test('macros in the direction resolve against the same context as the prompt', () => {
+		const a = assemblePrompt(
+			input(preset([item('Rules.')]), {
+				resolvedCharacters: [{ name: 'Kael', traits: {} } as any],
+				resolvedPersona: { name: 'Mara', traits: {} } as any,
+				postProcessing: { mode: 'none' },
+				correction: correcting('Rewrite as {{char}}, speaking to {{user}}.')
+			})
+		);
+		expect(a.messages[a.messages.length - 1]).toEqual({
+			role: 'user',
+			content: 'Rewrite as Kael, speaking to Mara.'
+		});
+	});
+
+	test('a correction yields no join anchor: it replaces its turn rather than joining onto it', () => {
+		const a = assemblePrompt(
+			input(preset([item('Rules.')]), { postProcessing: { mode: 'none' }, correction: correcting() })
+		);
+		expect(a.continuationSent).toBeUndefined();
+	});
+
+	test('tail tokens land in the Chat bucket and the buckets still sum', () => {
+		const withTail = assemblePrompt(input(preset([item('Rules.')]), { correction: correcting() }));
+		const without = assemblePrompt(input(preset([item('Rules.')])));
+		const expected = countTokens(SUBJECT.content, MODEL) + countTokens(DIRECTION, MODEL);
+		expect(withTail.breakdown.chat - without.breakdown.chat).toBe(expected);
+		expect(withTail.breakdown.total).toBe(
+			withTail.breakdown.preset +
+				withTail.breakdown.context +
+				withTail.breakdown.memory +
+				withTail.breakdown.chat
+		);
+	});
+
+	test('the tail survives the empty-preset fallback', () => {
+		const a = assemblePrompt(
+			input(preset([]), { postProcessing: { mode: 'none' }, correction: correcting() })
+		);
+		expect(a.messages).toEqual([
+			{ role: 'system', content: DEFAULT_SYSTEM_PROMPT },
+			{ role: 'assistant', content: SUBJECT.content },
+			{ role: 'user', content: DIRECTION }
+		]);
+		expect(a.continuationSent).toBeUndefined();
+	});
+
+	test('the budget trim prices the tail: history drops rather than the reply being fixed', () => {
+		const p = preset([item('{{chatHistory}}')]);
+		const noTail = assemblePrompt(input(p, { chatMessages: CHAT }));
+		// The budget fits the plain prompt exactly, so the tail alone forces the trim.
+		const budget = noTail.breakdown.total;
+		const withTail = assemblePrompt(
+			input(p, { chatMessages: CHAT, contextBudget: budget, correction: correcting() })
+		);
+		expect(withTail.trimmedMessages).toBeGreaterThan(0);
+		expect(withTail.breakdown.total).toBeLessThanOrEqual(budget);
+		// The whole point: whatever else went, the reply being corrected is still in the prompt.
+		expect(withTail.messages[withTail.messages.length - 2]).toEqual({
+			role: 'assistant',
+			content: SUBJECT.content
+		});
+	});
+
+	test('no correction input leaves the assembly byte-identical', () => {
+		const p = preset([item('Rules.'), item('{{chatHistory}}')]);
+		const a = assemblePrompt(input(p, { chatMessages: CHAT }));
+		const b = assemblePrompt(input(p, { chatMessages: CHAT, correction: undefined }));
+		expect(a).toEqual(b);
+	});
+});
+
 describe('assemblePrompt: steering', () => {
 	const WRAPPER = '[Guidance: {{steering}}]';
 	/** One note: the shape every guarantee below was written against, kept so the

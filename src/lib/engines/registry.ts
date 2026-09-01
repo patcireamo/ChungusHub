@@ -1,6 +1,6 @@
 /**
  * Engines are the app's built-in AI machinery: Chat Memory, Opening Scene,
- * Steering, Spellcheck, Impersonate, Sprites. Each engine is its own deep
+ * Steering, Spellcheck, Impersonate, Corrections, Sprites. Each engine is its own deep
  * system; this registry is their shared identity for the Engines settings
  * page: what the engine does, whether it makes model calls (every
  * calling engine is a routing point with its own concrete connection on the
@@ -26,6 +26,7 @@ export type EngineId =
 	| 'opening-scene'
 	| 'steering'
 	| 'spellcheck'
+	| 'corrections'
 	| 'impersonate'
 	| 'sprites';
 
@@ -48,7 +49,7 @@ export interface EngineDef {
 	/** Also the engine's `source` label on LLM calls in the prompt debug panel. */
 	id: EngineId;
 	name: string;
-	icon: 'brain' | 'sparkles' | 'compass' | 'checkCircle' | 'mask' | 'image';
+	icon: 'brain' | 'sparkles' | 'compass' | 'checkCircle' | 'mask' | 'image' | 'pencil';
 	/** One line for the engine's row: what it does, nothing about cost or trigger. */
 	summary: string;
 	/** The tooltip beside the engine's name in the detail view: what it does and when it fires. */
@@ -174,6 +175,27 @@ export const ENGINES: EngineDef[] = [
 		enabled: {
 			get: () => featurePromptsStore.impersonateEnabled,
 			set: (value) => featurePromptsStore.setImpersonateEnabled(value)
+		}
+	},
+	{
+		id: 'corrections',
+		name: 'Corrections',
+		icon: 'pencil',
+		summary: 'Rewrites a reply you have read, to your direction',
+		description:
+			"Rewrites a reply you have already read, following a direction you type: fix a detail it got wrong, change the tone, cut a line that did not land. It runs from that reply's own Retry menu, and builds the very prompt the reply was written from, so the rewrite keeps the same history, lorebooks and memory the original had. Runs only when you trigger it.",
+		makesCalls: true,
+		prompts: [
+			{
+				key: 'corrections',
+				label: 'Correction prompt',
+				hint: 'Sent as the final user turn, after the reply being rewritten -- which rides ahead of it verbatim, so this template does not need to repeat it. {{instruction}} is the direction you typed.',
+				requires: ['{{instruction}}']
+			}
+		],
+		enabled: {
+			get: () => featurePromptsStore.correctionsEnabled,
+			set: (value) => featurePromptsStore.setCorrectionsEnabled(value)
 		}
 	},
 	{
