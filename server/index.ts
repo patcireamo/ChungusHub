@@ -1983,13 +1983,13 @@ function serve(hostname: string) {
 
 			// Restore in progress: the database is closed and the files under it are being
 			// replaced, so there is nothing this process can answer truthfully. Sits below the
-			// two security gates on purpose: a device that is not allowed in learns that,
-			// not what this install happens to be doing.
+			// security gates on purpose: a device that is not allowed in learns that, not what
+			// this install happens to be doing.
 			if (maintenance) {
 				// Two reads stay open (the Backups page is the surface that has to keep
 				// saying what is happening, and it cannot do that through a gate that refuses
 				// it), plus the one mutation that ENDS this state: cancelling the claimed
-				// restore. All three sit behind the same two security gates as everything else.
+				// restore. All three sit behind the same gates as everything else.
 				const readable =
 					req.method === 'GET' && (path === '/api/backups' || path === '/api/config');
 				const cancel = req.method === 'POST' && path === '/api/backups/cancel-restore';
