@@ -312,9 +312,7 @@ let lastRestoreError: string | null = null;
  * machine's, plus whatever the settings file adds (`isKnownHost` holds the rest of the rule).
  * Read once, like every other value that decides how the socket behaves.
  */
-const KNOWN_HOSTS: ReadonlySet<string> = new Set(
-	[hostname(), ...ALLOWED_HOSTNAMES].map((name) => name.trim().toLowerCase()).filter(Boolean)
-);
+const KNOWN_HOSTS: ReadonlySet<string> = new Set([hostname().toLowerCase(), ...ALLOWED_HOSTNAMES]);
 
 // ===== Security headers =====
 

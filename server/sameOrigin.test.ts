@@ -12,7 +12,7 @@
  * can ask for no more than the same host.
  */
 import { describe, test, expect } from 'bun:test';
-import { fromOurOwnHost, fromOurOwnOrigin, isKnownHost } from './same-origin';
+import { fromOurOwnHost, fromOurOwnOrigin, hostnameEntry, isKnownHost } from './same-origin';
 
 const OURS = 'app.local:4242';
 
@@ -48,6 +48,7 @@ describe('fromOurOwnOrigin: what may change something over /api/', () => {
 	test('a browser too old to send the header falls back to an exact origin', () => {
 		expect(fromOurOwnOrigin(headers({ origin: `http://${OURS}` }))).toBe(true);
 		expect(fromOurOwnOrigin(headers({ origin: `https://${OURS}` }))).toBe(true);
+		expect(fromOurOwnOrigin(headers({ origin: `HTTP://${OURS.toUpperCase()}` }))).toBe(true);
 		expect(fromOurOwnOrigin(headers({ origin: 'http://app.local:1420' }))).toBe(false);
 		expect(fromOurOwnOrigin(headers({ origin: 'http://app.local' }))).toBe(false);
 		expect(fromOurOwnOrigin(headers({ origin: 'http://app.local.evil.example' }))).toBe(false);
@@ -149,6 +150,24 @@ describe('isKnownHost: which names this server answers to', () => {
 		expect(isKnownHost('', allowed)).toBe(false);
 	});
 
+	// The URL parser canonicalizes an address before the check sees it, so every spelling a
+	// browser would turn into one is an address here, and one it refuses is not a host at all.
+	test('an address in any spelling the browser canonicalizes', () => {
+		for (const host of ['0x7f000001:4242', '127.1', '2130706433', '[0:0:0:0:0:0:0:1]:4242']) {
+			expect(isKnownHost(host, allowed)).toBe(true);
+		}
+		for (const host of ['999.1.1.1', '[evil]:4242']) {
+			expect(isKnownHost(host, allowed)).toBe(false);
+		}
+	});
+
+	// A trailing dot is another name to the browser, so it is another name here.
+	test('a known name dressed as another', () => {
+		for (const host of ['workshop.tail1234.ts.net.', 'desk-pc.:4242', 'localhost.evil.example']) {
+			expect(isKnownHost(host, allowed)).toBe(false);
+		}
+	});
+
 	test('no name sent at all', () => {
 		expect(isKnownHost(null, allowed)).toBe(true);
 	});
@@ -158,5 +177,33 @@ describe('isKnownHost: which names this server answers to', () => {
 		expect(isKnownHost('192.168.0.10:4242', none)).toBe(true);
 		expect(isKnownHost('localhost:4242', none)).toBe(true);
 		expect(isKnownHost('workshop.tail1234.ts.net', none)).toBe(false);
+	});
+});
+
+describe('hostnameEntry: a settings entry, spelled the way a browser will send it', () => {
+	test('a name, however it is written', () => {
+		expect(hostnameEntry(' Workshop.Tail1234.TS.NET ')).toBe('workshop.tail1234.ts.net');
+		expect(hostnameEntry('wörkshop.example')).toBe('xn--wrkshop-90a.example');
+		expect(hostnameEntry('[0:0:0:0:0:0:0:1]')).toBe('[::1]');
+	});
+
+	// Each of these matches no Host header, so kept it would be a line doing nothing.
+	test('anything that is more than a name', () => {
+		for (const entry of [
+			'https://workshop.example',
+			'workshop.example:4242',
+			'workshop.example/app',
+			'user@workshop.example',
+			'a b',
+			''
+		]) {
+			expect(hostnameEntry(entry)).toBeNull();
+		}
+	});
+
+	// The whole point: an international name typed as written meets the punycode the browser sends.
+	test('what it answers is what the gate will meet', () => {
+		const allowed = new Set([hostnameEntry('wörkshop.example') as string]);
+		expect(isKnownHost('XN--WRKSHOP-90A.example:4242', allowed)).toBe(true);
 	});
 });

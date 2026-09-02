@@ -5,6 +5,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { ensurePrivacyMarkers } from './privacy-notice';
+import { hostnameEntry } from './same-origin';
 
 // True inside a `bun build --compile` binary: bundled modules live on the
 // virtual bunfs mount (/$bunfs, B:\~BUN on Windows), not on disk. Uses the
@@ -130,17 +131,28 @@ function fileBool(key: 'openBrowser'): boolean | null {
 /** The names this install answers to on top of the ones that are its own by construction
  *  (server/same-origin.ts). Same stance as the readers above: a value it cannot read stops the
  *  boot rather than being narrowed to the empty list, which would lock the reader out of the
- *  address they reach their own install by and say nothing about why. */
+ *  address they reach their own install by and say nothing about why. An entry that is more
+ *  than a name is refused the same way rather than kept: it matches no header, so keeping it
+ *  is a line that silently does nothing, the failure this file must never have. */
 function fileHostnames(): string[] | null {
 	const value = FILE.allowedHostnames;
 	if (value === undefined) return null;
-	if (!Array.isArray(value) || value.some((name) => typeof name !== 'string' || !name.trim())) {
-		CONFIG_ISSUES.push(
-			`"allowedHostnames" in ${CONFIG_PATH} must be a list of names, each a non-empty string.`
-		);
+	if (!Array.isArray(value) || value.some((name) => typeof name !== 'string')) {
+		CONFIG_ISSUES.push(`"allowedHostnames" in ${CONFIG_PATH} must be a list of names.`);
 		return null;
 	}
-	return value.map((name) => (name as string).trim().toLowerCase());
+	const names: string[] = [];
+	for (const entry of value as string[]) {
+		const name = hostnameEntry(entry);
+		if (!name) {
+			CONFIG_ISSUES.push(
+				`"allowedHostnames" in ${CONFIG_PATH} holds ${JSON.stringify(entry)}, which is not a name on its own: no scheme, port or path, just the name.`
+			);
+			return null;
+		}
+		names.push(name);
+	}
+	return names;
 }
 
 const FILE_HOST = fileText('host');

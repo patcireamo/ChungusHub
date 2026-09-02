@@ -89,3 +89,16 @@ export function isKnownHost(host: string | null, allowed: ReadonlySet<string>): 
 	if (name.endsWith('.local')) return true;
 	return allowed.has(name);
 }
+
+/**
+ * A name from the settings file, spelled the way a browser will send it in `Host` so that
+ * `isKnownHost` can find it: lowercased, an international name in punycode. Null for anything
+ * that is not just a name (a scheme, a port, a path), which could never match a header and
+ * would sit in the file doing nothing.
+ */
+export function hostnameEntry(entry: string): string | null {
+	const name = entry.trim();
+	if (!name) return null;
+	const url = parse(`http://${name}`);
+	return url && url.href === `http://${url.hostname}/` ? url.hostname : null;
+}

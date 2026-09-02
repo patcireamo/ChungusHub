@@ -111,9 +111,10 @@ restarts while you work.
 `allowedHostnames` is for the one setup that needs it, and is empty for everyone else.
 ChungusHub answers to its own address, to `localhost`, and to this computer's name, so reaching
 it the way this page describes needs nothing here. If you reach it by some other name instead,
-a Tailscale name or a domain you point at it through a proxy, add that name to this list. Any
-name that is not on it is turned away with a page telling you what to add, which is what keeps a
-site you visit from reaching your workspace by pointing its own address at your computer.
+a Tailscale name or a domain you point at it through a proxy, add that name to this list, the
+name alone with no port or `http://`. Any name that is not on it is turned away with a page
+telling you what to add, which is what keeps a site you visit from reaching your workspace by
+pointing its own address at your computer.
 
 **A version that adds a setting adds its line to the file you already have**, leaving every value
 in it as you wrote it, so there is never anything to copy across by hand. It says on screen which
