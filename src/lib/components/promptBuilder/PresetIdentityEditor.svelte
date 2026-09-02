@@ -10,7 +10,7 @@
 <script lang="ts">
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import { autoResize } from '$lib/actions/autoResize';
-	import { imageService } from '$lib/services/imageService';
+	import { imageRejectionReason, imageService } from '$lib/services/imageService';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import type { PromptPresetMeta } from '$lib/types/database';
 
@@ -44,6 +44,11 @@
 		const file = input.files?.[0];
 		input.value = '';
 		if (!file || busy) return;
+		const refused = imageRejectionReason(file);
+		if (refused) {
+			toastStore.error(refused);
+			return;
+		}
 		busy = true;
 		try {
 			set('cover', await imageService.saveImage(file, 'presets'));
@@ -59,7 +64,13 @@
 	}
 </script>
 
-<input bind:this={fileInput} type="file" accept="image/*" class="hidden" onchange={pickCover} />
+<input
+	bind:this={fileInput}
+	type="file"
+	accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+	class="hidden"
+	onchange={pickCover}
+/>
 
 <div class="pi">
 	<div class="pi-cover-row">
