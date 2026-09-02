@@ -39,6 +39,7 @@ import {
 	deleteImage,
 	deletePreset,
 	ensureDefaultPresets,
+	imageContentType,
 	listBackgrounds,
 	listDrafts,
 	listPresets,
@@ -52,6 +53,7 @@ import {
 	saveThumbnail
 } from './files';
 import type { PresetFileData } from './files';
+import { fromOurOwnHost, fromOurOwnOrigin } from './same-origin';
 import { storeAssistantFile } from './assistant/files-ingest';
 import { clampRange, splitLines } from './assistant/files-core';
 import type { AssistantFile } from '../shared/assistant-files';
@@ -392,14 +394,31 @@ function requestedFilePath(pathname: string, prefix: string): string {
 		.replace(/\.\./g, '');
 }
 
+/**
+ * How a picture is handed back. This is the one route that serves bytes somebody uploaded,
+ * from the origin that holds the session cookie, so each header answers a different way of
+ * turning one of those files into a page on it: `nosniff` stops the browser from looking
+ * inside a `.png` and deciding it is a document, the CSP leaves anything that still manages
+ * to be one with no origin, no script and nothing to reach, and CORP keeps another site from
+ * reading these at all. The type itself is whitelisted upstream (`imageContentType`).
+ */
+function imageHeaders(type: string): Record<string, string> {
+	return {
+		'content-type': type,
+		'cache-control': 'no-cache',
+		'x-content-type-options': 'nosniff',
+		'content-security-policy': "default-src 'none'; sandbox",
+		'cross-origin-resource-policy': 'same-origin'
+	};
+}
+
 function serveDefaultBackground(pathname: string): Response {
 	// pathname like /files/backgrounds/<file>. Bundled defaults, served from the repo.
 	const rel = requestedFilePath(pathname, '/files/backgrounds/');
 	const filePath = join(DEFAULT_BACKGROUNDS_DIR, rel);
-	if (existsSync(filePath) && statSync(filePath).isFile()) {
-		return new Response(Bun.file(filePath), {
-			headers: { 'content-type': contentType(filePath), 'cache-control': 'no-cache' }
-		});
+	const type = imageContentType(filePath);
+	if (type && existsSync(filePath) && statSync(filePath).isFile()) {
+		return new Response(Bun.file(filePath), { headers: imageHeaders(type) });
 	}
 	return new Response('Not found', { status: 404 });
 }
@@ -410,10 +429,12 @@ function serveImage(pathname: string): Response {
 	// so a request for one that was never written is answered with the original beside it
 	// (see `resolveImageFile`).
 	const filePath = resolveImageFile(requestedFilePath(pathname, '/files/'));
-	if (filePath) {
-		return new Response(Bun.file(filePath), {
-			headers: { 'content-type': contentType(filePath), 'cache-control': 'no-cache' }
-		});
+	// A name that is not a picture format is not served at all, whatever sits on disk: this
+	// route answers with pictures, so there is no honest type to give one and a guess is how
+	// a stored file becomes a page on this origin.
+	const type = filePath && imageContentType(filePath);
+	if (filePath && type) {
+		return new Response(Bun.file(filePath), { headers: imageHeaders(type) });
 	}
 	return new Response('Not found', { status: 404 });
 }
@@ -1857,6 +1878,20 @@ function serve(hostname: string) {
 
 			const host = req.headers.get('host');
 
+			// Cross-site gate: an API call that changes something has to come from one of
+			// this app's own pages. It sits above the password gate because it refuses a
+			// request no session should rescue, the login included: a page that can post
+			// this one can post that one. Reads stay open, since nothing here mutates on a
+			// GET and a caller from another site cannot read the answer anyway.
+			if (
+				path.startsWith('/api/') &&
+				req.method !== 'GET' &&
+				req.method !== 'HEAD' &&
+				!fromOurOwnOrigin(req.headers)
+			) {
+				return json({ error: 'This request came from another site.' }, 403);
+			}
+
 			// Login must stay reachable for devices that haven't unlocked yet.
 			if (path === '/api/auth/login' && req.method === 'POST') {
 				try {
@@ -1916,8 +1951,14 @@ function serve(hostname: string) {
 				}
 			}
 
-			// WebSocket upgrade.
+			// WebSocket upgrade. Same-origin policy does not cover a socket, so without the
+			// check any page in the reader's browser can open one, and everything a socket
+			// carries (generations against their keys, whole assistant turns with the tools
+			// those hold) is on the other side of it.
 			if (path === '/ws') {
+				if (!fromOurOwnHost(req.headers)) {
+					return new Response('This upgrade came from another site.', { status: 403 });
+				}
 				const clientId = url.searchParams.get('clientId') ?? crypto.randomUUID();
 				const ip = clientIp ? normalizeIp(clientIp) : null;
 				if (srv.upgrade(req, { data: { clientId, ip } })) return undefined as unknown as Response;

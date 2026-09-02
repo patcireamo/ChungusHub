@@ -27,12 +27,35 @@ import {
 
 // ===== IMAGES =====
 
-/** The extensions a stored picture can wear, most likely first: normalized art is png with
- *  jpeg as its overflow (`toStoredFormat` on the client), while anything the app ships with
- *  (backgrounds, preset covers, an example character's art) keeps whatever it was authored as,
- *  since it is copied rather than uploaded. Read as the set a file has to be in to count as a
- *  picture, and walked in order when a thumbnail request has to find its original. */
-const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif'];
+/**
+ * The extensions a stored picture can wear and the type each is served as, most likely first:
+ * normalized art is png with jpeg as its overflow (`toStoredFormat` on the client), while
+ * anything the app ships with (backgrounds, preset covers, an example character's art) keeps
+ * whatever it was authored as, since it is copied rather than uploaded. It is the set a file
+ * has to be in to count as a picture, it is walked in order when a thumbnail request has to
+ * find its original, and it is the only thing `/files/` will answer with.
+ *
+ * Both halves are one decision, and neither closes the door alone. An upload names its own
+ * extension, so without the whitelist a caller stores an `.html` under this origin and then
+ * navigates to it; without the fixed type beside it, a name that IS on the list still gets
+ * served by whatever a content-type guess makes of the bytes inside.
+ */
+const IMAGE_TYPES: Record<string, string> = {
+	'.png': 'image/png',
+	'.jpg': 'image/jpeg',
+	'.jpeg': 'image/jpeg',
+	'.webp': 'image/webp',
+	'.gif': 'image/gif',
+	'.avif': 'image/avif'
+};
+
+const IMAGE_EXTENSIONS = Object.keys(IMAGE_TYPES);
+
+/** The type a stored picture is served with, or null for a name that is not one of them. */
+export function imageContentType(path: string): string | null {
+	const ext = path.match(/\.[^./\\]+$/)?.[0].toLowerCase();
+	return (ext && IMAGE_TYPES[ext]) || null;
+}
 
 /** What counts as a picture in a bundled folder: workspace backgrounds, the cover art sitting
  *  beside a default preset, and an example character's portrait and sprites. */
@@ -124,11 +147,14 @@ export async function saveImage(
 	preferredName?: string | null
 ): Promise<string> {
 	const safeCategory = IMAGE_CATEGORIES.includes(category) ? category : 'characters';
-	const cleanExt = `.${ext.replace(/^\./, '')}`;
-	// The extension lands in a filesystem path. Reject anything but a plain extension
-	// so a crafted value can't traverse out of IMAGES_ROOT.
-	if (!/^\.[a-z0-9]{1,8}$/i.test(cleanExt)) {
-		throw new Error(`Invalid image extension: "${ext}"`);
+	const cleanExt = `.${ext.replace(/^\./, '')}`.toLowerCase();
+	// The caller names the extension and it lands in a filesystem path under an origin that
+	// serves what is written there. A shape check is not enough: ".html" is as plain an
+	// extension as ".png". Only a name on the list gets a file.
+	if (!IMAGE_EXTENSIONS.includes(cleanExt)) {
+		throw new Error(
+			`"${ext}" is not a picture format ChungusHub stores. Use one of: ${IMAGE_EXTENSIONS.join(', ')}.`
+		);
 	}
 
 	const dir = join(IMAGES_ROOT, safeCategory);
