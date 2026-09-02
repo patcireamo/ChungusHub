@@ -5,9 +5,10 @@
  * and runs a WebSocket for live cross-device sync and LLM token streaming.
  */
 import { existsSync, statSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { join, normalize } from 'node:path';
 import type { ServerWebSocket } from 'bun';
-import { CLIENT_DIR, CONFIG_ISSUES, CONFIG_NOTICES, CONFIG_OVERRIDES, CONFIG_PATH, DATA_DIR, DEFAULT_BACKGROUNDS_DIR, HOST, IS_COMPILED, OPEN_BROWSER, PORT, SECURITY_PATH, ensureConfigFile, ensureDirs, type ImageCategory } from './config';
+import { ALLOWED_HOSTNAMES, CLIENT_DIR, CONFIG_ISSUES, CONFIG_NOTICES, CONFIG_OVERRIDES, CONFIG_PATH, DATA_DIR, DEFAULT_BACKGROUNDS_DIR, HOST, IS_COMPILED, OPEN_BROWSER, PORT, SECURITY_PATH, ensureConfigFile, ensureDirs, type ImageCategory } from './config';
 import { claimDataDir, type RunningInstance } from './instance-lock';
 import {
 	allowIp,
@@ -53,7 +54,7 @@ import {
 	saveThumbnail
 } from './files';
 import type { PresetFileData } from './files';
-import { fromOurOwnHost, fromOurOwnOrigin } from './same-origin';
+import { fromOurOwnHost, fromOurOwnOrigin, isKnownHost } from './same-origin';
 import { storeAssistantFile } from './assistant/files-ingest';
 import { clampRange, splitLines } from './assistant/files-core';
 import type { AssistantFile } from '../shared/assistant-files';
@@ -306,6 +307,15 @@ async function runRestore(id: string, manifestAt: number): Promise<void> {
  *  still on the page when the reader comes back to it. */
 let lastRestoreError: string | null = null;
 
+/**
+ * The names this install answers to beyond the ones that are its own by construction: this
+ * machine's, plus whatever the settings file adds (`isKnownHost` holds the rest of the rule).
+ * Read once, like every other value that decides how the socket behaves.
+ */
+const KNOWN_HOSTS: ReadonlySet<string> = new Set(
+	[hostname(), ...ALLOWED_HOSTNAMES].map((name) => name.trim().toLowerCase()).filter(Boolean)
+);
+
 // ===== Security headers =====
 
 /**
@@ -465,6 +475,42 @@ function forbidden(ip: string | null): Response {
   <p>Ask the host to add this address:</p>
   <code>${shown}</code>
   <p>This page retries on its own, so once allowed, you're in.</p>
+</div></body></html>`;
+	return new Response(html, { status: 403, headers: htmlHeaders(null) });
+}
+
+/**
+ * What a device gets when it reached this install by a name the install does not answer to.
+ * Same look as forbidden(), and deliberately not auto-retrying: the settings file is read at
+ * startup, so nothing changes until somebody edits it and starts ChungusHub again.
+ *
+ * The name is escaped because it is the one thing on this page that came from the request, and
+ * a page refusing an attack must not be the attack's way in.
+ */
+function unknownHost(host: string | null): Response {
+	const shown = (host ?? 'nothing').replace(
+		/[&<>"]/g,
+		(c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string
+	);
+	const html = `<!doctype html><html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Wrong address · ChungusHub</title>
+<style>
+  html,body{height:100%;margin:0}
+  body{display:grid;place-items:center;background:#1a1714;color:#e7e2da;
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:1.5rem}
+  .card{max-width:26rem;text-align:center;background:#221e1a;border:1px solid #3a342d;
+    border-radius:16px;padding:2rem 1.6rem;box-shadow:0 20px 60px rgba(0,0,0,.45)}
+  h1{font-size:1.2rem;margin:0 0 .6rem}
+  p{margin:.4rem 0;line-height:1.5;color:#b8b0a4;font-size:.92rem}
+  code{background:#15120f;border:1px solid #3a342d;border-radius:8px;padding:.35rem .6rem;
+    display:inline-block;margin-top:.4rem;color:#f0a868;font-size:1.05rem;letter-spacing:.02em}
+</style></head><body><div class="card">
+  <h1>ChungusHub doesn't answer to this name</h1>
+  <p>You reached it as:</p>
+  <code>${shown}</code>
+  <p>Its own address always works. If this name is yours, add it to
+  <code>allowedHostnames</code> in the settings file and start ChungusHub again.</p>
 </div></body></html>`;
 	return new Response(html, { status: 403, headers: htmlHeaders(null) });
 }
@@ -1877,6 +1923,17 @@ function serve(hostname: string) {
 			}
 
 			const host = req.headers.get('host');
+
+			// Host gate: this server only answers to names it is actually reachable as. It
+			// covers every request, reads included, because the attack it refuses arrives
+			// same-origin: a name somebody registered and pointed at this machine satisfies
+			// the check below honestly, and a page on it may read every answer it gets.
+			if (!isKnownHost(host, KNOWN_HOSTS)) {
+				if (path.startsWith('/api/') || path.startsWith('/files/') || path === '/ws') {
+					return json({ error: 'ChungusHub does not answer to this name.' }, 403);
+				}
+				return unknownHost(host);
+			}
 
 			// Cross-site gate: an API call that changes something has to come from one of
 			// this app's own pages. It sits above the password gate because it refuses a

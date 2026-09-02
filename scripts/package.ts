@@ -131,8 +131,11 @@ beside the executable the first time you run it. Change "port" there if
 something else on this machine already answers on ${DEFAULT_PORT}, or point
 "dataDir" at a folder of your own to keep one workspace while the app itself
 is replaced or moved. Set "openBrowser" to false and it serves without
-opening one, which is what a machine you are not sitting at wants. Changes
-apply the next time ChungusHub starts.
+opening one, which is what a machine you are not sitting at wants. If you
+reach the app by a name rather than an address, a Tailscale name or your own
+domain, put that name in "allowedHostnames"; its own address, localhost and
+this computer's name always work and need nothing there. Changes apply the
+next time ChungusHub starts.
 ${firstLaunch}
 To reach the app from your phone or another computer:
 

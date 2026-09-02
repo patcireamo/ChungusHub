@@ -33,9 +33,18 @@ const parsed = () => JSON.parse(read()) as Record<string, unknown>;
 describe('the settings file on a first run', () => {
 	test('every setting is written, with the note above them', () => {
 		ensureConfigFile(path);
-		expect(Object.keys(parsed())).toEqual(['//', 'port', 'host', 'dataDir', 'backupDir', 'openBrowser']);
+		expect(Object.keys(parsed())).toEqual([
+			'//',
+			'port',
+			'host',
+			'dataDir',
+			'backupDir',
+			'openBrowser',
+			'allowedHostnames'
+		]);
 		expect(parsed().port).toBe(4242);
 		expect(parsed().openBrowser).toBe(true);
+		expect(parsed().allowedHostnames).toEqual([]);
 	});
 
 	test('the write leaves no temp file behind', () => {
@@ -48,7 +57,8 @@ describe('the settings file on a build that has learned a new setting', () => {
 	test('a file already holding every setting is not written at all', () => {
 		// Four-space indentation and no trailing newline: a file that came back normalised was
 		// rewritten, and this one had no reason to be.
-		const original = '{\n    "port": 9000,\n    "openBrowser": false,\n    "host": "127.0.0.1",\n    "dataDir": "D:/stories",\n    "backupDir": "../backups"\n}';
+		const original =
+			'{\n    "port": 9000,\n    "openBrowser": false,\n    "host": "127.0.0.1",\n    "dataDir": "D:/stories",\n    "backupDir": "../backups",\n    "allowedHostnames": []\n}';
 		writeFileSync(path, original);
 		ensureConfigFile(path);
 		expect(read()).toBe(original);
@@ -71,8 +81,17 @@ describe('the settings file on a build that has learned a new setting', () => {
 		expect(file.dataDir).toBe('D:/stories');
 		expect(file['//']).toBe('a note the reader wrote over the shipped one');
 		expect(file['// port']).toBe('the one the router forwards');
-		// What was there keeps the order it was written in; the new line lands after it.
-		expect(Object.keys(file)).toEqual(['//', '// port', 'port', 'host', 'dataDir', 'backupDir', 'openBrowser']);
+		// What was there keeps the order it was written in; the new lines land after it.
+		expect(Object.keys(file)).toEqual([
+			'//',
+			'// port',
+			'port',
+			'host',
+			'dataDir',
+			'backupDir',
+			'openBrowser',
+			'allowedHostnames'
+		]);
 	});
 
 	test('a setting somebody turned off is never turned back on', () => {

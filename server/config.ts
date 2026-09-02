@@ -56,7 +56,8 @@ const CONFIG_DEFAULTS: Record<string, unknown> = {
 	host: DEFAULT_HOST,
 	dataDir: DEFAULT_DATA_DIR,
 	backupDir: DEFAULT_BACKUP_DIR,
-	openBrowser: true
+	openBrowser: true,
+	allowedHostnames: []
 };
 /** A note is not a setting, so it is never backfilled: a reader who deleted one keeps it deleted. */
 const SETTING_KEYS = Object.keys(CONFIG_DEFAULTS).filter((key) => !key.startsWith('//'));
@@ -124,6 +125,22 @@ function fileBool(key: 'openBrowser'): boolean | null {
 		return null;
 	}
 	return value;
+}
+
+/** The names this install answers to on top of the ones that are its own by construction
+ *  (server/same-origin.ts). Same stance as the readers above: a value it cannot read stops the
+ *  boot rather than being narrowed to the empty list, which would lock the reader out of the
+ *  address they reach their own install by and say nothing about why. */
+function fileHostnames(): string[] | null {
+	const value = FILE.allowedHostnames;
+	if (value === undefined) return null;
+	if (!Array.isArray(value) || value.some((name) => typeof name !== 'string' || !name.trim())) {
+		CONFIG_ISSUES.push(
+			`"allowedHostnames" in ${CONFIG_PATH} must be a list of names, each a non-empty string.`
+		);
+		return null;
+	}
+	return value.map((name) => (name as string).trim().toLowerCase());
 }
 
 const FILE_HOST = fileText('host');
@@ -300,6 +317,11 @@ export const HOST = process.env.CHUNGUS_HOST ?? FILE_HOST ?? DEFAULT_HOST;
 // Whether a launch throws the UI up in the default browser. Only the portable build reads it,
 // where the executable IS somebody's whole launch; a machine nobody is sitting at wants it off.
 export const OPEN_BROWSER = process.env.CHUNGUS_NO_OPEN ? false : (FILE_OPEN_BROWSER ?? true);
+
+// Names beyond an address, `localhost` and this machine's own that this install may be reached
+// by: a Tailscale name, a domain pointed at it through a proxy. Empty for everyone who reaches
+// their install the way the docs describe it, which is why it can default to refusing the rest.
+export const ALLOWED_HOSTNAMES = fileHostnames() ?? [];
 
 // Only when the file states the key too: an override of something it never mentions confuses
 // nobody, while a line somebody edited and watched do nothing is exactly what this is for.

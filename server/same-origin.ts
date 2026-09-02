@@ -6,6 +6,11 @@
  * reachability itself) to a cross-site request as readily as to a same-site one. Without a
  * check here every page open in that browser can drive the API and the socket: the answer
  * stays unreadable to the caller, but the write lands.
+ *
+ * Three questions, in the order something has to get past them: which page sent this, which
+ * host that page thinks it reached, and whether that host is a name this server answers to at
+ * all. The last one is here because it is the same defence: it catches the case where the first
+ * two are satisfied honestly and still wrong.
  */
 
 function parse(url: string): URL | null {
@@ -55,4 +60,32 @@ export function fromOurOwnHost(headers: Headers): boolean {
 	if (host === null) return false;
 	const asked = parse(`http://${host}`)?.hostname;
 	return !!asked && asked === parse(origin)?.hostname;
+}
+
+/**
+ * Whether the name a request was addressed to is one this server answers as.
+ *
+ * This closes what neither rule above can. A name the attacker registered and pointed at this
+ * machine is same-origin to the browser as well: `Sec-Fetch-Site` says `same-origin`, `Origin`
+ * and `Host` agree, and every comparison passes, because from the browser's side nothing is
+ * being faked. What gives it away is the name itself, which the browser sends verbatim and a
+ * page cannot choose.
+ *
+ * An address is always ours. A browser sends one only because the reader typed it or a page
+ * asked for it directly, and neither is a name somebody registered; a page that fetches this
+ * address instead is refused by `fromOurOwnOrigin` before it gets here. `localhost` and `.local`
+ * cannot be registered either. Everything else is a real name somebody owns, and the only one
+ * that can be trusted is a name this install was told to answer to.
+ */
+export function isKnownHost(host: string | null, allowed: ReadonlySet<string>): boolean {
+	// No name was sent, so nothing was claimed: not a browser, and not this attack.
+	if (host === null) return true;
+	const name = parse(`http://${host}`)?.hostname?.toLowerCase();
+	if (!name) return false;
+	// An IPv6 literal arrives bracketed; an IPv4 one is the only shape a hostname cannot take,
+	// since a name whose last label is a number is not a name a registrar will sell.
+	if (name.startsWith('[') || /^\d{1,3}(\.\d{1,3}){3}$/.test(name)) return true;
+	if (name === 'localhost' || name.endsWith('.localhost')) return true;
+	if (name.endsWith('.local')) return true;
+	return allowed.has(name);
 }

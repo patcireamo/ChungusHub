@@ -12,7 +12,7 @@
  * can ask for no more than the same host.
  */
 import { describe, test, expect } from 'bun:test';
-import { fromOurOwnHost, fromOurOwnOrigin } from './same-origin';
+import { fromOurOwnHost, fromOurOwnOrigin, isKnownHost } from './same-origin';
 
 const OURS = 'app.local:4242';
 
@@ -105,5 +105,58 @@ describe('fromOurOwnHost: what may open the socket', () => {
 	test('a caller that is not a browser', () => {
 		expect(fromOurOwnHost(headers({}))).toBe(true);
 		expect(fromOurOwnHost(new Headers({ origin: `http://${OURS}` }))).toBe(false);
+	});
+});
+
+describe('isKnownHost: which names this server answers to', () => {
+	const allowed = new Set(['desk-pc', 'workshop.tail1234.ts.net']);
+
+	test('an address is always ours, since no attacker can be handed one', () => {
+		for (const host of ['127.0.0.1:4242', '192.168.0.10:4242', '100.64.0.3', '[::1]:4242', '[fe80::1]']) {
+			expect(isKnownHost(host, allowed)).toBe(true);
+		}
+	});
+
+	test('the names nobody can register', () => {
+		for (const host of ['localhost:4242', 'localhost', 'chungus.localhost', 'desk-pc.local:4242']) {
+			expect(isKnownHost(host, allowed)).toBe(true);
+		}
+	});
+
+	test('a name the settings file adds, however it is capitalized', () => {
+		expect(isKnownHost('desk-pc:4242', allowed)).toBe(true);
+		expect(isKnownHost('WORKSHOP.Tail1234.TS.NET', allowed)).toBe(true);
+	});
+
+	// The whole point: from the browser's side this request is honest, so nothing else catches it.
+	test('a name somebody registered and pointed here', () => {
+		for (const host of [
+			'preset-pack.example',
+			'preset-pack.example:4242',
+			'desk-pc.evil.example',
+			'evil.example'
+		]) {
+			expect(isKnownHost(host, allowed)).toBe(false);
+		}
+	});
+
+	// A name whose last label is a number is not one a registrar will sell, and the URL parser
+	// refuses to read it as either a name or an address.
+	test('a name dressed up as an address', () => {
+		expect(isKnownHost('192.168.0.10.evil.example', allowed)).toBe(false);
+		expect(isKnownHost('evil.1.2.3.4', allowed)).toBe(false);
+		expect(isKnownHost('not a host', allowed)).toBe(false);
+		expect(isKnownHost('', allowed)).toBe(false);
+	});
+
+	test('no name sent at all', () => {
+		expect(isKnownHost(null, allowed)).toBe(true);
+	});
+
+	test('an empty settings list still leaves the install reachable', () => {
+		const none: ReadonlySet<string> = new Set();
+		expect(isKnownHost('192.168.0.10:4242', none)).toBe(true);
+		expect(isKnownHost('localhost:4242', none)).toBe(true);
+		expect(isKnownHost('workshop.tail1234.ts.net', none)).toBe(false);
 	});
 });
