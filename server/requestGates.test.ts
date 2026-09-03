@@ -220,7 +220,11 @@ describe('/files/', () => {
 		expect(picture.headers['cross-origin-resource-policy']).toBe('same-origin');
 		expect((await exchange('GET', '/files/images/characters/gate.html', ours())).status).toBe(404);
 		// A thumbnail nobody wrote is answered with the original beside it, typed as what answered.
-		const fallback = await exchange('GET', '/files/images/characters/thumbnails/gate.webp', ours());
+		// Its own name is lowercase because every writer into the store lowercases one, and the
+		// walk that finds it is spelled that way: an uppercase original is found on a filesystem
+		// that ignores case and nowhere else, so asking for one here would pass on Windows alone.
+		writeFileSync(join(dir, 'beside.png'), 'the original a thumbnail request falls back to');
+		const fallback = await exchange('GET', '/files/images/characters/thumbnails/beside.webp', ours());
 		expect(fallback.status).toBe(200);
 		expect(fallback.headers['content-type']).toBe('image/png');
 	});

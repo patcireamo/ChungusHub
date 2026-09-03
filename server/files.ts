@@ -87,6 +87,10 @@ export function thumbnailFor(relativePath: string): string {
  * The file that answers a `/files/images/…` request: normally the one asked for, and for a
  * thumbnail that does not exist, the original beside it.
  *
+ * The walk below is spelled in lowercase and every writer into this store lowercases what it
+ * writes (`saveImage`, `copyImage`, `seedBundledImage`), which is one invariant rather than
+ * three coincidences. Break it and the picture is found on Windows and gone on Linux.
+ *
  * A thumbnail is an optimization and never a distinct asset, so the request means "the
  * smallest stored copy of this picture" and there is always an answer while the picture
  * itself is there. Three states reach it: an upload whose thumbnail failed to encode
@@ -434,7 +438,10 @@ function bundledDefaults(): { id: string; cover: string | null }[] {
 export function seedBundledImage(sourcePath: string, category: ImageCategory): string {
 	const dir = join(IMAGES_ROOT, category);
 	mkdirSync(dir, { recursive: true });
-	const ext = sourcePath.slice(sourcePath.lastIndexOf('.'));
+	// Lowercased like every other write into this store, because the walk in `resolveImageFile`
+	// is spelled in lowercase: a `.JPEG` on disk is found on Windows and is a broken picture on
+	// Linux, which is the one shape of bug a bundled asset can carry to every install at once.
+	const ext = sourcePath.slice(sourcePath.lastIndexOf('.')).toLowerCase();
 	const filename = `${randomUUID()}${ext}`;
 	copyFileSync(sourcePath, join(dir, filename));
 	return `images/${category}/${filename}`;
