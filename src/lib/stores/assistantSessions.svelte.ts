@@ -28,7 +28,8 @@ import { llmService } from '$lib/services/llm/provider';
 import { DEFAULT_APPROVAL_MODE, readApprovalMode } from '$lib/config/assistant-approval';
 import { applySessionSettings, isSessionSettingsStale } from '$lib/services/assistantSessionSettingsService';
 import { deleteAssistantFile, listAssistantFiles, type AssistantFile } from '$lib/services/assistantFilesService';
-import { registerSettingsReload } from '$lib/services/syncedSetting';
+import { SUGGESTED_PROMPTS_SETTING, readSuggestedPrompts } from '$lib/config/assistant-suggestions';
+import { readSetting, registerSettingsReload, writeSetting } from '$lib/services/syncedSetting';
 import { chatStore } from '$lib/stores/chat.svelte';
 import { connectionStore } from '$lib/stores/connections.svelte';
 import type { ApprovalMode, AssistantSession, AssistantMessage, AssistantSessionRuntime, AssistantAttachment } from '$lib/types/assistant';
@@ -145,6 +146,24 @@ class AssistantSessionStore {
 		this.approvalDefault = readApprovalMode(await db.getSetting(APPROVAL_MODE_KEY));
 	}
 
+	/** The empty screen's suggested prompts. Held here rather than read by the panel, because
+	 *  Assistant Settings edits the same list on the same screen: one owner is what makes an
+	 *  edit show up on the empty screen at once instead of at the next load. */
+	suggestedPrompts = $state<string[]>([]);
+
+	async refreshSuggestedPrompts(): Promise<void> {
+		this.suggestedPrompts = readSuggestedPrompts(
+			await readSetting<unknown>(SUGGESTED_PROMPTS_SETTING, null)
+		);
+	}
+
+	/** The one writer: Assistant Settings. The list shows before the round trip, so the empty
+	 *  screen behind the settings view is already right when the reader goes back to it. */
+	async saveSuggestedPrompts(prompts: string[]): Promise<void> {
+		this.suggestedPrompts = prompts;
+		await writeSetting(SUGGESTED_PROMPTS_SETTING, prompts);
+	}
+
 	/**
 	 * True while an OPEN tab is holding a card: the badge on the closed launcher and the mark
 	 * in the tab strip. Scoped to open tabs on purpose: a badge has to point at something the
@@ -229,10 +248,14 @@ class AssistantSessionStore {
 			savedActive && this.openTabIds.includes(savedActive) ? savedActive : this.openTabIds[0] ?? null;
 
 		await this.refreshApprovalDefaults();
-		// The approval default lives in the shared settings table and is read straight from it,
-		// so a change made on another device has to reach this store: `syncReload` answers the
-		// `assistant` scope, which a settings write does not broadcast.
-		registerSettingsReload(() => this.refreshApprovalDefaults());
+		await this.refreshSuggestedPrompts();
+		// Both live in the shared settings table and are read straight from it, so a change made
+		// on another device has to reach this store: `syncReload` answers the `assistant` scope,
+		// which a settings write does not broadcast.
+		registerSettingsReload(async () => {
+			await this.refreshApprovalDefaults();
+			await this.refreshSuggestedPrompts();
+		});
 		await Promise.all(this.openTabIds.map((id) => this.loadMessages(id)));
 
 		// Turns run on the SERVER, keyed by session. A reload, a second device or a network

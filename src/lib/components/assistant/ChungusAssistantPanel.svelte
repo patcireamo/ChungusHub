@@ -34,6 +34,7 @@
 	} from '$lib/services/assistantFilesService';
 	import AssistantFileViewer from './AssistantFileViewer.svelte';
 	import { llmService } from '$lib/services/llm/provider';
+	import { SUGGESTED_PROMPTS_COLLAPSED } from '$lib/config/assistant-suggestions';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { attachmentKey, type AssistantAttachment } from '$lib/types/assistant';
 
@@ -381,14 +382,15 @@
 		await store.send(sessionId, text, attachments, images, files);
 	}
 
-	// First-run examples: tappable prompts that fill the composer. The empty screen owes
-	// an agent with this much reach more than one sentence of self-explanation.
-	const EXAMPLE_PROMPTS = [
-		"Clean up this character's card, fix the formatting but keep the voice",
-		'Summarize what has happened in this chat so far',
-		'Turn the recent events of this chat into lorebook entries',
-		'Attribute the unassigned "You" messages to my persona'
-	];
+	// Tappable prompts that fill the composer, the user's own list where they wrote one
+	// (Assistant Settings → Suggested Prompts) and the shipped set otherwise. Collapsed it
+	// shows the first few; expanded, the list scrolls inside its own box and nothing else on
+	// the screen moves.
+	let suggestions = $derived(store.suggestedPrompts);
+	let suggestionsOpen = $state(false);
+	let visibleSuggestions = $derived(
+		suggestionsOpen ? suggestions : suggestions.slice(0, SUGGESTED_PROMPTS_COLLAPSED)
+	);
 
 	function useExample(text: string) {
 		if (activeId) store.composerFor(activeId).draft = text;
@@ -562,13 +564,29 @@
 				<AssistantMascot size={44} />
 				<p class="assistant-empty-title">Chungus Assistant</p>
 				<p class="assistant-empty-hint">Reads and edits your characters, chats, and lorebooks.</p>
-				<div class="assistant-empty-examples">
-					{#each EXAMPLE_PROMPTS as example (example)}
-						<button type="button" class="assistant-empty-example" onclick={() => useExample(example)}>
-							{example}
+				{#if suggestions.length > 0}
+					<!-- Unkeyed on purpose: nothing dedupes the stored list, and two rows holding the
+					     same text is the user's business, not a crash. The button that opens the list
+					     stays outside it, so scrolling the rows never carries it out of reach. -->
+					<div class="assistant-empty-examples">
+						{#each visibleSuggestions as example}
+							<button type="button" class="assistant-empty-example" onclick={() => useExample(example)}>
+								{example}
+							</button>
+						{/each}
+					</div>
+					{#if suggestions.length > SUGGESTED_PROMPTS_COLLAPSED}
+						<button
+							type="button"
+							class="assistant-empty-more"
+							aria-expanded={suggestionsOpen}
+							onclick={() => (suggestionsOpen = !suggestionsOpen)}
+						>
+							<Icon name={suggestionsOpen ? 'chevronUp' : 'chevronDown'} class="w-3.5 h-3.5" />
+							<span>{suggestionsOpen ? 'Show less' : 'Show more'}</span>
 						</button>
-					{/each}
-				</div>
+					{/if}
+				{/if}
 			</div>
 		{:else}
 			<!-- Retry re-runs a message that was already sent, and Continue sends a canned line
@@ -881,8 +899,12 @@
 		gap: 0.85rem;
 	}
 
+	/* Auto margins centre it while there is room and resolve to zero once there is not, so a
+	   long list squeezes the block to the panel instead of pushing past it. `min-height: 0`
+	   is what lets that squeeze happen; the suggestion list is the only part that gives. */
 	.assistant-empty {
 		margin: auto;
+		min-height: 0;
 		text-align: center;
 		display: flex;
 		flex-direction: column;
@@ -891,7 +913,13 @@
 		padding: 2rem 1rem;
 	}
 
+	/* The mascot: a foreign element, so it needs the scoping escape to be pinned. */
+	.assistant-empty > :global(svg) {
+		flex-shrink: 0;
+	}
+
 	.assistant-empty-title {
+		flex-shrink: 0;
 		font-family: var(--font-ui);
 		font-size: 0.82rem;
 		font-weight: 600;
@@ -899,12 +927,15 @@
 	}
 
 	.assistant-empty-hint {
+		flex-shrink: 0;
 		font-family: var(--font-ui);
 		font-size: 0.72rem;
 		color: var(--color-text-muted);
 		opacity: 0.8;
 	}
 
+	/* The one part that gives: it scrolls on its own rather than growing the empty screen,
+	   so expanding a long list moves the suggestions and nothing else. */
 	.assistant-empty-examples {
 		margin-top: 0.6rem;
 		display: flex;
@@ -912,9 +943,22 @@
 		gap: 0.35rem;
 		width: 100%;
 		max-width: 21rem;
+		/* About ten rows. Expanded, the list is a box on the empty screen rather than the
+		   whole of it, and anything past that is reached inside the box. The smaller of this
+		   and the room the panel has left is what the list gets. */
+		max-height: 23rem;
+		min-height: 0;
+		overflow-y: auto;
+		/* Not .panel-scroll: that reserves the bar's track on one edge, which is right for a
+		   panel body and wrong here, where the box is centred and a one-sided gutter walks the
+		   rows off the centre line while the bar crowds their right edge. */
+		scrollbar-gutter: stable both-edges;
+		overscroll-behavior: contain;
 	}
 
 	.assistant-empty-example {
+		/* Without this the rows compress to fit the scroller and it never scrolls at all. */
+		flex-shrink: 0;
 		text-align: left;
 		padding: 0.45rem 0.7rem;
 		border-radius: var(--radius-md);
@@ -932,6 +976,34 @@
 		border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
 		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
 		color: var(--color-text-primary);
+	}
+
+	/* The resting pill the home screen opens its recent chats with, and narrower than the
+	   rows it reveals so it reads as the list's handle rather than another suggestion. It
+	   sits outside the scroller, so it stays put however far the list is scrolled. */
+	.assistant-empty-more {
+		flex-shrink: 0;
+		align-self: center;
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		margin-top: 0.35rem;
+		padding: 0.3rem 0.8rem;
+		border-radius: var(--radius-full);
+		border: 1px solid var(--color-border-subtle);
+		background: color-mix(in srgb, var(--color-bg-tertiary) 55%, transparent);
+		color: var(--color-text-secondary);
+		font-family: var(--font-ui);
+		font-size: 0.72rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+	}
+
+	.assistant-empty-more:hover {
+		color: var(--color-text-primary);
+		border-color: var(--color-border);
+		background: color-mix(in srgb, var(--color-bg-tertiary) 85%, transparent);
 	}
 
 	/* ===== Input ===== */

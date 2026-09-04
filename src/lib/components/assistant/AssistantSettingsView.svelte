@@ -2,8 +2,9 @@
 	/**
 	 * Assistant Settings: the in-panel view for everything the user configures about
 	 * the Chungus Assistant. ONE scrollable page: sections stacked under headers
-	 * (Instructions, Skills, Approval, Capabilities). A handful of controls never needed a nav
-	 * rail, and a single page means nothing is ever hidden behind an unvisited tab.
+	 * (Instructions, Suggested Prompts, Skills, Approval, Capabilities). A handful of controls
+	 * never needed a nav rail, and a single page means nothing is ever hidden behind an
+	 * unvisited tab.
 	 *
 	 * Nothing about the assistant's generation lives here. Which model serves it, what
 	 * sampling it rides, its output cap, its context size and whether it streams are all
@@ -13,6 +14,7 @@
 	import { onMount } from 'svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
+	import AssistantSuggestionsSection from './AssistantSuggestionsSection.svelte';
 	import AssistantSkillsSection from './AssistantSkillsSection.svelte';
 	import AssistantApprovalSection from './AssistantApprovalSection.svelte';
 	import AssistantCapabilitiesSection from './AssistantCapabilitiesSection.svelte';
@@ -126,6 +128,19 @@
 					{instructionsDraft.length.toLocaleString()} / {CUSTOM_INSTRUCTIONS_MAX.toLocaleString()}
 				</span>
 			</div>
+		</section>
+
+		<section class="as-section">
+			<div class="as-section-head">
+				<h3 class="as-section-title">
+					<Icon name="sparkles" class="w-3.5 h-3.5" />
+					Suggested Prompts
+				</h3>
+				<InfoTip
+					text="The lines the assistant's empty screen offers, in this order. The first four show on their own and Show more reveals the rest. Tapping one fills the composer instead of sending it, and none of them reach the model, so an open session needs no Apply."
+				/>
+			</div>
+			<AssistantSuggestionsSection />
 		</section>
 
 		<section class="as-section">
