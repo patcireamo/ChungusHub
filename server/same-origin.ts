@@ -24,22 +24,25 @@ function parse(url: string): URL | null {
 /**
  * The rule for a state-changing `/api/` call: it must come from a page on this exact origin.
  *
- * `Sec-Fetch-Site` is what answers it, because the browser computes it against the URL the
- * page actually asked for and the dev proxy cannot disturb that. Comparing `Origin` to `Host`
- * directly would refuse every request in dev: the proxy rewrites `Host` to the Bun port
- * (`changeOrigin`) and forwards `Origin` still pointing at Vite's. That comparison is the
- * fallback for a browser too old to send the header, and it is exact, port included.
+ * `Sec-Fetch-Site` answers it when present: the browser computes it against the URL the page
+ * asked for and no proxy can disturb that. Browsers send it only to HTTPS and to localhost, so
+ * a phone on a plain-HTTP LAN address never carries it and the rule there is an exact
+ * `Origin` comparison, port included. Behind the dev proxy `Host` has been rewritten to the
+ * Bun port (`changeOrigin`) and the page's own host rides `X-Forwarded-Host`; that header is
+ * read only when the caller says the proxy is trusted (the socket peer is loopback, the same
+ * condition `X-Forwarded-For` is trusted under), or a remote client could pass this gate by
+ * naming a host of its choosing.
  *
  * Neither header means the caller is not a browser: there is nothing ambient to confuse, so
  * there is nothing to refuse. A present but opaque `Origin` (a sandboxed frame sends the
  * literal `null`) parses to nothing and matches nothing.
  */
-export function fromOurOwnOrigin(headers: Headers): boolean {
+export function fromOurOwnOrigin(headers: Headers, proxyTrusted = false): boolean {
 	const site = headers.get('sec-fetch-site');
 	if (site !== null) return site === 'same-origin';
 	const origin = headers.get('origin');
 	if (origin === null) return true;
-	const host = headers.get('host');
+	const host = (proxyTrusted ? headers.get('x-forwarded-host') : null) ?? headers.get('host');
 	return !!host && parse(origin)?.host === host;
 }
 

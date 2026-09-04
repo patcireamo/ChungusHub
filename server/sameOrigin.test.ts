@@ -6,10 +6,10 @@
  * guessable address on that same machine and the browser attaches whatever it holds for it.
  *
  * The two rules differ in one thing only, and the dev proxy is why. `/api/` goes through it,
- * which rewrites `Host` to the Bun port and leaves `Origin` on Vite's, so `Sec-Fetch-Site` is
- * the only header that still answers truthfully there. The socket skips the proxy and lands
- * on the Bun port from a page served on another one, so it is legitimately cross-origin and
- * can ask for no more than the same host.
+ * which rewrites `Host` to the Bun port and leaves `Origin` on Vite's, so what answers there
+ * is `Sec-Fetch-Site` when the browser sent one and the proxied host otherwise. The socket
+ * skips the proxy and lands on the Bun port from a page served on another one, so it is
+ * legitimately cross-origin and can ask for no more than the same host.
  */
 import { describe, test, expect } from 'bun:test';
 import { fromOurOwnHost, fromOurOwnOrigin, hostnameEntry, isKnownHost } from './same-origin';
@@ -45,13 +45,35 @@ describe('fromOurOwnOrigin: what may change something over /api/', () => {
 		).toBe(true);
 	});
 
-	test('a browser too old to send the header falls back to an exact origin', () => {
+	// Browsers send Fetch Metadata only to HTTPS and localhost, so a phone on a plain-HTTP LAN
+	// address always arrives here, and the comparison has to be exact.
+	test('no Sec-Fetch-Site means an exact origin', () => {
 		expect(fromOurOwnOrigin(headers({ origin: `http://${OURS}` }))).toBe(true);
 		expect(fromOurOwnOrigin(headers({ origin: `https://${OURS}` }))).toBe(true);
 		expect(fromOurOwnOrigin(headers({ origin: `HTTP://${OURS.toUpperCase()}` }))).toBe(true);
 		expect(fromOurOwnOrigin(headers({ origin: 'http://app.local:1420' }))).toBe(false);
 		expect(fromOurOwnOrigin(headers({ origin: 'http://app.local' }))).toBe(false);
 		expect(fromOurOwnOrigin(headers({ origin: 'http://app.local.evil.example' }))).toBe(false);
+	});
+
+	// The phone in dev: no Sec-Fetch-Site, Host rewritten by the proxy, the page's own host in
+	// X-Forwarded-Host. That header is only believed when the caller vouches for the proxy.
+	test('behind a trusted proxy the forwarded host is the one compared', () => {
+		const phone = new Headers({
+			host: 'localhost:4242',
+			origin: 'http://192.168.1.5:1420',
+			'x-forwarded-host': '192.168.1.5:1420'
+		});
+		expect(fromOurOwnOrigin(phone, true)).toBe(true);
+		expect(fromOurOwnOrigin(phone)).toBe(false);
+		const forged = new Headers({
+			host: 'localhost:4242',
+			origin: 'http://evil.example',
+			'x-forwarded-host': '192.168.1.5:1420'
+		});
+		expect(fromOurOwnOrigin(forged, true)).toBe(false);
+		// A trusted peer that forwarded no host is a browser on the machine itself.
+		expect(fromOurOwnOrigin(headers({ origin: `http://${OURS}` }), true)).toBe(true);
 	});
 
 	// A sandboxed frame is the shape an injected iframe takes, and it sends the literal string.

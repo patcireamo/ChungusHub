@@ -187,6 +187,19 @@ describe('the cross-site gate', () => {
 		expect((await exchange('POST', '/api/rpc/db', { ...ours(), ...anotherSite }, '{}')).status).toBe(403);
 	});
 
+	// A LAN phone through the dev proxy: plain HTTP carries no Sec-Fetch-Site, Host is the Bun
+	// port, and the page's own host rides X-Forwarded-Host from the loopback peer.
+	test('a phone behind the dev proxy reaches the bridge', async () => {
+		const proxied = { Host: `localhost:${port}`, Origin: 'http://192.168.1.5:1420' };
+		const call = JSON.stringify({ method: 'nope', args: [] });
+		const reached = await exchange('POST', '/api/rpc/db', { ...proxied, 'X-Forwarded-Host': '192.168.1.5:1420' }, call);
+		expect(reached.status).toBe(500);
+		expect(reached.body).toContain('Unknown db method');
+		const bare = await exchange('POST', '/api/rpc/db', proxied, call);
+		expect(bare.status).toBe(403);
+		expect(bare.body).toContain('another site');
+	});
+
 	test('a read from another site is answered, since that caller cannot read it', async () => {
 		expect((await exchange('GET', '/api/config', { ...ours(), ...anotherSite })).status).toBe(200);
 	});

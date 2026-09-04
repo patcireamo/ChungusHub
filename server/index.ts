@@ -1942,7 +1942,7 @@ function serve(hostname: string) {
 				path.startsWith('/api/') &&
 				req.method !== 'GET' &&
 				req.method !== 'HEAD' &&
-				!fromOurOwnOrigin(req.headers)
+				!fromOurOwnOrigin(req.headers, isLoopback(socketIp))
 			) {
 				return json({ error: 'This request came from another site.' }, 403);
 			}
