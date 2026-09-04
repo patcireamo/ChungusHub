@@ -481,9 +481,13 @@ class AssistantSessionStore {
 		else await db.deleteSetting(ACTIVE_TAB_KEY);
 	}
 
-	/** Opens a brand-new session in a fresh tab and focuses it. Whatever was composed with no
-	 *  tab open moves in with it, so pressing New session never leaves a message behind. */
+	/** Opens a brand-new session in a fresh tab and focuses it. A session opened while the
+	 *  composer had no tab to write into is the one the draft slot was filled for, so it takes
+	 *  the slot with it and pressing New session never leaves a message behind. One opened
+	 *  BESIDE an existing tab is not: it must not inherit text parked before some other tab
+	 *  was opened, which the user has not seen since. */
 	async newSession(): Promise<string> {
+		const inheritsDraft = this.activeTabId === null;
 		const now = Date.now();
 		const session: AssistantSession = { id: crypto.randomUUID(), title: 'New session', createdAt: now, updatedAt: now };
 		await db.insertAssistantSession(session);
@@ -492,7 +496,7 @@ class AssistantSessionStore {
 		this.runtime[session.id] = emptyRuntime();
 		this.openTabIds = [...this.openTabIds, session.id];
 		this.activeTabId = session.id;
-		this.adoptDraft(session.id);
+		if (inheritsDraft) this.adoptDraft(session.id);
 		await this.persistTabs();
 		return session.id;
 	}

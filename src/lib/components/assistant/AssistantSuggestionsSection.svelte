@@ -211,10 +211,6 @@
 		border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
 	}
 
-	.sug-input:disabled {
-		opacity: 0.6;
-	}
-
 	.sug-actions {
 		display: flex;
 		flex-shrink: 0;

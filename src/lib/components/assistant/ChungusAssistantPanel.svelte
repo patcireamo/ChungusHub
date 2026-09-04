@@ -938,7 +938,11 @@
 		   whole of it, and anything past that is reached inside the box. The smaller of this
 		   and the room the panel has left is what the list gets. */
 		max-height: 23rem;
-		min-height: 0;
+		/* Two rows, and this floor is load-bearing: the list is the only child allowed to give,
+		   so at the panel's minimum height a floor of zero would squeeze it out of existence and
+		   leave a Show more button opening nothing. Below the floor the block simply outgrows the
+		   panel and the panel scrolls, which is the honest way to run out of room. */
+		min-height: 4.5rem;
 		overflow-y: auto;
 		/* The rows are inset from both edges instead of the track being reserved (.panel-scroll,
 		   scrollbar-gutter). Where the OS hides scrollbars until they are used, the bar is an
