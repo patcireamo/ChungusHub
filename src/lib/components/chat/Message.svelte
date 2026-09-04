@@ -671,7 +671,7 @@
 					<div class="message-toolbar-shell {isUser ? 'message-toolbar-shell-user' : 'message-toolbar-shell-assistant'}">
 						<div class="message-toolbar {isUser ? 'justify-end' : 'justify-start'}">
 							<div
-								class="relative message-actions-slot"
+								class="message-actions-slot"
 								class:message-actions-visible={showActions || cursored || showDeleteMenu || showRegenerateMenu}
 							>
 								<MessageActions
@@ -705,7 +705,7 @@
 									></div>
 									<div
 										bind:this={deleteMenuElement}
-										class="absolute top-full mt-2 {isUser ? 'right-0' : 'left-0'} w-72 max-w-[calc(100vw-2rem)] surface-float rounded-[var(--radius-lg)] overflow-hidden z-20 slide-up"
+										class="message-menu absolute top-full mt-2 w-72 max-w-[calc(100vw-2rem)] surface-float rounded-[var(--radius-lg)] overflow-hidden z-20 slide-up"
 										style="box-shadow: var(--shadow-md);"
 									>
 										{#if confirmingDelete}
@@ -801,7 +801,7 @@
 									></div>
 									<div
 										bind:this={regenerateMenuElement}
-										class="absolute top-full mt-2 {isUser ? 'right-0' : 'left-0'} w-72 max-w-[calc(100vw-2rem)] surface-float rounded-[var(--radius-lg)] overflow-hidden z-20 slide-up"
+										class="message-menu absolute top-full mt-2 w-72 max-w-[calc(100vw-2rem)] surface-float rounded-[var(--radius-lg)] overflow-hidden z-20 slide-up"
 										style="box-shadow: var(--shadow-md);"
 									>
 										{#if confirmingReplace}
@@ -1221,6 +1221,13 @@
 	.message-toolbar-shell {
 		margin-top: 0.2rem;
 		display: flex;
+		/* Anchor for the delete and regenerate menus. It has to be the shell and
+		   not the actions slot: the shell spans the whole message column, while
+		   the slot is a small box that slides along the toolbar as the branch
+		   pager comes and goes. A menu pinned to the slot's edge therefore hangs
+		   off the screen on a narrow viewport, in whichever direction the slot
+		   happens to be nearest -- which is what this anchor exists to stop. */
+		position: relative;
 	}
 
 	.message-toolbar-shell-user {
@@ -1315,6 +1322,18 @@
 		order: 2;
 	}
 
+	/* Which column edge each menu opens from. It follows whichever edge the
+	   toolbar was packed against, not the speaker: driving it from the same
+	   selectors that set justify-content is what keeps the two in step, so a
+	   chat style that moves the toolbar moves the menu with it in one place. */
+	.message-toolbar-shell-user .message-menu {
+		right: 0;
+	}
+
+	.message-toolbar-shell-assistant .message-menu {
+		left: 0;
+	}
+
 	@media (max-width: 900px) {
 		.message-row {
 			padding-inline: 0.45rem;
@@ -1384,6 +1403,12 @@
 		order: 2;
 	}
 
+	/* Toolbar is left-packed in this style, so the menu opens rightwards. */
+	:global([data-chat-style='flat']) .message-toolbar-shell-user .message-menu {
+		left: 0;
+		right: auto;
+	}
+
 	/* ===== Chat style: Portraits =====
 	   Forum-log look: every turn is a full-width flat card, both roles aligned
 	   left. The card is a two-column flex row: the portrait is the left column,
@@ -1440,6 +1465,12 @@
 
 	:global([data-chat-style='portrait']) .message-toolbar-shell-user .message-actions-slot {
 		order: 2;
+	}
+
+	/* Toolbar is left-packed in this style, so the menu opens rightwards. */
+	:global([data-chat-style='portrait']) .message-toolbar-shell-user .message-menu {
+		left: 0;
+		right: auto;
 	}
 
 	:global([data-chat-style='portrait']) .message-toolbar {
@@ -1501,6 +1532,12 @@
 
 	:global([data-chat-style='manuscript']) .message-toolbar-shell-user .message-actions-slot {
 		order: 2;
+	}
+
+	/* Toolbar is left-packed in this style, so the menu opens rightwards. */
+	:global([data-chat-style='manuscript']) .message-toolbar-shell-user .message-menu {
+		left: 0;
+		right: auto;
 	}
 
 	:global([data-chat-style='manuscript']) .message-toolbar {
