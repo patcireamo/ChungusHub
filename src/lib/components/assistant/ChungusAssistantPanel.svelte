@@ -949,10 +949,12 @@
 		max-height: 23rem;
 		min-height: 0;
 		overflow-y: auto;
-		/* Not .panel-scroll: that reserves the bar's track on one edge, which is right for a
-		   panel body and wrong here, where the box is centred and a one-sided gutter walks the
-		   rows off the centre line while the bar crowds their right edge. */
-		scrollbar-gutter: stable both-edges;
+		/* The rows are inset from both edges instead of the track being reserved (.panel-scroll,
+		   scrollbar-gutter). Where the OS hides scrollbars until they are used, the bar is an
+		   OVERLAY: it reserves nothing, gutters do nothing, and it paints straight over the last
+		   row. Padding is the one inset both kinds of bar respect, and equal on both edges keeps
+		   the box on the centre line the mascot and the title share. */
+		padding: 0 0.65rem;
 		overscroll-behavior: contain;
 	}
 
