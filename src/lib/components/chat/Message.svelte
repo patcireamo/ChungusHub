@@ -705,7 +705,7 @@
 									></div>
 									<div
 										bind:this={deleteMenuElement}
-										class="message-menu absolute top-full mt-2 w-72 max-w-[calc(100vw-2rem)] surface-float rounded-[var(--radius-lg)] overflow-hidden z-20 slide-up"
+										class="message-menu absolute top-full mt-2 w-72 surface-float rounded-[var(--radius-lg)] overflow-hidden z-20 slide-up"
 										style="box-shadow: var(--shadow-md);"
 									>
 										{#if confirmingDelete}
@@ -801,7 +801,7 @@
 									></div>
 									<div
 										bind:this={regenerateMenuElement}
-										class="message-menu absolute top-full mt-2 w-72 max-w-[calc(100vw-2rem)] surface-float rounded-[var(--radius-lg)] overflow-hidden z-20 slide-up"
+										class="message-menu absolute top-full mt-2 w-72 surface-float rounded-[var(--radius-lg)] overflow-hidden z-20 slide-up"
 										style="box-shadow: var(--shadow-md);"
 									>
 										{#if confirmingReplace}
@@ -1320,6 +1320,13 @@
 	   take the inner end of the line so they never leave a blank indent. */
 	.message-toolbar-shell-assistant .message-actions-slot {
 		order: 2;
+	}
+
+	/* The cap is the column, not the viewport: the styles that draw a portrait
+	   column take its width off the message column, so on a phone the column is
+	   narrower than the menu's 18rem and a viewport-sized cap never engages. */
+	.message-menu {
+		max-width: 100%;
 	}
 
 	/* Which column edge each menu opens from. It follows whichever edge the
