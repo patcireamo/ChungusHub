@@ -59,19 +59,19 @@
 	let activeId = $derived(store.activeTabId);
 	let messages = $derived(store.activeMessages);
 	let runtime = $derived(store.activeRuntime);
-	// Composer state (draft + staged uploads) lives in the STORE per session, so
-	// minimizing the widget (which unmounts this panel) keeps a half-typed message
-	// and its uploaded files instead of silently destroying them.
-	let composer = $derived(activeId ? store.composer[activeId] : undefined);
-	// With no session open yet the draft lives here, until the first send creates one:
-	// typing must never require a "New session" click first.
-	let orphanDraft = $state('');
-	let draft = $derived(activeId ? (composer?.draft ?? '') : orphanDraft);
+	// Everything the composer holds is keyed by tab, and with no tab open that key is the
+	// store's draft slot: the whole feature row therefore works before any session exists,
+	// and the first send or upload mints the session that inherits it. State lives in the
+	// STORE, so minimizing the widget (which unmounts this panel) keeps a half-typed
+	// message and its uploads instead of silently destroying them.
+	let composerKey = $derived(store.composerKey);
+	let composer = $derived(store.composer[composerKey]);
+	let draft = $derived(composer?.draft ?? '');
 	let pendingImages = $derived(composer?.images ?? []);
 	/** Files uploaded against this tab but not yet sent. Unlike an image these are real
 	 *  server rows already, so the store mirrors the server's list rather than holding
-	 *  pending uploads of its own. */
-	let stagedFiles = $derived(activeId ? store.stagedFiles(activeId) : []);
+	 *  pending uploads of its own. The draft slot has none: an upload mints its session. */
+	let stagedFiles = $derived(store.stagedFiles(composerKey));
 	let canSend = $derived(
 		(draft.trim().length > 0 || pendingImages.length > 0 || stagedFiles.length > 0) &&
 			!runtime.busy &&
@@ -132,8 +132,8 @@
 		return null;
 	});
 
-	let autoOff = $derived(activeId && autoAttachment ? store.autoMuted(activeId, attachmentKey(autoAttachment)) : false);
-	let manualAttachments = $derived(activeId ? store.manualAttachments(activeId) : []);
+	let autoOff = $derived(autoAttachment ? store.autoMuted(composerKey, attachmentKey(autoAttachment)) : false);
+	let manualAttachments = $derived(store.manualAttachments(composerKey));
 
 	// What a send carries: the enabled auto item (a pointer) + hand-added items (asking for
 	// full: the server resolves what each actually gets and stamps it on the message).
@@ -146,15 +146,15 @@
 	]);
 
 	function toggleAuto() {
-		if (activeId && autoAttachment) store.toggleAutoAttach(activeId, attachmentKey(autoAttachment));
+		if (autoAttachment) store.toggleAutoAttach(composerKey, attachmentKey(autoAttachment));
 	}
 
 	function removeManual(att: AssistantAttachment) {
-		if (activeId) store.removeAttachment(activeId, att);
+		store.removeAttachment(composerKey, att);
 	}
 
 	function addAttachment(att: AssistantAttachment) {
-		if (activeId) store.addAttachment(activeId, att);
+		store.addAttachment(composerKey, att);
 	}
 
 	// ===== Scroll follow =====
@@ -247,7 +247,7 @@
 		// Pin the session at entry: a slow upload must land in the tab it started on,
 		// not whichever tab is active when it finishes. Attaching with no session open
 		// starts one, the same lazy contract as send().
-		const sessionId = activeId ?? (await store.newSession());
+		const sessionId = activeId ?? (await store.ensureSession());
 		uploadingImages += images.length;
 		for (const file of images) {
 			try {
@@ -287,7 +287,7 @@
 		}
 		if (!usable.length) return;
 		// Pinned at entry like an image upload: a slow one must land in the tab it started on.
-		const sessionId = activeId ?? (await store.newSession());
+		const sessionId = activeId ?? (await store.ensureSession());
 		uploadingFiles += usable.length;
 		for (const file of usable) {
 			try {
@@ -302,9 +302,8 @@
 
 	/** Throws away a staged file, bytes and all. Only reachable before the send. */
 	async function discardFile(id: string): Promise<void> {
-		if (!activeId) return;
 		try {
-			await store.discardStagedFile(activeId, id);
+			await store.discardStagedFile(composerKey, id);
 		} catch (error) {
 			toastStore.failed('remove this file', error);
 		}
@@ -356,8 +355,7 @@
 	}
 
 	function removePendingImage(path: string) {
-		if (!activeId) return;
-		const slot = store.composerFor(activeId);
+		const slot = store.composerFor(composerKey);
 		slot.images = slot.images.filter((img) => img.path !== path);
 		// The upload is already on the server; drop the file too so abandoned
 		// attachments don't pile up in images/chat/.
@@ -367,12 +365,9 @@
 	async function send() {
 		const text = draft.trim();
 		if (!canSend) return;
-		// The first send with no session open creates one on the fly.
-		let sessionId = activeId;
-		if (!sessionId) {
-			sessionId = await store.newSession();
-			orphanDraft = '';
-		}
+		// The first send with no session open creates one on the fly, and it inherits the
+		// draft slot, so what is read back below is what was composed here.
+		const sessionId = activeId ?? (await store.ensureSession());
 		const images = pendingImages.map((img) => img.path);
 		// Read before the store rebinds them to this turn: after that they are no longer staged.
 		const files = store.stagedFiles(sessionId).map((f) => f.id);
@@ -393,8 +388,7 @@
 	);
 
 	function useExample(text: string) {
-		if (activeId) store.composerFor(activeId).draft = text;
-		else orphanDraft = text;
+		store.composerFor(composerKey).draft = text;
 		composerEl?.focus();
 	}
 
@@ -670,10 +664,7 @@
 				bind:this={composerEl}
 				use:autoResize={{ maxHeight: 160, value: draft, grip: false }}
 				value={draft}
-				oninput={(e) => {
-					if (activeId) store.composerFor(activeId).draft = e.currentTarget.value;
-					else orphanDraft = e.currentTarget.value;
-				}}
+				oninput={(e) => (store.composerFor(composerKey).draft = e.currentTarget.value)}
 				onkeydown={handleKeydown}
 				onpaste={handlePaste}
 				rows="1"
@@ -692,24 +683,24 @@
 			{/if}
 		</div>
 
-		{#if activeId}
-			<AssistantAttachBar
-				{autoAttachment}
-				{autoOff}
-				{manualAttachments}
-				{stagedFiles}
-				busy={runtime.busy}
-				approvalMode={store.approvalMode(activeId)}
-				onToggleAuto={toggleAuto}
-				onAdd={addAttachment}
-				onRemoveManual={removeManual}
-				onFiles={(files) => void attachImageFiles(files)}
-				onDocuments={(files) => void attachDocuments(files)}
-				onRemoveFile={(id) => void discardFile(id)}
-				onOpenFile={(file) => (viewingFile = file)}
-				onApprovalMode={(mode) => activeId && store.setApprovalMode(activeId, mode)}
-			/>
-		{/if}
+		<!-- Never gated on there being a session: everything here shapes the NEXT turn, and the
+		     turn that has not been sent yet is exactly the one composed with no session open. -->
+		<AssistantAttachBar
+			{autoAttachment}
+			{autoOff}
+			{manualAttachments}
+			{stagedFiles}
+			busy={runtime.busy}
+			approvalMode={store.approvalMode(composerKey)}
+			onToggleAuto={toggleAuto}
+			onAdd={addAttachment}
+			onRemoveManual={removeManual}
+			onFiles={(files) => void attachImageFiles(files)}
+			onDocuments={(files) => void attachDocuments(files)}
+			onRemoveFile={(id) => void discardFile(id)}
+			onOpenFile={(file) => (viewingFile = file)}
+			onApprovalMode={(mode) => store.setApprovalMode(composerKey, mode)}
+		/>
 	</div>
 	{/if}
 </div>

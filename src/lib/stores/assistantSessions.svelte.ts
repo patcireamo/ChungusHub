@@ -38,6 +38,9 @@ import { attachmentKey } from '$lib/types/assistant';
 const OPEN_TABS_KEY = 'assistantOpenTabs';
 const ACTIVE_TAB_KEY = 'assistantActiveTab';
 const APPROVAL_MODE_KEY = 'assistantApprovalMode';
+/** The composer's key while no tab is open. Not a uuid, so it can never be mistaken for a
+ *  session id, and it lives only in the memory-only per-tab maps. */
+const DRAFT_KEY = 'draft';
 
 function emptyRuntime(): AssistantSessionRuntime {
 	return { busy: false, steps: [], iteration: 0, running: [], pending: null };
@@ -88,6 +91,39 @@ class AssistantSessionStore {
 	composerFor(sessionId: string): { draft: string; images: { path: string; url: string }[] } {
 		this.composer[sessionId] ??= { draft: '', images: [] };
 		return this.composer[sessionId];
+	}
+
+	/**
+	 * Which key the composer writes into: the focused tab, or the DRAFT slot when no tab is
+	 * open. Everything the composer holds is keyed by tab (text, chips, approval mode), so
+	 * without this the whole feature row would have nowhere to put a choice made before the
+	 * first send and the panel would have to hide it, which is what made "New session" a step
+	 * the user had to take by hand. The slot is an ordinary entry in the same maps: it is
+	 * never a session, never a tab, and nothing persists it, so it costs no row until a send
+	 * or an upload mints one and `adoptDraft` hands it over.
+	 */
+	get composerKey(): string {
+		return this.activeTabId ?? DRAFT_KEY;
+	}
+
+	/** Moves whatever was composed with no tab open onto the session just made for it. A no-op
+	 *  once a tab is open, since nothing writes to the draft slot from then on. */
+	private adoptDraft(sessionId: string): void {
+		const draft = this.composer[DRAFT_KEY];
+		if (draft) {
+			this.composer[sessionId] = draft;
+			delete this.composer[DRAFT_KEY];
+		}
+		const ui = this.attachUi[DRAFT_KEY];
+		if (ui) {
+			this.attachUi[sessionId] = ui;
+			delete this.attachUi[DRAFT_KEY];
+		}
+		const mode = this.approvalModes[DRAFT_KEY];
+		if (mode) {
+			const { [DRAFT_KEY]: _dropped, ...rest } = this.approvalModes;
+			this.approvalModes = { ...rest, [sessionId]: mode };
+		}
 	}
 
 	/**
@@ -445,7 +481,8 @@ class AssistantSessionStore {
 		else await db.deleteSetting(ACTIVE_TAB_KEY);
 	}
 
-	/** Opens a brand-new session in a fresh tab and focuses it. */
+	/** Opens a brand-new session in a fresh tab and focuses it. Whatever was composed with no
+	 *  tab open moves in with it, so pressing New session never leaves a message behind. */
 	async newSession(): Promise<string> {
 		const now = Date.now();
 		const session: AssistantSession = { id: crypto.randomUUID(), title: 'New session', createdAt: now, updatedAt: now };
@@ -455,8 +492,30 @@ class AssistantSessionStore {
 		this.runtime[session.id] = emptyRuntime();
 		this.openTabIds = [...this.openTabIds, session.id];
 		this.activeTabId = session.id;
+		this.adoptDraft(session.id);
 		await this.persistTabs();
 		return session.id;
+	}
+
+	/**
+	 * The session the composer is about to write to, made real if it is still a draft. This is
+	 * the lazy contract the panel runs on: a message, a picture and a file can all be composed
+	 * before any session exists, and the first of them that has to reach the server mints one.
+	 *
+	 * The in-flight creation is shared, because those three entry points are reachable at the
+	 * same moment (a drop carrying a picture AND a file, Enter pressed while an upload runs)
+	 * and two of them racing would otherwise leave the user with two tabs, one of them holding
+	 * half of what they composed.
+	 */
+	private creating: Promise<string> | null = null;
+	async ensureSession(): Promise<string> {
+		if (this.activeTabId) return this.activeTabId;
+		this.creating ??= this.newSession();
+		try {
+			return await this.creating;
+		} finally {
+			this.creating = null;
+		}
 	}
 
 	/** Re-checks whether `sessionId` is running on out-of-date settings. Server-side
