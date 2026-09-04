@@ -17,6 +17,10 @@ interface BrowseViewState {
 	/** List rows draw the entry's tags. Off by default: the strip costs the preview line
 	 *  its second row, which is a trade only the reader can make. */
 	listTags: boolean;
+	/** List rows draw the entry's portrait. On by default: the portrait is how a shelf of
+	 *  same-named characters is told apart, and an install that hid them by surprise would
+	 *  read as art that failed to load. */
+	listPortraits: boolean;
 }
 
 export const DEFAULTS: BrowseViewState = {
@@ -24,7 +28,8 @@ export const DEFAULTS: BrowseViewState = {
 	cardSize: 3,
 	sort: 'newest',
 	perPage: 50,
-	listTags: false
+	listTags: false,
+	listPortraits: true
 };
 
 const VIEW_MODES: ViewMode[] = ['grid', 'list', 'gallery'];
@@ -38,7 +43,9 @@ function normalize(raw: Partial<BrowseViewState> | null): BrowseViewState {
 	const sort = CHARACTER_SORT_OPTIONS.some((o) => o.id === raw?.sort) ? (raw!.sort as SortOption) : DEFAULTS.sort;
 	const perPage = PER_PAGE_OPTIONS.includes(raw?.perPage as number) ? (raw!.perPage as number) : DEFAULTS.perPage;
 	const listTags = typeof raw?.listTags === 'boolean' ? raw.listTags : DEFAULTS.listTags;
-	return { viewMode, cardSize, sort, perPage, listTags };
+	const listPortraits =
+		typeof raw?.listPortraits === 'boolean' ? raw.listPortraits : DEFAULTS.listPortraits;
+	return { viewMode, cardSize, sort, perPage, listTags, listPortraits };
 }
 
 class BrowseViewPrefs {
@@ -49,6 +56,7 @@ class BrowseViewPrefs {
 	sort = $state<SortOption>(DEFAULTS.sort);
 	perPage = $state<number>(DEFAULTS.perPage);
 	listTags = $state<boolean>(DEFAULTS.listTags);
+	listPortraits = $state<boolean>(DEFAULTS.listPortraits);
 
 	constructor(key: string) {
 		this.#key = key;
@@ -69,6 +77,7 @@ class BrowseViewPrefs {
 		this.sort = state.sort;
 		this.perPage = state.perPage;
 		this.listTags = state.listTags;
+		this.listPortraits = state.listPortraits;
 	}
 
 	setViewMode(mode: ViewMode): void {
@@ -96,13 +105,19 @@ class BrowseViewPrefs {
 		this.persist();
 	}
 
+	setListPortraits(listPortraits: boolean): void {
+		this.listPortraits = listPortraits;
+		this.persist();
+	}
+
 	private persist(): void {
 		writeSetting(this.#key, {
 			viewMode: this.viewMode,
 			cardSize: this.cardSize,
 			sort: this.sort,
 			perPage: this.perPage,
-			listTags: this.listTags
+			listTags: this.listTags,
+			listPortraits: this.listPortraits
 		} satisfies BrowseViewState);
 	}
 }

@@ -10,6 +10,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import BrowsePopover from './BrowsePopover.svelte';
 	import LibraryCompactCard from './LibraryCompactCard.svelte';
 	import LibraryGalleryCard from './LibraryGalleryCard.svelte';
@@ -87,6 +88,7 @@
 
 	// ---- View mode & card size. Persisted via the synced settings spine. ----
 	let viewMode = $derived(personasViewPrefs.viewMode);
+	let listPortraits = $derived(personasViewPrefs.listPortraits);
 
 	function setViewMode(mode: ViewMode) {
 		personasViewPrefs.setViewMode(mode);
@@ -357,6 +359,20 @@
 				</div>
 			</div>
 
+			{#if viewMode === 'list'}
+				<div class="brw-sec">
+					<div class="flex items-center justify-between gap-2">
+						<span class="brw-sec-title">Show Portraits</span>
+						<Toggle
+							size="sm"
+							checked={listPortraits}
+							onchange={(v) => personasViewPrefs.setListPortraits(v)}
+							label="Show portraits on each row"
+						/>
+					</div>
+				</div>
+			{/if}
+
 			{#if viewMode === 'grid'}
 				<div class="brw-sec">
 					<div class="brw-sec-head">
@@ -494,6 +510,7 @@
 						{deleteBlockedReason}
 							onToggleFavorite={handleToggleFavorite}
 							onConvert={(id) => (convertId = id)}
+							showPortrait={listPortraits}
 						/>
 					{/each}
 				</div>

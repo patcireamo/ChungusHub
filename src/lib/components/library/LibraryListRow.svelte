@@ -31,6 +31,8 @@
 		onTagClick?: (tag: string) => void;
 		/** The tag strip is opt-in per browse surface: it costs the preview line its second row. */
 		showTags?: boolean;
+		/** The portrait is what the row's height is; without it the row is its own content. */
+		showPortrait?: boolean;
 	}
 
 	let {
@@ -48,7 +50,8 @@
 		onExport,
 		onConvert,
 		onTagClick,
-		showTags = false
+		showTags = false,
+		showPortrait = true
 	}: Props = $props();
 
 	function handleRowClick() {
@@ -76,7 +79,7 @@
 	});
 
 	$effect(() => {
-		if (!isVisible) return;
+		if (!isVisible || !showPortrait) return;
 		const imageUrl = entry.identity.imageUrl;
 		if (imageUrl) {
 			imageService.getThumbnailUrl(imageUrl).then((url) => {
@@ -98,9 +101,18 @@
 			: entry.data.traits.creatorNotes || ''
 	);
 	let tags = $derived(showTags ? (entry.identity.tags ?? []) : []);
+	// A row with neither a portrait nor a tag strip is the compact one: a name and one
+	// preview line. Keeping the second line there would give back most of the height that
+	// dropping the 60x80 frame just bought, which is the whole point of hiding it.
+	let compact = $derived(!showPortrait && !showTags);
 	// The row's height is the portrait's, and tags cost a line the preview was using.
 	// Giving one back keeps every row the same height, tagged or not.
-	let notesClamp = $derived(tags.length > 0 ? 'line-clamp-1' : 'line-clamp-2');
+	let notesClamp = $derived(compact || tags.length > 0 ? 'line-clamp-1' : 'line-clamp-2');
+	// The floor every row is held to from below. 5rem is the frame's height; 3rem is a name
+	// line plus one preview line, which is the tallest the compact row gets. With the tag
+	// strip on but no portrait the frame's number still holds: a chip is sized by the user's
+	// own line height, so nothing smaller covers every setting of it.
+	let contentFloor = $derived(compact ? 'min-h-12' : 'min-h-20');
 
 	function stop(e: Event) {
 		e.stopPropagation();
@@ -116,38 +128,48 @@
 	aria-pressed={selectionMode ? selected : undefined}
 	class="group flex items-center gap-3 px-4 py-3 rounded-[var(--radius-md)] cursor-pointer transition-colors {selected ? 'bg-accent/10 hover:bg-accent/15' : 'hover:bg-bg-tertiary/55'}"
 >
-	<!-- Portrait -->
-	<div class="relative w-[60px] h-20 shrink-0 rounded-[var(--radius-md)] bg-bg-tertiary overflow-hidden">
-		{#if resolvedImageUrl}
-			<img
-				src={resolvedImageUrl}
-				alt={name}
-				class="w-full h-full object-cover"
-				style={portraitFocusStyle(entry.identity.portraitFocus)}
-			/>
-		{:else}
-			<div class="w-full h-full flex items-center justify-center text-text-muted">
-				<Icon name="user" class="w-7 h-7" strokeWidth={1} />
-			</div>
-		{/if}
-		{#if selectionMode}
-			<!-- Selection checkbox; the whole row toggles, this is just the indicator. -->
-			<div class="absolute inset-0 flex items-center justify-center bg-black/35">
-				<div
-					class="w-6 h-6 rounded-[var(--radius-md)] flex items-center justify-center border-2 transition-colors
-						   {selected ? 'bg-accent border-accent text-white' : 'bg-black/40 border-white/80 text-transparent'}"
-				>
-					<Icon name="check" class="w-4 h-4" />
+	<!-- Portrait. Hidden, the selection checkbox has no frame to sit over, so it takes the
+	     portrait's place as a box of its own rather than leaving the row with no mark. -->
+	{#if showPortrait}
+		<div class="relative w-[60px] h-20 shrink-0 rounded-[var(--radius-md)] bg-bg-tertiary overflow-hidden">
+			{#if resolvedImageUrl}
+				<img
+					src={resolvedImageUrl}
+					alt={name}
+					class="w-full h-full object-cover"
+					style={portraitFocusStyle(entry.identity.portraitFocus)}
+				/>
+			{:else}
+				<div class="w-full h-full flex items-center justify-center text-text-muted">
+					<Icon name="user" class="w-7 h-7" strokeWidth={1} />
 				</div>
-			</div>
-		{/if}
-	</div>
+			{/if}
+			{#if selectionMode}
+				<!-- Selection checkbox; the whole row toggles, this is just the indicator. -->
+				<div class="absolute inset-0 flex items-center justify-center bg-black/35">
+					<div
+						class="w-6 h-6 rounded-[var(--radius-md)] flex items-center justify-center border-2 transition-colors
+							   {selected ? 'bg-accent border-accent text-white' : 'bg-black/40 border-white/80 text-transparent'}"
+					>
+						<Icon name="check" class="w-4 h-4" />
+					</div>
+				</div>
+			{/if}
+		</div>
+	{:else if selectionMode}
+		<div
+			class="shrink-0 w-5 h-5 rounded-[var(--radius-sm)] flex items-center justify-center border-2 transition-colors
+				   {selected ? 'bg-accent border-accent text-white' : 'bg-bg-tertiary border-text-muted text-transparent'}"
+		>
+			<Icon name="check" class="w-3.5 h-3.5" />
+		</div>
+	{/if}
 
-	<!-- Name + preview line. Held to the portrait's height (h-20 above) so the name starts
-	     at the same place in every row: centred, a short preview would sink it down the row
-	     and the list would have no line to be scanned by. The top padding is fixed rather
-	     than a share of what is left over, for the same reason: it must not read the content. -->
-	<div class="min-w-0 flex-1 min-h-20 pt-1">
+	<!-- Name + preview line. Held to a floor so the name starts at the same place in every
+	     row: centred, a short preview would sink it down the row and the list would have no
+	     line to be scanned by. The top padding is fixed rather than a share of what is left
+	     over, for the same reason: it must not read the content. -->
+	<div class="min-w-0 flex-1 {contentFloor} pt-1">
 		<span class="flex items-center gap-1.5 min-w-0">
 			<span class="font-ui font-medium text-sm text-text-primary truncate">{name}</span>
 			{#if active}

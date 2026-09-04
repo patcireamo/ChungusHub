@@ -28,7 +28,7 @@ describe('normalizeLorebookViewState: the bare string every old install holds', 
 		}
 	});
 
-	test('a bare string leaves the three choices it predates on their defaults', () => {
+	test('a bare string leaves the four choices it predates on their defaults', () => {
 		expect(normalizeLorebookViewState('updated')).toEqual({
 			...LOREBOOK_VIEW_DEFAULTS,
 			order: 'updated'
@@ -51,12 +51,30 @@ describe('normalizeLorebookViewState: everything else the key can hold', () => {
 
 	test('a blob is read key by key, so one bad value cannot cost the others', () => {
 		expect(
-			normalizeLorebookViewState({ order: 'z-a', viewMode: 'carousel', cardSize: 99, perPage: 7 })
+			normalizeLorebookViewState({
+				order: 'z-a',
+				viewMode: 'carousel',
+				cardSize: 99,
+				perPage: 7,
+				listCovers: 'yes'
+			})
 		).toEqual({ ...LOREBOOK_VIEW_DEFAULTS, order: 'z-a' });
 	});
 
+	// Covers stay on until somebody turns them off: an install that hid its art on upgrade
+	// would read as a shelf of pictures that failed to load.
+	test('a blob that predates the covers switch reads back with covers on', () => {
+		expect(normalizeLorebookViewState({ order: 'z-a', viewMode: 'list' }).listCovers).toBe(true);
+	});
+
 	test('a whole blob survives the trip it is written and read through', () => {
-		const stored = { order: 'oldest', viewMode: 'gallery', cardSize: 5, perPage: 25 } as const;
+		const stored = {
+			order: 'oldest',
+			viewMode: 'gallery',
+			cardSize: 5,
+			perPage: 25,
+			listCovers: false
+		} as const;
 		expect(normalizeLorebookViewState(JSON.parse(JSON.stringify(stored)))).toEqual(stored);
 	});
 });

@@ -56,6 +56,7 @@
 	// View mode (grid cards vs. detail list). Persisted via the synced settings spine.
 	let viewMode = $derived(libraryViewPrefs.viewMode);
 	let listTags = $derived(libraryViewPrefs.listTags);
+	let listPortraits = $derived(libraryViewPrefs.listPortraits);
 
 	function setViewMode(mode: ViewMode) {
 		libraryViewPrefs.setViewMode(mode);
@@ -827,7 +828,16 @@
 				</div>
 
 				{#if viewMode === 'list'}
-					<div class="brw-sec">
+					<div class="brw-sec space-y-2.5">
+						<div class="flex items-center justify-between gap-2">
+							<span class="brw-sec-title">Show Portraits</span>
+							<Toggle
+								size="sm"
+								checked={listPortraits}
+								onchange={(v) => libraryViewPrefs.setListPortraits(v)}
+								label="Show portraits on each row"
+							/>
+						</div>
 						<div class="flex items-center justify-between gap-2">
 							<span class="brw-sec-title">Show Tags</span>
 							<Toggle
@@ -1220,6 +1230,7 @@
 							onConvert={(id) => (convertId = id)}
 							onTagClick={toggleTag}
 							showTags={listTags}
+							showPortrait={listPortraits}
 						/>
 					{/each}
 				</div>

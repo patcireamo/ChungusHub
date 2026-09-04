@@ -13,6 +13,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import { holdMsForBlast } from '$lib/components/ui/HoldToConfirmButton.svelte';
 	import BrowsePopover from '$lib/components/library/BrowsePopover.svelte';
 	import LibraryPager from '$lib/components/library/LibraryPager.svelte';
@@ -472,6 +473,20 @@
 					</div>
 				</div>
 
+				{#if lorebookViewPrefs.viewMode === 'list'}
+					<div class="brw-sec">
+						<div class="flex items-center justify-between gap-2">
+							<span class="brw-sec-title">Show Covers</span>
+							<Toggle
+								size="sm"
+								checked={lorebookViewPrefs.listCovers}
+								onchange={(v) => lorebookViewPrefs.setListCovers(v)}
+								label="Show covers on each row"
+							/>
+						</div>
+					</div>
+				{/if}
+
 				{#if lorebookViewPrefs.viewMode === 'grid'}
 					<div class="brw-sec">
 						<div class="brw-sec-head"><span class="brw-sec-title">Card size</span></div>
@@ -787,6 +802,7 @@
 						{selectionMode}
 						selected={selectedIds.has(book.id)}
 						onToggleSelect={toggleSelect}
+						showCover={lorebookViewPrefs.listCovers}
 						onOpen={open}
 						onExport={exportOne}
 						onDelete={(id) => (deleteId = id)}

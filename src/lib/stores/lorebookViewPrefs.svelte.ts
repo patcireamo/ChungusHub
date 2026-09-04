@@ -1,10 +1,10 @@
 /**
- * How the lorebook shelf is drawn and ordered: layout, card size, results per page, and the
- * display order.
+ * How the lorebook shelf is drawn and ordered: layout, card size, results per page, whether a
+ * shelf row draws its cover, and the display order.
  *
  * The ORDER is one choice for the whole app, not one per list: the Library's Lorebooks shelf
  * and the link picker in the character editor are two views of the same shelf, and picking an
- * order twice would cost exactly the work this exists to save. The other three belong to the
+ * order twice would cost exactly the work this exists to save. The other four belong to the
  * shelf alone, since the picker is a popover with one shape.
  *
  * Rides the settings spine like the browse-view and sprite prefs, so it survives a reload and
@@ -40,6 +40,9 @@ interface LorebookViewState {
 	viewMode: ViewMode;
 	cardSize: number;
 	perPage: number;
+	/** Shelf rows draw the book's cover. On by default: hiding art nobody asked to hide reads
+	 *  as a picture that failed to load, and the reader who wants the density can say so. */
+	listCovers: boolean;
 }
 
 /** List, because a shelf is scanned by name far more often than it is browsed by cover, and
@@ -48,7 +51,8 @@ const DEFAULTS: LorebookViewState = {
 	order: 'a-z',
 	viewMode: 'list',
 	cardSize: 3,
-	perPage: 50
+	perPage: 50,
+	listCovers: true
 };
 
 export function normalizeLorebookViewState(raw: unknown): LorebookViewState {
@@ -63,7 +67,8 @@ export function normalizeLorebookViewState(raw: unknown): LorebookViewState {
 			typeof blob.cardSize === 'number' && blob.cardSize >= 1 && blob.cardSize <= 5
 				? blob.cardSize
 				: DEFAULTS.cardSize,
-		perPage: PER_PAGE_OPTIONS.includes(blob.perPage as number) ? (blob.perPage as number) : DEFAULTS.perPage
+		perPage: PER_PAGE_OPTIONS.includes(blob.perPage as number) ? (blob.perPage as number) : DEFAULTS.perPage,
+		listCovers: typeof blob.listCovers === 'boolean' ? blob.listCovers : DEFAULTS.listCovers
 	};
 }
 
@@ -72,6 +77,7 @@ class LorebookViewPrefs {
 	viewMode = $state<ViewMode>(DEFAULTS.viewMode);
 	cardSize = $state<number>(DEFAULTS.cardSize);
 	perPage = $state<number>(DEFAULTS.perPage);
+	listCovers = $state<boolean>(DEFAULTS.listCovers);
 
 	async initialize(): Promise<void> {
 		await this.syncReload();
@@ -84,6 +90,7 @@ class LorebookViewPrefs {
 		this.viewMode = state.viewMode;
 		this.cardSize = state.cardSize;
 		this.perPage = state.perPage;
+		this.listCovers = state.listCovers;
 	}
 
 	setOrder(order: LorebookSortOrder): void {
@@ -106,12 +113,18 @@ class LorebookViewPrefs {
 		this.persist();
 	}
 
+	setListCovers(listCovers: boolean): void {
+		this.listCovers = listCovers;
+		this.persist();
+	}
+
 	private persist(): void {
 		writeSetting(SETTINGS_KEY, {
 			order: this.order,
 			viewMode: this.viewMode,
 			cardSize: this.cardSize,
-			perPage: this.perPage
+			perPage: this.perPage,
+			listCovers: this.listCovers
 		} satisfies LorebookViewState);
 	}
 }
