@@ -88,6 +88,20 @@ export interface AssembleInput {
 	 *  continue it natively.
 	 *  `chatMessages` must NOT include the turn; pass the path up to its parent. */
 	continuation?: Message;
+	/** Corrections: the assistant turn being rewritten, and the filled instruction that says
+	 *  how. Same tail shape as `continuation` (see {@link actionTail}) and mutually exclusive
+	 *  with it, but the turn is sent as its STORED bytes rather than as an injected history
+	 *  turn: a correction's output replaces the row, so anything a prompt-scope regex rule or
+	 *  a macro expansion rewrote on the way out would be silently baked into storage on the
+	 *  way back. What is sent is exactly what will be overwritten.
+	 *  `instruction` arrives already filled (the engine substitutes {{instruction}} into the
+	 *  authored template, the same call-site substitution as the opening scene's {{idea}});
+	 *  the global macros in it are expanded here like any other instruction. It must not be
+	 *  blank: an empty instruction leaves the assistant turn closing the prompt as a prefill,
+	 *  and the model would continue the message instead of rewriting it. The engine refuses
+	 *  that before assembly is ever reached.
+	 *  `chatMessages` must NOT include the turn; pass the path up to its parent. */
+	correction?: { message: Message; instruction: string };
 	/** Steering: guidance injected into the prompt without ever becoming a chat row. The
 	 *  caller passes the notes that already resolved as active for this chat, with their
 	 *  inherited placement filled in (`resolveSteeringForPrompt`, types/steering.ts).
@@ -464,9 +478,29 @@ function buildLoreSplices(ctx: MacroContext, model?: string): DepthSplice[] {
 	}));
 }
 
-/** The continue-in-place tail (see {@link AssembleInput.continuation}), priced so the
- *  budget trim can account for it. Empty when the input carries no continuation. */
-function continuationTail(input: AssembleInput, ctx: MacroContext): { messages: LLMMessage[]; tokens: number } {
+/**
+ * The tail a one-shot action closes the prompt with: the assistant turn it acts on, followed
+ * by the instruction saying what to do with it. Continue and Corrections are the same shape
+ * and differ only in how that turn is rendered and which instruction follows, so they share
+ * one builder -- and therefore share the pricing below, which is the half neither can afford
+ * to get wrong. The tail is fixed cost (see `fixedExtra` in assemblePrompt): history yields
+ * room for it and it is never itself trimmed, because a correction whose target was trimmed
+ * away is a correction of nothing.
+ *
+ * The two render their turn differently on purpose. Continue APPENDS to the stored row, so it
+ * sends the turn as an injected history turn (prompt regex applied, self-refs expanded) and
+ * `continuationSent` anchors the join against exactly what the model saw. Corrections REPLACES
+ * the row, so it sends the stored bytes untouched: a prompt-scope rule hides text from the
+ * model without changing storage, and rewriting the hidden-from version would delete what it
+ * hid, for good. Empty when the input carries neither.
+ */
+function actionTail(input: AssembleInput, ctx: MacroContext): { messages: LLMMessage[]; tokens: number } {
+	if (input.correction) {
+		const messages: LLMMessage[] = [{ role: 'assistant', content: input.correction.message.content }];
+		const instruction = expandMacros(input.correction.instruction, ctx).trim();
+		if (instruction) messages.push({ role: 'user', content: instruction });
+		return { messages, tokens: messages.reduce((sum, m) => sum + countTokens(m.content, input.model), 0) };
+	}
 	if (!input.continuation) return { messages: [], tokens: 0 };
 	const [target] = applyPromptRegex([input.continuation], input.regexRules);
 	const messages = [toInjectedMessage(target, ctx)];
@@ -488,12 +522,13 @@ export function assemblePrompt(input: AssembleInput): PromptAssembly {
 		// against the bare fallback prompt still has to carry what it carries.
 		let fallbackTail: { messages: LLMMessage[]; tokens: number } | undefined;
 		let fallbackSteering: DepthSplice[] = [];
-		if (input.continuation || input.steering) {
+		if (input.continuation || input.correction || input.steering) {
 			const fallbackCtx = buildMacroContext(input);
-			fallbackTail = input.continuation ? continuationTail(input, fallbackCtx) : undefined;
+			fallbackTail =
+				input.continuation || input.correction ? actionTail(input, fallbackCtx) : undefined;
 			fallbackSteering = buildSteeringMessages(input, fallbackCtx, input.model);
 		}
-		return systemFallback(mode, placeholder, fallbackTail, fallbackSteering);
+		return systemFallback(mode, placeholder, fallbackTail, fallbackSteering, !!input.continuation);
 	}
 
 	let ctx: SplicedContext = buildMacroContext(input);
@@ -505,7 +540,7 @@ export function assemblePrompt(input: AssembleInput): PromptAssembly {
 	// re-resolves below (which rebuild ctx and re-run resolveEnabled) carry the splices
 	// forward automatically, always against that resolution's own filtered/dropped chat.
 	if (splices.length) ctx = { ...ctx, splices };
-	const tail = continuationTail(input, ctx);
+	const tail = actionTail(input, ctx);
 	// A splice is fixed cost like the tail: priced once, added to every budget comparison
 	// below so history yields room for it and it is never itself trimmed. resolveStructural
 	// never counts a spliced message into a bucket of its own (see its ctx.splices check), so
@@ -589,7 +624,7 @@ export function assemblePrompt(input: AssembleInput): PromptAssembly {
 		breakdown.total += spliceTokens;
 	}
 
-	// The continuation tail rides after every preset item AND steering (post-history
+	// The action tail rides after every preset item AND steering (post-history
 	// instructions included), so the turn being extended and its nudge always close the prompt.
 	if (tail.messages.length > 0) {
 		messages = [...messages, ...tail.messages];
@@ -604,7 +639,9 @@ export function assemblePrompt(input: AssembleInput): PromptAssembly {
 		trimmedExampleBlocks,
 		overBudget,
 		lorebook: ctx.lorebookTrace ?? EMPTY_LOREBOOK_TRACE,
-		continuationSent: tail.messages[0]?.content
+		// Continue's anchor only. A correction replaces its turn rather than joining onto it,
+		// so handing back an anchor would invite a join that must never happen.
+		continuationSent: input.continuation ? tail.messages[0]?.content : undefined
 	};
 }
 
@@ -635,7 +672,9 @@ function systemFallback(
 	mode: PromptPostProcessingMode = 'merge',
 	placeholder?: string,
 	tail?: { messages: LLMMessage[]; tokens: number },
-	splices: DepthSplice[] = []
+	splices: DepthSplice[] = [],
+	/** Whether `tail` is a continuation's, the only kind that yields a join anchor. */
+	isContinuation = false
 ): PromptAssembly {
 	const preset = countTokens(DEFAULT_SYSTEM_PROMPT);
 	const steeringMessages = splices.map((b) => b.message);
@@ -661,7 +700,7 @@ function systemFallback(
 		// The fallback prompt is the default system message and nothing else: no item resolved,
 		// so no lore reached this prompt whatever the scan decided.
 		lorebook: EMPTY_LOREBOOK_TRACE,
-		continuationSent: tailMessages[0]?.content
+		continuationSent: isContinuation ? tailMessages[0]?.content : undefined
 	};
 }
 

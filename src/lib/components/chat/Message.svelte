@@ -18,6 +18,8 @@
 	import { themeStore } from '$lib/stores/theme.svelte';
 	import { renderMarkdown } from '$lib/utils/markdown';
 	import { renderedHtml } from '$lib/actions/renderedHtml';
+	import { autoResize } from '$lib/actions/autoResize';
+	import { viewport } from '$lib/stores/viewport.svelte';
 	import { copyText } from '$lib/utils/clipboard';
 	import { previewContinuation } from '$lib/utils/continuation';
 	import { expandSelfRefs } from '$lib/macros';
@@ -95,6 +97,13 @@
 	// "Replace reply" on a user turn deletes everything below it, a hard rewind. Gate it behind
 	// a confirm that shows how many messages will go.
 	let confirmingReplace = $state(false);
+	/** The regenerate action waiting on a correction direction, or null while the menu is
+	 *  showing its choices. Swaps the panel's body exactly as `confirmingReplace` does: a
+	 *  correction asks one question, and a second surface stacked over the first would be a
+	 *  heavier interruption than the question deserves. */
+	let correctingAction = $state<RegenerateAction | null>(null);
+	let correctionText = $state('');
+	let correctionBox = $state<HTMLTextAreaElement | undefined>(undefined);
 	let deleteMenuElement = $state<HTMLDivElement | undefined>(undefined);
 	let regenerateMenuElement = $state<HTMLDivElement | undefined>(undefined);
 
@@ -245,6 +254,44 @@
 	function cancelRegenerate() {
 		showRegenerateMenu = false;
 		confirmingReplace = false;
+		correctingAction = null;
+	}
+
+
+	function startCorrection(action: RegenerateAction) {
+		correctingAction = action;
+		// Whatever was last asked of this turn, so a second attempt starts from the first
+		// rather than from nothing. Keyed by the parent, which every sibling shares.
+		correctionText = messageStore.correctionDraftFor(message.parentId);
+	}
+
+	$effect(() => {
+		if (correctingAction) correctionBox?.focus();
+	});
+
+	async function submitCorrection() {
+		const action = correctingAction;
+		// Blank is refused by the button being disabled rather than by anything the reader has
+		// to dismiss; this is the floor under that, not a second place the rule is decided.
+		if (!action || !correctionText.trim()) return;
+		showRegenerateMenu = false;
+		correctingAction = null;
+		await messageStore.retryMessageResponse(message.id, action, correctionText);
+	}
+
+	function handleCorrectionKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			e.stopPropagation();
+			cancelRegenerate();
+			return;
+		}
+		// Enter sends on pointer devices only, the composer's own rule: on touch Enter is a
+		// newline and the button is the way through.
+		if (e.key === 'Enter' && !e.shiftKey && !viewport.isTouch) {
+			e.preventDefault();
+			void submitCorrection();
+		}
 	}
 
 	function handleBranchClick() {
@@ -358,6 +405,11 @@
 	}
 
 	const isUser = $derived(message.role === 'user');
+
+	/** Corrections rewrites a reply that exists, so it is offered on AI turns only -- a
+	 *  trailing user turn has no reply to rewrite. Off in Settings → Engines hides it here,
+	 *  the same as Spellcheck and Impersonate vanish from the composer menu. */
+	let canCorrect = $derived(!isUser && featurePromptsStore.correctionsEnabled);
 	// Whether this turn already has a reply below it. A user leaf (no reply) should offer
 	// "Generate Reply" (make the first one), not "Regenerate".
 	const hasReply = $derived(allMessages.some((m) => m.parentId === message.id));
@@ -827,6 +879,42 @@
 													Cancel
 												</button>
 											</div>
+										{:else if correctingAction}
+											<div class="p-3 border-b border-border-subtle bg-bg-secondary">
+												<p class="text-sm font-ui font-medium text-text-primary">
+													{correctingAction === 'replace'
+														? 'Replace with corrections'
+														: 'Alternate with corrections'}
+												</p>
+												<p class="text-xs text-text-muted mt-1">
+													Say what to change. The last reply is sent as is.
+												</p>
+											</div>
+											<div class="p-1.5 space-y-1.5">
+												<textarea
+													class="correction-box"
+													rows="3"
+													bind:this={correctionBox}
+													bind:value={correctionText}
+													use:autoResize={{ maxHeight: 160, value: correctionText, grip: false }}
+													onkeydown={handleCorrectionKeydown}
+													aria-label="What to change in this reply"
+													placeholder="What should change?"
+												></textarea>
+												<button
+													class="w-full px-3 py-2 text-sm font-ui font-medium rounded-[var(--radius-lg)] transition-all duration-150 bg-accent/15 text-accent hover:bg-accent/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-accent/15"
+													disabled={!correctionText.trim()}
+													onclick={submitCorrection}
+												>
+													{correctingAction === 'replace' ? 'Replace current' : 'Create alternate'}
+												</button>
+												<button
+													class="w-full px-3 py-2 text-left text-sm font-ui font-medium text-text-secondary hover:bg-bg-tertiary rounded-[var(--radius-lg)] transition-all duration-150"
+													onclick={cancelRegenerate}
+												>
+													Cancel
+												</button>
+											</div>
 										{:else}
 										<div class="p-3 border-b border-border-subtle bg-bg-secondary">
 											<p class="text-sm font-ui font-medium text-text-primary">
@@ -860,6 +948,26 @@
 														: 'Keep this response and generate a new branch'}
 												</p>
 											</button>
+											{#if canCorrect}
+												<button
+													class="w-full text-left px-3 py-2.5 hover:bg-bg-tertiary rounded-[var(--radius-lg)] text-sm font-ui transition-all duration-150"
+													onclick={() => startCorrection('replace')}
+												>
+													<span class="font-medium text-text-primary">Replace current with corrections</span>
+													<p class="text-text-muted text-xs mt-0.5">
+														Rewrite this response to your direction, replacing it
+													</p>
+												</button>
+												<button
+													class="w-full text-left px-3 py-2.5 hover:bg-bg-tertiary rounded-[var(--radius-lg)] text-sm font-ui transition-all duration-150"
+													onclick={() => startCorrection('branch')}
+												>
+													<span class="font-medium text-text-primary">Create alternate with corrections</span>
+													<p class="text-text-muted text-xs mt-0.5">
+														Rewrite this response to your direction as a new branch
+													</p>
+												</button>
+											{/if}
 											<button
 												class="w-full text-left px-3 py-2.5 hover:bg-bg-tertiary rounded-[var(--radius-lg)] text-sm font-ui text-text-muted transition-all duration-150"
 												onclick={cancelRegenerate}
@@ -930,6 +1038,30 @@
 {/if}
 
 <style>
+	/* The steering and opening-scene quick boxes' recipe, kept identical: the three boxes are
+	   one gesture apart and must not read as three different kinds of field. */
+	.correction-box {
+		width: 100%;
+		padding: 0.45rem 0.55rem;
+		border-radius: var(--radius-md);
+		border: 1px solid var(--color-border-subtle);
+		background: color-mix(in srgb, var(--color-bg-primary) 65%, transparent);
+		color: var(--color-text-primary);
+		font-family: var(--font-body);
+		font-size: 0.82rem;
+		line-height: 1.45;
+		resize: none;
+	}
+
+	.correction-box:focus {
+		outline: none;
+		border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+	}
+
+	.correction-box::placeholder {
+		color: var(--color-text-muted);
+	}
+
 	/* Everything shaped by Settings → Chat reads a --msg-* / --user-* var
 	   here; the fallback in each is the shipped default, so the transcript paints
 	   correctly before the theme store has stamped anything on <html>. */

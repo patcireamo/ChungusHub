@@ -40,6 +40,11 @@ export interface PromptBuildContext {
 	 *  the instruction that follows it comes from the preset). `chatMessages` then carries
 	 *  the path up to that turn's parent, the same prompt that would regenerate it. */
 	continuation?: Message;
+	/** Corrections: the assistant turn being rewritten plus the filled instruction (see
+	 *  AssembleInput.correction). `chatMessages` carries the path up to that turn's parent --
+	 *  the same prompt that would regenerate it -- so a correction sees exactly the history,
+	 *  lorebook scan and recall the original reply saw. */
+	correction?: { message: Message; instruction: string };
 	/** Which generation this is, for lorebook entries limited to some kinds. Defaults to a send. */
 	lorebookTrigger?: LorebookTrigger;
 	/** Who this prompt is being built FOR: model, token budget, and post-processing all
@@ -171,6 +176,7 @@ export async function buildPromptMessages(context: PromptBuildContext): Promise<
 		contextBudget: promptTarget.contextBudget,
 		regexRules: regexRulesStore.effectiveFor(preset),
 		continuation: context.continuation,
+		correction: context.correction,
 		steering: resolvedSteering.length
 			? { notes: resolvedSteering, wrapper: featurePromptsStore.promptFor('steeringWrapper') }
 			: undefined

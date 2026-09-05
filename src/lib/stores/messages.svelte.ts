@@ -47,6 +47,21 @@ class MessageStore {
 	abortController = $state<AbortController | null>(null);
 	private isProcessing = $state(false);
 
+	/**
+	 * The last correction direction typed against a turn, so re-opening the dialog offers it
+	 * again -- the reader usually re-corrects because the first attempt missed, not because
+	 * they changed their mind about what was wrong.
+	 *
+	 * Keyed by the turn's PARENT, never the turn itself. "Replace" writes a new sibling and
+	 * deletes the old one, so a key of the turn's own id would lose the direction at exactly
+	 * the moment it is wanted back. Every sibling of a turn shares one parent, so this
+	 * survives both actions and falls away on its own once the reader moves elsewhere.
+	 *
+	 * Session-only and deliberately not $state: it is read when the dialog opens, never
+	 * rendered from, and it is a convenience rather than anything the chat owns.
+	 */
+	private lastCorrection = new Map<string, string>();
+
 	/** A generation is in flight ANYWHERE, not merely in the chat on screen: walking into
 	 *  another chat must not read as idle and let a second generation start beside the
 	 *  first, since both would share the one abort controller below. A reply this page did
@@ -160,7 +175,14 @@ class MessageStore {
 	 *  message's id, or to null when nothing was streamed to keep (no message is created). A
 	 *  stop mid-stream still persists what streamed, so it returns an id like any other
 	 *  reply. Other failures throw. */
-	async generateResponse(chatId: string, parentId: string, prompt: BuiltPrompt): Promise<string | null> {
+	async generateResponse(
+		chatId: string,
+		parentId: string,
+		prompt: BuiltPrompt,
+		/** The engine this turn is being written for, as the prompt debug panel labels it.
+		 *  A correction is committed exactly like a reply, so only the label differs. */
+		source: 'chat' | 'corrections' = 'chat'
+	): Promise<string | null> {
 		const { messages, target: callTarget, lorebook, oneShotSteering } = prompt;
 		this.abortController = new AbortController();
 		chatStore.startStream(chatId);
@@ -173,7 +195,7 @@ class MessageStore {
 			// another branch leaves them where they are (architecture/chat-sessions.md).
 			const result = await llmService.complete(callTarget, {
 				messages,
-				source: 'chat',
+				source,
 				onToken: (token) => {
 					chatStore.appendStreamingContent(token);
 				},
@@ -599,7 +621,19 @@ class MessageStore {
 		await chatStore.refreshCurrentChat();
 	}
 
-	async retryMessageResponse(messageId: string, action: RegenerateAction = 'replace'): Promise<void> {
+	/**
+	 * Re-roll a turn, optionally as a CORRECTION: same commit either way, differing only in
+	 * what the prompt carries. `correction` is the reader's own direction; when given, the
+	 * reply being replaced rides the prompt as a trailing assistant turn with that direction
+	 * closing it, so the model rewrites the reply instead of writing a fresh one. Everything
+	 * else -- history, lorebook scan, recall, budget -- is the retry's, unchanged, because it
+	 * is literally the same build (architecture/engines.md).
+	 */
+	async retryMessageResponse(
+		messageId: string,
+		action: RegenerateAction = 'replace',
+		correction?: string
+	): Promise<void> {
 		if (this.isProcessing) return;
 		this.isProcessing = true;
 
@@ -610,6 +644,13 @@ class MessageStore {
 			const message = state.activePath.find((m) => m.id === messageId);
 			if (!message) throw new Error('Message not found in active path');
 
+			// A correction rewrites text that exists, so there has to be an AI reply to rewrite.
+			// The Retry menu offers it on assistant turns alone; this is the loud floor under that.
+			if (correction !== undefined && message.role !== 'assistant') {
+				throw new Error('Corrections can only rewrite an AI reply');
+			}
+			const instruction = correction === undefined ? null : this.correctionInstruction(correction);
+
 			if (message.role === 'assistant') {
 				const parentId = message.parentId;
 				if (!parentId) {
@@ -619,8 +660,31 @@ class MessageStore {
 				// reply off the reader's screen while they are deciding about it. The path to
 				// the parent is what a retry sends either way: the turn being re-rolled hangs
 				// below it and was never in its own prompt.
-				const prompt = await this.prepareFromLeaf('regenerate', state.chat.id, parentId, 'swipe');
+				// The retry prompt either way: the path up to the parent, so a correction sees the
+				// same history, lorebook scan and recall the reply it replaces saw. A correction
+				// adds only the tail, and rides the Corrections engine's own connection the way
+				// Opening Scene rides its own.
+				let prompt: BuiltPrompt | null;
+				if (instruction !== null) {
+					// Fresh rows, never the snapshot: the text sent is the text about to be
+					// overwritten, so it must be the row as it stands now.
+					const fresh = await chatStore.freshMessages(state.chat.id);
+					const subject = fresh.find((m) => m.id === message.id);
+					if (!subject) throw new Error('The reply to correct no longer exists.');
+					prompt = await this.prepare('regenerate', {
+						chatId: state.chat.id,
+						chatMessages: findActivePath(fresh, parentId),
+						correction: { message: subject, instruction },
+						lorebookTrigger: 'swipe',
+						target: { engine: 'corrections' }
+					});
+				} else {
+					prompt = await this.prepareFromLeaf('regenerate', state.chat.id, parentId, 'swipe');
+				}
 				if (!prompt) return;
+				// Kept only once the reader has committed to the request, so a cancelled review
+				// leaves no draft behind. By PARENT id: see `lastCorrection`.
+				if (correction !== undefined) this.lastCorrection.set(parentId, correction.trim());
 
 				const prevLeafId = state.chat.activeLeafId;
 
@@ -635,7 +699,12 @@ class MessageStore {
 				await chatStore.refreshCurrentChat();
 				let newId: string | null = null;
 				try {
-					newId = await this.generateResponse(state.chat.id, parentId, prompt);
+					newId = await this.generateResponse(
+						state.chat.id,
+						parentId,
+						prompt,
+						instruction !== null ? 'corrections' : 'chat'
+					);
 					if (newId && action === 'replace') {
 						const preDelete = await chatStore.freshMessages(state.chat.id);
 						await db.deleteMessageAndDescendants(message.id);
@@ -697,6 +766,12 @@ class MessageStore {
 		} finally {
 			this.isProcessing = false;
 		}
+	}
+
+	/** The direction last typed against the turn under this parent, for the dialog to open
+	 *  with. Blank when there is none, which is also what a fresh chat gives. */
+	correctionDraftFor(parentId: string | null): string {
+		return parentId ? this.lastCorrection.get(parentId) ?? '' : '';
 	}
 
 	async regenerateLastResponse(action: RegenerateAction = 'replace'): Promise<void> {
@@ -1185,6 +1260,33 @@ class MessageStore {
 		const approved = await promptHoldStore.review(gate, built.messages, built.target);
 		if (!approved) return null;
 		return { ...built, messages: approved };
+	}
+
+	/**
+	 * The Corrections template with the reader's direction substituted in, ready to close the
+	 * prompt as its final user turn.
+	 *
+	 * Only {{instruction}} is filled here, the call-site key the opening scene's {{idea}} is;
+	 * `substitute` leaves every other macro alone deliberately, so {{char}} and friends are
+	 * expanded later by assembly, which holds the real character and persona context.
+	 *
+	 * Both blanks throw rather than degrade. An empty direction would make this an ordinary
+	 * retry wearing the Corrections label, and an empty template would leave the reply closing
+	 * the prompt as a prefill -- the model would continue it instead of rewriting it.
+	 */
+	private correctionInstruction(direction: string): string {
+		if (!featurePromptsStore.correctionsEnabled) {
+			throw new Error('Corrections is turned off in Settings → Engines');
+		}
+		const trimmed = direction.trim();
+		if (!trimmed) throw new Error('A correction needs a direction to follow');
+		const filled = substitute(featurePromptsStore.promptFor('corrections'), {
+			instruction: trimmed
+		}).trim();
+		if (!filled) {
+			throw new Error('The correction prompt is empty. Restore it in Settings → Engines.');
+		}
+		return filled;
 	}
 
 	/** `prepare` for the paths whose prompt is simply the story up to a leaf. Chat history

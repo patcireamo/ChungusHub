@@ -22,6 +22,7 @@ const SOURCE_COLORS: Record<EngineId | 'chat' | 'assistant' | 'continue', string
 	assistant: '#3b82f6',
 	steering: '#6366f1',
 	spellcheck: '#06b6d4',
+	corrections: '#d946ef',
 	impersonate: '#f43f5e',
 	sprites: '#eab308'
 };
