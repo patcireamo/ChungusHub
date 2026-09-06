@@ -20,8 +20,9 @@ const IMAGE_EXT = /\.(png|jpe?g|webp|gif|avif)$/i;
 const KNOWN_FOLDERS = ['backgrounds', 'characters', 'worlds', 'chats', 'User Avatars'] as const;
 type KnownFolder = (typeof KNOWN_FOLDERS)[number];
 
-/** One row of the import ledger: a source file an earlier run claimed, and what it became for
- *  the one kind a later run has to find again (a character card's library entry). */
+/** One row of the import ledger: a source file an earlier run claimed, and the row it became
+ *  where there is one, which is what lets a later run find it again and lets a claim stop
+ *  counting once the reader has deleted what it names. */
 export interface ImportedSource {
 	key: string;
 	entityId: string | null;

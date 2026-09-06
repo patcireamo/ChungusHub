@@ -301,8 +301,11 @@ export async function importSillyTavernFolder(
 				report.sprites.failed.push(`${folder}/${label}: that label is already used`);
 			}
 			// The whole pack is claimed, refusals included: a label already in use is this file
-			// having arrived before, which is exactly what the ledger records.
-			for (const file of files) await ledger.claim(file);
+			// having arrived before, which is exactly what the ledger records. Claimed WITH the
+			// character it landed on, since that entry is what a sprite becomes part of: delete the
+			// character and the pack goes with it, so the pictures have to be offered again beside
+			// the card rather than stay skipped under a claim naming an entry nothing holds.
+			for (const file of files) await ledger.claim(file, characterId);
 		} catch (e) {
 			report.sprites.failed.push(`${folder}/: ${reason(e)}`);
 		}
@@ -366,7 +369,10 @@ export async function importSillyTavernFolder(
 			const { chatId } = await chatStore.importSillyTavernChat({ characterId, lines });
 			if (chatId) {
 				report.chats.imported++;
-				await ledger.claim(file);
+				// Claimed WITH the chat it became, the same as a card. A story the reader deleted
+				// since stops counting, so the file comes back on the next run instead of being
+				// skipped forever under a claim saying they still have it.
+				await ledger.claim(file, chatId);
 			} else report.chats.failed.push(`${file.name}: no importable messages`);
 		} catch (e) {
 			report.chats.failed.push(`${file.name}: ${reason(e)}`);

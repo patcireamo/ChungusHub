@@ -45,7 +45,8 @@ afterAll(() => {
 const written = {
 	entries: new Map<string, { id: string; data: { lorebookIds?: string[] } }>(),
 	books: [] as { id: string; name: string }[],
-	claims: [] as { key: string; entityId?: string | null }[]
+	claims: [] as { key: string; entityId?: string | null }[],
+	chats: [] as { chatId: string; characterId: string }[]
 };
 
 mock.module('$lib/services/database', () => ({
@@ -63,7 +64,13 @@ mock.module('$lib/services/imageService', () => ({
 }));
 mock.module('$lib/stores/chat.svelte', () => ({
 	...realChat,
-	chatStore: { importSillyTavernChat: async () => ({ chatId: null }) }
+	chatStore: {
+		importSillyTavernChat: async ({ characterId }: { characterId: string }) => {
+			const chatId = `chat-${written.chats.length + 1}`;
+			written.chats.push({ chatId, characterId });
+			return { chatId };
+		}
+	}
 }));
 
 const { importSillyTavernFolder } = await import('./sillyTavernFolderImport');
@@ -213,6 +220,39 @@ describe('a profile whose lorebook is on disk many times over', () => {
 	test('brings every character over regardless', () => {
 		expect(report.characters.failed).toEqual([]);
 		expect(report.characters.imported).toBe(6);
+	});
+});
+
+/**
+ * A claim that names nothing can never stop counting, and the file behind it is then invisible
+ * to every later run there is. That is what strands a reader who deleted a character together
+ * with its history: the card comes back on the next run, because its claim names an entry the
+ * library no longer holds, while the chats and the sprites beside it stay locked out under
+ * claims saying they are already here. `importRun.known` asks the shelves whether these ids are
+ * still there, so what is recorded is what decides it.
+ */
+describe('what a chat and a sprite pack claim', () => {
+	const HISTORY = pick([
+		{ path: 'default-user/characters/Nadia.json', body: card('Nadia', {}) },
+		{ path: 'default-user/chats/Nadia/2025-01-01.jsonl', body: '{"chat_metadata":{}}' },
+		{ path: 'default-user/characters/Nadia/joy.png', body: 'picture bytes' }
+	]);
+
+	let nadia: string;
+	beforeAll(async () => {
+		await importSillyTavernFolder(scanSillyTavernFolder(HISTORY)!);
+		nadia = [...written.entries.values()].find((e) => (e as any).identity?.name === 'Nadia')!.id;
+	});
+
+	const claimFor = (key: string) => written.claims.find((c) => c.key === key);
+
+	test('a chat claims the story it became, so deleting that story offers the file again', () => {
+		const claim = claimFor('sillytavern:chats/Nadia/2025-01-01.jsonl');
+		expect(claim?.entityId).toBe(written.chats.find((c) => c.characterId === nadia)!.chatId);
+	});
+
+	test('a sprite claims the character it landed on, since that entry is what holds the pack', () => {
+		expect(claimFor('sillytavern:characters/Nadia/joy.png')?.entityId).toBe(nadia);
 	});
 });
 
