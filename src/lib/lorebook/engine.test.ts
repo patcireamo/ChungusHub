@@ -417,6 +417,18 @@ describe('scan sources beyond the chat', () => {
 		});
 		expect(out.text).toBe('');
 	});
+
+	test('steering is a source like any other, and only for entries that opted in', () => {
+		const fields = { steering: 'keep them moving toward the citadel' };
+		expect(resolveLorebooks({ books: [scenarioBook()], messages: ['hello'], fields }).text).toBe('');
+		const out = resolveLorebooks({
+			books: [scenarioBook(['steering'])],
+			messages: ['hello'],
+			fields
+		});
+		expect(out.text).toBe('c');
+		expect(out.trace.records[0].matches[0].source).toEqual({ kind: 'field', field: 'steering' });
+	});
 });
 
 describe('per-entry scan depth', () => {

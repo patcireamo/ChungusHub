@@ -24,6 +24,8 @@ import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { resolveLorebooks } from '$lib/lorebook/engine';
 import { lorebookHistory, lorebookScanFields } from '$lib/lorebook/types';
 import { presetControlsStore } from '$lib/stores/presetControls.svelte';
+import { steeringStore } from '$lib/stores/steering.svelte';
+import { steeringScanText, steeringTargetForChat } from '$lib/types/steering';
 import { toastStore } from '$lib/stores/toast.svelte';
 import { findActivePath } from '$lib/utils/message-tree';
 import { expandMacros, resolveMacroValues, type MacroContext, type PromptCharacter } from '$lib/macros';
@@ -472,7 +474,24 @@ class MemoryStore {
 				muted: ctx.mutedLorebookIds
 			}),
 			messages: chatMessages.map((m) => m.content),
-			fields: lorebookScanFields(base.resolvedCharacters ?? [], base.resolvedPersona),
+			// Steering is scannable here too. The ctx already carries the three ids a scope is
+			// matched against, so this reads the same stack the prompt for this chat would, not
+			// the app's notes, which is the trap every other field on the ctx exists to avoid.
+			// What memory does with the notes is still nothing: they are scanned, never
+			// injected, because a summariser is not the reply the guidance is addressed to.
+			fields: lorebookScanFields(
+				base.resolvedCharacters ?? [],
+				base.resolvedPersona,
+				steeringScanText(
+					steeringStore.promptNotesFor(
+						steeringTargetForChat({
+							id: ctx.chatId,
+							characterId: ctx.characterId,
+							characterVersionId: ctx.characterVersionId
+						})
+					)
+				)
+			),
 			history: lorebookHistory(chatMessages),
 			settings: lorebookSettingsStore.settings,
 			expand: (text) => expandMacros(text, base)

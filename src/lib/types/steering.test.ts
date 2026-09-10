@@ -16,6 +16,7 @@ import {
 	resolvePlacement,
 	resolveSteeringForPrompt,
 	sortSteeringNotes,
+	steeringScanText,
 	type SteeringDefaults,
 	type SteeringNote,
 	type SteeringScope,
@@ -231,5 +232,24 @@ describe('createSteeringNote', () => {
 		const a = createSteeringNote({ text: 'a', scope: 'global', scopeId: null });
 		const b = createSteeringNote({ text: 'b', scope: 'global', scopeId: null });
 		expect(a.id).not.toBe(b.id);
+	});
+});
+
+describe('steeringScanText', () => {
+	const resolved = (text: string) => ({ text, depth: 0, role: 'system' as const });
+
+	test('joins every note, one per line', () => {
+		expect(steeringScanText([resolved('head north'), resolved('it is raining')])).toBe(
+			'head north\nit is raining'
+		);
+	});
+
+	test('no notes is no source', () => {
+		expect(steeringScanText([])).toBe('');
+		expect(steeringScanText(undefined)).toBe('');
+	});
+
+	test('a blank note contributes no line of its own', () => {
+		expect(steeringScanText([resolved('  '), resolved('head north')])).toBe('head north');
 	});
 });

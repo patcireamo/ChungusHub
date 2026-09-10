@@ -232,6 +232,8 @@ describe('matching fields cross the boundary', () => {
 		const e = parseLorebook(MATCHING, 'x').entries[0];
 		expect(e.scanDepth).toBe(3);
 		expect(e.scanFields).toEqual(['scenario']);
+		// A book written before this app modelled steering names no flag for it, and gets none.
+		expect('matchCharacterDepthPrompt' in e.rest).toBe(false);
 		// Every trigger token rides, including the kinds this app never generates.
 		expect(e.triggers).toEqual(['impersonate', 'quiet']);
 		expect(e.keyRules).toEqual({ citadel: { mode: 'start', caseSensitive: true } });
@@ -246,6 +248,8 @@ describe('matching fields cross the boundary', () => {
 		expect(e.scanDepth).toBe(3);
 		expect(e.matchScenario).toBe(true);
 		expect(e.matchCharacterDescription).toBe(false);
+		// Steering rides SillyTavern's depth-prompt flag: the same job on the other side.
+		expect(e.matchCharacterDepthPrompt).toBe(false);
 		expect(e.triggers).toEqual(['impersonate', 'quiet']);
 		expect(e.chungus_key_rules).toEqual({ citadel: { mode: 'start', caseSensitive: true } });
 	});
@@ -396,7 +400,7 @@ function loadedEntry(): any {
 		matchWholeWords: false,
 		keyRules: { dragon: { mode: 'start', caseSensitive: true }, fire: { mode: 'word' } },
 		scanDepth: 7,
-		scanFields: ['scenario', 'personaDescription'],
+		scanFields: ['scenario', 'personaDescription', 'steering'],
 		triggers: ['swipe', 'continue'],
 		sticky: 3,
 		cooldown: 5,

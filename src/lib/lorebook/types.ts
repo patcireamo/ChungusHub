@@ -141,13 +141,20 @@ export function resolveKeyMatch(
  * carries it in both interchange shapes (flat native World Info, snake_case card extensions).
  * This ONE table drives the engine's sources, the editor's toggles and both import/export
  * mappings, so a new source is a single row.
+ *
+ * `steering` is the one row that is not card text: it is the steering notes standing over this
+ * chat (architecture/engines.md). It rides SillyTavern's `matchCharacterDepthPrompt` because
+ * that flag names the same job on the other side: scan the guidance this app injects at a
+ * depth. Nothing here models a character depth prompt to claim the name instead.
+ * A book that opted into it there opts into it here, and back again.
  */
 export const LOREBOOK_SCAN_FIELDS = [
 	{ id: 'characterDescription', label: 'Description', native: 'matchCharacterDescription', card: 'match_character_description' },
 	{ id: 'characterPersonality', label: 'Personality', native: 'matchCharacterPersonality', card: 'match_character_personality' },
 	{ id: 'scenario', label: 'Scenario', native: 'matchScenario', card: 'match_scenario' },
 	{ id: 'personaDescription', label: 'Persona', native: 'matchPersonaDescription', card: 'match_persona_description' },
-	{ id: 'creatorNotes', label: 'Creator’s notes', native: 'matchCreatorNotes', card: 'match_creator_notes' }
+	{ id: 'creatorNotes', label: 'Creator’s notes', native: 'matchCreatorNotes', card: 'match_creator_notes' },
+	{ id: 'steering', label: 'Steering', native: 'matchCharacterDepthPrompt', card: 'match_character_depth_prompt' }
 ] as const;
 
 export type LorebookScanField = (typeof LOREBOOK_SCAN_FIELDS)[number]['id'];
@@ -164,20 +171,27 @@ function joinTrait(characters: { traits: CharacterTraits }[], key: keyof Charact
 }
 
 /**
- * The story text a scan may read besides the chat, off the cards in play. The ONE derivation:
- * generation, the live meters and the memory context all call it, so an entry that scans the
- * scenario reads the same scenario at every surface (architecture/lorebook.md coupling #6).
+ * The story text a scan may read besides the chat: the cards in play, plus the steering
+ * standing over this prompt. The ONE derivation: generation, the live meters and the memory
+ * context all call it, so an entry that scans the scenario reads the same scenario at every
+ * surface (architecture/lorebook.md coupling #6).
+ *
+ * `steering` arrives already joined ({@link steeringScanText} in types/steering.ts) rather than
+ * as notes, because the resolution that decides WHICH notes stand over a prompt is that
+ * module's and every caller here already had to do it to build the prompt at all.
  */
 export function lorebookScanFields(
 	characters: { traits: CharacterTraits }[],
-	persona: { traits: CharacterTraits } | null | undefined
+	persona: { traits: CharacterTraits } | null | undefined,
+	steering?: string
 ): LorebookScanFieldText {
 	return {
 		characterDescription: joinTrait(characters, 'description'),
 		characterPersonality: joinTrait(characters, 'personality'),
 		scenario: joinTrait(characters, 'scenario'),
 		creatorNotes: joinTrait(characters, 'creatorNotes'),
-		personaDescription: persona ? persona.traits.description : ''
+		personaDescription: persona ? persona.traits.description : '',
+		steering: steering ?? ''
 	};
 }
 

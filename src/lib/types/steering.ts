@@ -193,3 +193,16 @@ export function resolveSteeringForPrompt(
 		...resolvePlacement(note, defaults)
 	}));
 }
+
+/** The text a lorebook entry reads when it opts into the Steering scan source: every note
+ *  that will actually inject, joined, and NOTHING else. Deliberately not the wrapper: that
+ *  is preset furniture the same on every turn, so a word in it would wake its entries on
+ *  every reply and never say why. Takes resolved notes so all three context builders feed
+ *  the scan exactly what they feed assembly (architecture/lorebook.md coupling #6). */
+export function steeringScanText(notes: readonly ResolvedSteeringNote[] | undefined): string {
+	if (!notes?.length) return '';
+	return notes
+		.map((n) => n.text.trim())
+		.filter((t) => t.length > 0)
+		.join('\n');
+}

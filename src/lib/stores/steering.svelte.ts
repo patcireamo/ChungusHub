@@ -86,6 +86,17 @@ class SteeringStore {
 		return resolveSteeringForPrompt(this._notes, target, this.defaults);
 	}
 
+	/** The same list under the engine's own switch: none at all when Steering is off.
+	 *  Every store-sourced surface that feeds steering to a prompt reads THIS rather than
+	 *  gating for itself: the chat meter, and the two store-sourced lorebook contexts,
+	 *  whose entries may now scan the notes. A second copy of the gate is a surface that
+	 *  keeps injecting, or keeps waking lore, after the engine was switched off. The
+	 *  generation path keeps its own gate: it resolves db rows, not this cache. */
+	promptNotesFor(target: SteeringTarget): ResolvedSteeringNote[] {
+		if (!featurePromptsStore.steeringEnabled) return [];
+		return this.resolveForPrompt(target);
+	}
+
 	// ===== mutations =====
 
 	/** Create a note and persist it immediately. Returns it so a caller can open its editor. */

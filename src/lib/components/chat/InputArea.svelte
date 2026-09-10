@@ -215,8 +215,7 @@
 	// uses on the generation side, under the same engine gate, so the meter prices exactly
 	// the stack a send would inject (prompt-pipeline coupling 8).
 	let steeringForPrompt = $derived.by(() => {
-		if (!featurePromptsStore.steeringEnabled) return undefined;
-		const notes = steeringStore.resolveForPrompt(steeringTarget);
+		const notes = steeringStore.promptNotesFor(steeringTarget);
 		if (notes.length === 0) return undefined;
 		return { notes, wrapper: featurePromptsStore.promptFor('steeringWrapper') };
 	});

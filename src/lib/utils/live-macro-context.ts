@@ -19,6 +19,8 @@ import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 import { presetControlsStore } from '$lib/stores/presetControls.svelte';
+import { steeringStore } from '$lib/stores/steering.svelte';
+import { steeringScanText, steeringTargetForChat } from '$lib/types/steering';
 import {
 	chatLorebookClaim,
 	chatMutedLorebookClaim,
@@ -89,7 +91,14 @@ export function buildLiveMacroContext(opts: LiveMacroContextOptions = {}): Macro
 			muted: chatMutedLorebookClaim(chatStore.activeChat)
 		}),
 		messages: chatMessages.map((m) => m.content),
-		fields: lorebookScanFields(base.resolvedCharacters ?? [], base.resolvedPersona),
+		// The steering these surfaces sit beside is scannable, through the store's gated
+		// resolver so the notes are exactly the ones the prompt would carry, and none at all
+		// when the engine is off, which is the whole reason the gate lives in the store.
+		fields: lorebookScanFields(
+			base.resolvedCharacters ?? [],
+			base.resolvedPersona,
+			steeringScanText(steeringStore.promptNotesFor(steeringTargetForChat(chatStore.activeChat)))
+		),
 		trigger: opts.lorebookTrigger,
 		history: lorebookHistory(chatMessages),
 		settings: lorebookSettings,

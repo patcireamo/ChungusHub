@@ -669,7 +669,9 @@
 							<div>
 								<div class="ed-adv-label">
 									<span class="ed-label section-label !mb-0">Also scan</span>
-									<InfoTip text="Card text searched besides the chat. Nothing picked = the chat alone." />
+									<InfoTip
+										text="Text searched besides the chat: the cards in play, and the steering standing over this reply. Nothing picked = the chat alone."
+									/>
 								</div>
 								<div class="ed-pills">
 									{#each LOREBOOK_SCAN_FIELDS as field (field.id)}

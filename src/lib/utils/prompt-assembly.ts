@@ -18,7 +18,7 @@
 import type { LLMMessage, PromptPostProcessingMode } from '$lib/types/llm';
 import { DEFAULT_PROMPT_PLACEHOLDER } from '$lib/types/llm';
 import type { Message } from '$lib/types/chat';
-import type { ResolvedSteeringNote, SteeringRole } from '$lib/types/steering';
+import { steeringScanText, type ResolvedSteeringNote, type SteeringRole } from '$lib/types/steering';
 import type { PromptControl, PromptItem, PromptPreset } from '$lib/types/database';
 import type { Lorebook, LorebookGlobalSettings, LorebookTrace, LorebookTrigger } from '$lib/lorebook/types';
 import { EMPTY_LOREBOOK_TRACE, lorebookHistory, lorebookScanFields } from '$lib/lorebook/types';
@@ -203,7 +203,15 @@ export function buildMacroContext(input: AssembleInput): MacroContext {
 		// in a position nothing renders. Decided here, once, where the preset is already known.
 		placeAtDepth: base.injectsHistory,
 		messages: chatMessages.map((m) => m.content),
-		fields: lorebookScanFields(input.resolvedCharacters, input.resolvedPersona),
+		// The steering standing over this prompt is scannable too, for entries that opted in.
+		// These are the SAME resolved notes assembly is about to splice in, so an entry can
+		// never wake on guidance the send does not carry. The wrapper is not included
+		// (steeringScanText), and the notes are expanded by `expand` below like card text is.
+		fields: lorebookScanFields(
+			input.resolvedCharacters,
+			input.resolvedPersona,
+			steeringScanText(input.steering?.notes)
+		),
 		trigger: input.lorebookTrigger,
 		// Sticky and cooldown read the traces the path's own turns stored, so a swipe measures
 		// them against the branch it lives on rather than against the attempt it replaced.
