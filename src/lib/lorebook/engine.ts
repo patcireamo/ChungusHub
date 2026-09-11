@@ -224,7 +224,17 @@ function found(
 	defaults: MatchDefaults
 ): LorebookKeyMatch[] {
 	const hits: LorebookKeyMatch[] = [];
+	// A key listed twice is one key. Nobody writes one deliberately - the chip input refuses a
+	// repeat - but SillyTavern's own files carry them and `asKeyList` reads a list verbatim, so
+	// a book can arrive with one and never say so. Evaluated twice it costs two ways: the
+	// entry's group score is `matches.length`, which a repeat inflates past an entry that
+	// genuinely matched more keys, and the trace renders one row per match, keyed by role and
+	// key, which a repeat makes non-unique. Compared as written, so a key that differs only in
+	// case stays two keys: that is an author writing two spellings, not a file repeating one.
+	const seen = new Set<string>();
 	for (const key of keys) {
+		if (seen.has(key)) continue;
+		seen.add(key);
 		const hit = findKey(key, sources, role, rules, defaults);
 		if (hit) hits.push(hit);
 	}
