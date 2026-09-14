@@ -19,6 +19,8 @@
 		 *  said, a reply into a hand-written alternate you can swipe between. */
 		onBranch?: () => void;
 		showBranch?: boolean;
+		/** A column of icons, for the rail beside a long card. */
+		vertical?: boolean;
 	}
 
 	let {
@@ -31,7 +33,8 @@
 		onContinue,
 		showContinue = false,
 		onBranch,
-		showBranch = false
+		showBranch = false,
+		vertical = false
 	}: Props = $props();
 
 	let justCopied = $state(false);
@@ -50,7 +53,13 @@
 	}
 </script>
 
-<div class="message-actions" role="toolbar" aria-label="Message actions">
+<div
+	class="message-actions"
+	class:is-vertical={vertical}
+	role="toolbar"
+	aria-label="Message actions"
+	aria-orientation={vertical ? 'vertical' : 'horizontal'}
+>
 	<button
 		type="button"
 		class="action-btn"
@@ -179,6 +188,21 @@
 		display: var(--msg-action-label, inline);
 		line-height: 1;
 		white-space: nowrap;
+	}
+
+	.message-actions.is-vertical {
+		flex-direction: column;
+	}
+
+	/* The rail beside a card has no width to spend on words, whatever Compact says. */
+	.is-vertical .action-btn {
+		padding: 0;
+		gap: 0;
+		justify-content: center;
+	}
+
+	.is-vertical .action-label {
+		display: none;
 	}
 
 	@media (max-width: 900px) {

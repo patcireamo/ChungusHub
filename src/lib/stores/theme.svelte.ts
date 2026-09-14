@@ -303,6 +303,7 @@ function normalize(raw: Partial<AppearanceState> | null, known: PaletteDef[]): A
 			d.messageActions
 		),
 		compactActions: bool(raw?.compactActions, d.compactActions),
+		floatingActions: bool(raw?.floatingActions, d.floatingActions),
 		branchPager: oneOf<PagerVisibility>(raw?.branchPager, ['always', 'hover'], d.branchPager),
 		glass: oneOf<GlassLevel>(raw?.glass, ['off', 'subtle', 'full'], d.glass),
 		motion: oneOf<MotionLevel>(raw?.motion, ['full', 'reduced'], d.motion),

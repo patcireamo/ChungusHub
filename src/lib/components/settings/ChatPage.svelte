@@ -835,6 +835,15 @@
 				/>
 			</div>
 
+			<div class="toggle-row" use:toggleRow>
+				<span class="slider-label">Keep actions in view</span>
+				<Toggle
+					checked={appearance.floatingActions}
+					label="Keep actions in view"
+					onchange={(on) => themeStore.update({ floatingActions: on })}
+				/>
+			</div>
+
 			<div class="sub-block">
 				<span class="section-label">Branch arrows</span>
 				<PillRow

@@ -512,6 +512,38 @@
 			? message.lorebook
 			: null
 	);
+
+	// Keep actions in view (Settings → Chat): a tall card with room beside it carries its actions
+	// on a rail that rides the scroll, and a card with no room beside it sticks its foot toolbar.
+	const floatingActions = $derived(themeStore.appearance.floatingActions);
+	const RAIL_GAP_REM = 0.45;
+	let railRowEl = $state<HTMLElement | null>(null);
+	let shellEl = $state<HTMLElement | null>(null);
+	let footSlotEl = $state<HTMLElement | null>(null);
+	/** Null until measured, so the first paint is the plain toolbar rather than a guess. */
+	let railRoom = $state<boolean | null>(null);
+	let railTall = $state(false);
+	const railMode = $derived(floatingActions && railRoom === true && railTall && !isEditing);
+	const stickyFoot = $derived(floatingActions && railRoom === false);
+
+	// Nothing measured here moves with the mode (the rail takes no layout space and the foot
+	// toolbar stays laid out under it), so the choice settles instead of flipping.
+	$effect(() => {
+		const row = railRowEl;
+		const shell = shellEl;
+		const bar = footSlotEl?.firstElementChild;
+		if (!floatingActions || !row || !shell || !(bar instanceof HTMLElement)) return;
+		const observer = new ResizeObserver(() => {
+			const size = bar.offsetHeight;
+			const gap = RAIL_GAP_REM * parseFloat(getComputedStyle(document.documentElement).fontSize);
+			railRoom = row.clientWidth - shell.offsetWidth >= size + gap;
+			railTall = shell.offsetHeight >= size * bar.childElementCount;
+		});
+		observer.observe(row);
+		observer.observe(shell);
+		observer.observe(bar);
+		return () => observer.disconnect();
+	});
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -- the card is where the
@@ -544,8 +576,11 @@
 			{/if}
 
 			<div class="message-body">
-				<div class="message-rail {isUser ? 'message-rail-user' : 'message-rail-assistant'}">
-					<div class="message-bubble-shell {isUser ? 'message-bubble-shell-user' : 'message-bubble-shell-assistant'}">
+				<div class="message-rail {isUser ? 'message-rail-user' : 'message-rail-assistant'}" bind:this={railRowEl}>
+					<div
+						class="message-bubble-shell {isUser ? 'message-bubble-shell-user' : 'message-bubble-shell-assistant'}"
+						bind:this={shellEl}
+					>
 						<!-- data-message-card: the handle MessageList throws the arrival glow around.
 						     It has to be the CARD and not the row: the row is as wide as the
 						     scrollport, which clips a glow left and right and lets the next turn
@@ -664,28 +699,41 @@
 							{/if}
 							</div>
 						</div>
+						{#if railMode}
+							<div class="message-side-rail" style:--rail-gap="{RAIL_GAP_REM}rem">
+								<div class="message-side-rail-box">
+									<div
+										class="message-actions-slot"
+										class:message-actions-visible={showActions || cursored || showDeleteMenu || showRegenerateMenu}
+									>
+										{@render actionButtons(true)}
+									</div>
+									{@render actionMenus()}
+								</div>
+							</div>
+						{/if}
 					</div>
 				</div>
 
-				{#if !isEditing}
-					<div class="message-toolbar-shell {isUser ? 'message-toolbar-shell-user' : 'message-toolbar-shell-assistant'}">
-						<div class="message-toolbar {isUser ? 'justify-end' : 'justify-start'}">
-							<div
-								class="message-actions-slot"
-								class:message-actions-visible={showActions || cursored || showDeleteMenu || showRegenerateMenu}
-							>
-								<MessageActions
-									onEdit={handleEditClick}
-									onDelete={handleDeleteClick}
-									onCopy={handleCopy}
-									onRegenerate={showRegenerate ? handleRegenerateClick : undefined}
-									{showRegenerate}
-									regenerateLabel={isUser ? (hasReply ? 'Regenerate' : 'Generate Reply') : 'Retry'}
-									onContinue={showContinue ? handleContinue : undefined}
-									{showContinue}
-									onBranch={handleBranchClick}
-									showBranch
-								/>
+				{#snippet actionButtons(vertical: boolean)}
+					<MessageActions
+						{vertical}
+						onEdit={handleEditClick}
+						onDelete={handleDeleteClick}
+						onCopy={handleCopy}
+						onRegenerate={showRegenerate ? handleRegenerateClick : undefined}
+						{showRegenerate}
+						regenerateLabel={isUser ? (hasReply ? 'Regenerate' : 'Generate Reply') : 'Retry'}
+						onContinue={showContinue ? handleContinue : undefined}
+						{showContinue}
+						onBranch={handleBranchClick}
+						showBranch
+					/>
+				{/snippet}
+
+				<!-- The delete and regenerate menus open where the actions are: under the foot toolbar,
+				     or beside the rail while a long card carries them there. -->
+				{#snippet actionMenus()}
 
 								{#if showDeleteMenu}
 									<div
@@ -870,6 +918,21 @@
 										{/if}
 									</div>
 								{/if}
+				{/snippet}
+
+				{#if !isEditing}
+					<div
+						class="message-toolbar-shell {isUser ? 'message-toolbar-shell-user' : 'message-toolbar-shell-assistant'}"
+						class:message-toolbar-shell-sticky={stickyFoot}
+					>
+						<div class="message-toolbar {isUser ? 'justify-end' : 'justify-start'}">
+							<div
+								bind:this={footSlotEl}
+								class="message-actions-slot"
+								class:message-actions-visible={showActions || cursored || showDeleteMenu || showRegenerateMenu}
+								class:message-actions-parked={railMode}
+							>
+								{@render actionButtons(false)}
 							</div>
 							{#if siblingCount > 1 || canWriteOpening}
 								<div
@@ -901,6 +964,9 @@
 								</div>
 							{/if}
 						</div>
+						{#if !railMode}
+							{@render actionMenus()}
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -1341,6 +1407,54 @@
 		left: 0;
 	}
 
+	/* ===== Keep actions in view =====
+	   Parked rather than removed while the rail carries the actions, so the row keeps its
+	   height and the measurements that chose the rail never move under it. */
+	.message-actions-parked {
+		visibility: hidden;
+	}
+
+	/* z 3 clears the card (1) and its ring (2), which a stuck box floats over. */
+	.message-toolbar-shell-sticky {
+		position: sticky;
+		bottom: 0.5rem;
+		z-index: 3;
+	}
+
+	.message-side-rail {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: calc(100% + var(--rail-gap));
+	}
+
+	/* Bubbles packs the user card against the right edge, so the room is on its left. */
+	.message-bubble-shell-user .message-side-rail {
+		left: auto;
+		right: calc(100% + var(--rail-gap));
+	}
+
+	.message-side-rail-box {
+		position: sticky;
+		top: 0.5rem;
+		z-index: 3;
+	}
+
+	/* The menus open inward over the card, level with the rail, rather than at a foot the
+	   reader has not scrolled to. */
+	.message-side-rail .message-menu {
+		top: 0;
+		right: calc(100% + var(--rail-gap));
+		left: auto;
+		margin-top: 0;
+		max-width: none;
+	}
+
+	.message-bubble-shell-user .message-side-rail .message-menu {
+		right: auto;
+		left: calc(100% + var(--rail-gap));
+	}
+
 	@media (max-width: 900px) {
 		.message-row {
 			padding-inline: 0.45rem;
@@ -1414,6 +1528,17 @@
 	:global([data-chat-style='flat']) .message-toolbar-shell-user .message-menu {
 		left: 0;
 		right: auto;
+	}
+
+	/* The user card sits left in this style, so its rail and menus take the right side. */
+	:global([data-chat-style='flat']) .message-bubble-shell-user .message-side-rail {
+		left: calc(100% + var(--rail-gap));
+		right: auto;
+	}
+
+	:global([data-chat-style='flat']) .message-bubble-shell-user .message-side-rail .message-menu {
+		right: calc(100% + var(--rail-gap));
+		left: auto;
 	}
 
 	/* ===== Chat style: Portraits =====
