@@ -603,7 +603,12 @@ class AssistantSessionStore {
 
 	async renameSession(sessionId: string, title: string): Promise<void> {
 		const clean = title.trim() || 'New session';
-		await db.updateAssistantSession({ id: sessionId, title: clean });
+		try {
+			await db.updateAssistantSession({ id: sessionId, title: clean });
+		} catch (e) {
+			toastStore.failed(`rename the session to "${clean}"`, e);
+			return;
+		}
 		this.bumpSession(sessionId, { title: clean });
 	}
 

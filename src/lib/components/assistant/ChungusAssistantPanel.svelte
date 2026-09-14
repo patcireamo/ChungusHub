@@ -49,6 +49,10 @@
 	let viewingFile = $state<AssistantFile | null>(null);
 	/** Depth-counted so a drag crossing a child element doesn't flicker the overlay off. */
 	let dragDepth = $state(0);
+	let renamingTabId = $state<string | null>(null);
+	let tabRenameDraft = $state('');
+	let tabRenameInput = $state<HTMLInputElement | null>(null);
+	const tabLabelEls: Record<string, HTMLButtonElement | null> = {};
 
 	const store = assistantSessionStore;
 
@@ -451,6 +455,35 @@
 		return `${tabTitle(id)} · waiting for your ${pending.kind === 'question' ? 'answer' : 'approval'}`;
 	}
 
+	function startTabRename(id: string): void {
+		renamingTabId = id;
+		tabRenameDraft = tabTitle(id);
+		requestAnimationFrame(() => tabRenameInput?.select());
+	}
+
+	async function commitTabRename(): Promise<void> {
+		if (!renamingTabId) return;
+		const id = renamingTabId;
+		renamingTabId = null;
+		await store.renameSession(id, tabRenameDraft);
+	}
+
+	function handleTabRenameKeydown(e: KeyboardEvent, id: string): void {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			void commitTabRename();
+		} else if (e.key === 'Escape') {
+			// Consumed, so the workspace's Escape ladder does not also close a panel.
+			e.preventDefault();
+			e.stopPropagation();
+			renamingTabId = null;
+		} else {
+			return;
+		}
+		// The field leaves with the keyboard in it, which would otherwise drop focus on <body>.
+		requestAnimationFrame(() => tabLabelEls[id]?.focus());
+	}
+
 	// A wheel over the tab strip scrolls it sideways: the strip only overflows
 	// horizontally, so a plain vertical turn (the only gesture a mouse has) would
 	// otherwise do nothing at all here. A trackpad's sideways swipe arrives as
@@ -500,27 +533,53 @@
 	<header class="assistant-tabbar">
 		<div class="assistant-tabs" onwheel={handleTabsWheel}>
 			{#each store.openTabIds as id (id)}
-				<div class="assistant-tab" class:assistant-tab--active={id === activeId}>
-					<button
-						type="button"
-						class="assistant-tab-label"
-						onclick={() => store.selectTab(id)}
-						title={waitingTitle(id)}
-					>
-						{#if store.runtime[id]?.pending}
-							<!-- A tab stopped on a card is not working, it is waiting: the busy pulse would
-							     say the opposite and the user would leave it sitting there. -->
-							<Icon
-								name={store.runtime[id]?.pending?.kind === 'question' ? 'annotation' : 'shield'}
-								class="w-3.5 h-3.5 shrink-0 assistant-tab-waiting"
+				{#snippet tabGlyph()}
+					{#if store.runtime[id]?.pending}
+						<!-- A tab stopped on a card is not working, it is waiting: the busy pulse would
+						     say the opposite and the user would leave it sitting there. -->
+						<Icon
+							name={store.runtime[id]?.pending?.kind === 'question' ? 'annotation' : 'shield'}
+							class="w-3.5 h-3.5 shrink-0 assistant-tab-waiting"
+						/>
+					{:else if store.runtime[id]?.busy}
+						<span class="assistant-dot assistant-dot--tab"></span>
+					{:else}
+						<AssistantMascot size={16} />
+					{/if}
+				{/snippet}
+				<div
+					class="assistant-tab"
+					class:assistant-tab--active={id === activeId}
+					class:assistant-tab--renaming={id === renamingTabId}
+				>
+					{#if id === renamingTabId}
+						<span class="assistant-tab-label assistant-tab-label--renaming">
+							{@render tabGlyph()}
+							<!-- svelte-ignore a11y_autofocus -- the field replaces the name that was double-clicked -->
+							<input
+								bind:this={tabRenameInput}
+								bind:value={tabRenameDraft}
+								class="assistant-tab-rename"
+								type="text"
+								aria-label="Session name"
+								autofocus
+								onblur={commitTabRename}
+								onkeydown={(e) => handleTabRenameKeydown(e, id)}
 							/>
-						{:else if store.runtime[id]?.busy}
-							<span class="assistant-dot assistant-dot--tab"></span>
-						{:else}
-							<AssistantMascot size={16} />
-						{/if}
-						<span class="assistant-tab-text">{tabTitle(id)}</span>
-					</button>
+						</span>
+					{:else}
+						<button
+							bind:this={tabLabelEls[id]}
+							type="button"
+							class="assistant-tab-label"
+							onclick={() => store.selectTab(id)}
+							ondblclick={() => startTabRename(id)}
+							title={`${waitingTitle(id)}\nDouble-click to rename`}
+						>
+							{@render tabGlyph()}
+							<span class="assistant-tab-text">{tabTitle(id)}</span>
+						</button>
+					{/if}
 					<button type="button" class="assistant-tab-close" onclick={() => store.closeTab(id)} aria-label="Close tab">
 						<Icon name="x" class="w-3 h-3" />
 					</button>
@@ -825,6 +884,30 @@
 	.assistant-tab-close:hover {
 		background: color-mix(in srgb, var(--color-bg-tertiary) 80%, transparent);
 		color: var(--color-text-primary);
+	}
+
+	.assistant-tab--renaming {
+		max-width: none;
+	}
+
+	.assistant-tab-label--renaming {
+		cursor: default;
+	}
+
+	.assistant-tab-rename {
+		width: 9rem;
+		padding: 0.05rem 0.35rem;
+		line-height: 1.2;
+		border-radius: var(--radius-sm);
+		border: 1px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+		background: var(--color-bg-secondary);
+		color: var(--color-text-primary);
+		font-family: var(--font-ui);
+		font-size: 0.74rem;
+	}
+
+	.assistant-tab-rename:focus {
+		outline: none;
 	}
 
 	.assistant-tabbar-actions {
