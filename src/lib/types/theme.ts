@@ -208,8 +208,8 @@ export interface AppearanceState {
 	messageActions: ActionVisibility;
 	/** Icons only: drops the Edit/Copy/Retry/Delete word labels. */
 	compactActions: boolean;
-	/** A long turn's actions stay within reach while it scrolls: on a rail beside the card, or
-	 *  stuck to the bottom of the view where the card leaves no room beside it. */
+	/** The foot toolbar sticks to the bottom of the view while its turn is on screen, so a long
+	 *  reply's actions stay within reach while it scrolls. */
 	floatingActions: boolean;
 	branchPager: PagerVisibility;
 
