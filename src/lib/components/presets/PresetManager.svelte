@@ -89,8 +89,8 @@
 		confirmState = null;
 	}
 
-	function rejectTakenName(name: string): boolean {
-		if (!presetService.isNameTaken(name)) return false;
+	function rejectTakenName(name: string, exceptId?: string): boolean {
+		if (!presetService.isNameTaken(name, exceptId)) return false;
 		toastStore.error(`A preset named "${name.trim()}" already exists`);
 		return true;
 	}
@@ -127,6 +127,15 @@
 			const preset = await presetService.createPreset(name.trim());
 			await presetService.activatePreset(preset.id);
 		});
+	}
+
+	async function renamePreset(): Promise<void> {
+		// Snapshotted like the delete: a sync while the dialog is open may swap the active preset.
+		const target = activePreset;
+		if (!target) return;
+		const name = (await askName('Rename preset', 'Preset name', target.name, 'Rename'))?.trim();
+		if (!name || name === target.name || rejectTakenName(name, target.id)) return;
+		await run(`rename "${target.name}"`, () => presetService.renamePreset(target.id, name));
 	}
 
 	async function duplicatePreset(): Promise<void> {
@@ -324,6 +333,10 @@
 				<span>New preset</span>
 			</button>
 		{/if}
+		<button type="button" role="menuitem" class="brw-menu-item" onclick={() => closeAnd(renamePreset)}>
+			<Icon name="pencil" class="w-4 h-4" strokeWidth={1.5} />
+			<span>Rename…</span>
+		</button>
 		<button type="button" role="menuitem" class="brw-menu-item" onclick={() => closeAnd(duplicatePreset)}>
 			<Icon name="copy" class="w-4 h-4" strokeWidth={1.5} />
 			<span>Duplicate</span>

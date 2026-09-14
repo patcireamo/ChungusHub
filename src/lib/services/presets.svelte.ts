@@ -87,8 +87,8 @@ class PresetService {
 	private drafts = new SvelteMap<string, PromptPreset>(); // unsaved working copies
 	private initialized = false;
 	private activePresetId = $state<string | null>(null);
-	// Only external/full replacements tick this. Prompt Builder uses it to refresh an
-	// already-open editor when the active id stays the same (remote draft/default reset).
+	// Only replacements made outside the editor tick this (remote draft, default reset, a
+	// rename). Prompt Builder uses it to refresh an already-open editor when the active id stays the same.
 	private contentVersion = $state(0);
 
 	async initialize(): Promise<void> {
@@ -324,6 +324,21 @@ class PresetService {
 		await apiSend(`/api/presets/${encodeURIComponent(id)}`, 'PUT', { ...this.strip(newPreset), clientId: getClientId() });
 		this.presets.set(id, newPreset);
 		return newPreset;
+	}
+
+	/** A name is not an authoring edit: it lands on the saved preset and on any open draft
+	 *  together, so it never shows as an unsaved change and Discard cannot take it back. */
+	async renamePreset(id: string, name: string): Promise<PromptPreset> {
+		const committed = this.presets.get(id);
+		if (!committed) throw new Error(`Preset not found: ${id}`);
+		const renamed: PromptPreset = { ...this.clone(committed), name: name.trim() };
+		await apiSend(`/api/presets/${encodeURIComponent(id)}`, 'PUT', { ...this.strip(renamed), clientId: getClientId() });
+		this.presets.set(id, renamed);
+		const draft = this.drafts.get(id);
+		if (draft) await this.saveDraft({ ...this.clone(draft), name: renamed.name });
+		// The Prompt Builder's working copy would otherwise write the old name back into the draft.
+		this.contentVersion++;
+		return renamed;
 	}
 
 	async deletePreset(id: string): Promise<void> {
