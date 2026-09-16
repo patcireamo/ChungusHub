@@ -326,10 +326,9 @@ describe('per-key matching', () => {
 		expect(resolveKeyMatch('and/or', undefined, entryDefaults).mode).toBe('word');
 	});
 
-	// A repeat reaches the engine only through an import - SillyTavern's own files carry them
-	// and the list is read verbatim - and it used to be reported once per copy. Two identical
-	// matches are two costs: the trace renders a row per match and cannot key them apart, and
-	// an entry's group score is `matches.length`, which the repeat inflates.
+	// A repeat reaches the engine only through an import, and read twice it costs twice: the
+	// trace renders a row per match and cannot key two identical ones apart, and an entry's
+	// group score is `matches.length`, which the repeat inflates.
 	test('a key listed twice is reported once', () => {
 		const b = book([{ comment: 'Dupe', content: 'c', key: ['phone', 'phone'] }]);
 		expect(recordFor([b], ['I picked up the phone.'], 'Dupe').matches).toHaveLength(1);
@@ -341,8 +340,7 @@ describe('per-key matching', () => {
 		expect(match.map((m) => m.key)).toEqual(['phone', 'telephone']);
 	});
 
-	// Compared as written, so this stays two keys: an author writing both spellings, not a
-	// file repeating one. They match the same text under the default case-insensitive rule.
+	// Compared as written: an entry can be case-sensitive, so folding these would delete a key.
 	test('two spellings of one key differing only in case stay two keys', () => {
 		const b = book([{ comment: 'Case', content: 'c', key: ['Phone', 'phone'] }]);
 		expect(recordFor([b], ['a phone rang'], 'Case').matches.map((m) => m.key)).toEqual(['Phone', 'phone']);
@@ -354,6 +352,20 @@ describe('per-key matching', () => {
 			{ comment: 'B', content: 'b', key: ['rain', 'storm'], group: 'weather', order: 200 }
 		]);
 		expect(fired([b], ['rain and storm'])).toEqual(['b']);
+	});
+
+	// The secondary filter counts against the same deduped list it scanned. Counting against the
+	// raw one instead leaves AND ALL unsatisfiable for an imported entry, which is a silent drop:
+	// the entry simply stops firing and nothing in the trace says a repeat is why.
+	const repeatedSecondary = (selectiveLogic: number) =>
+		book([{ content: 'lore', key: ['king'], keysecondary: ['war', 'war'], selectiveLogic }]);
+
+	test('a secondary key listed twice can still satisfy AND ALL', () => {
+		expect(fired([repeatedSecondary(3)], ['the king went to war'])).toEqual(['lore']);
+	});
+
+	test('a secondary key listed twice does not satisfy NOT ALL on its own', () => {
+		expect(fired([repeatedSecondary(1)], ['the king went to war'])).toEqual([]);
 	});
 });
 
