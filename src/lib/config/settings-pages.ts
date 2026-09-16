@@ -207,6 +207,7 @@ export const ANCHOR_PAGES: Record<string, SettingsPage> = {
 	autoscroll: 'general',
 	reasoning: 'general',
 	'assistant-button': 'general',
+	'library-open-chat': 'general',
 	'story-map-scroll': 'general',
 	'split-view': 'general',
 	// Security

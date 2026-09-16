@@ -10,6 +10,7 @@
 	import { importSillyTavernCard } from '$lib/services/sillyTavernImport';
 	import { createBookIndex } from '$lib/lorebook/identity';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
+	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -23,6 +24,7 @@
 	import LibraryCompactCard from './LibraryCompactCard.svelte';
 	import LibraryGalleryCard from './LibraryGalleryCard.svelte';
 	import LibraryListRow from './LibraryListRow.svelte';
+	import LibraryOpenChatRow from './LibraryOpenChatRow.svelte';
 	import LibraryPager from './LibraryPager.svelte';
 	import ExportDialog from './ExportDialog.svelte';
 	import ConvertEntryDialog from './ConvertEntryDialog.svelte';
@@ -351,6 +353,18 @@
 		uiStore.libraryEditorId = id;
 	}
 
+	// The character of the chat behind the panel, resolved against the WHOLE library rather
+	// than the page on screen: a filter, a sort or a page is exactly what this steps over.
+	let chatCharacter = $derived.by(() => {
+		if (!generalSettingsStore.libraryOpenChatRow) return null;
+		const characterId = chatStore.activeChat?.characterId;
+		if (!characterId) return null;
+		return (
+			characterLibraryStore.entries.find((e) => e.id === characterId && e.type === 'character') ??
+			null
+		);
+	});
+
 	async function handleDuplicate(id: string) {
 		const entry = await characterLibraryStore.duplicateEntry(id);
 		if (entry) {
@@ -638,6 +652,14 @@
 <div class="brw" class:guard-flash={guardFlash}>
 	<!-- Browse list only. The entry editor pops out centered over the chat
 	     (LibraryEditorOverlay), so it isn't rendered here. -->
+
+	<!-- The character of the open story, one press from its editor. It stands down while the
+	     New chat flow or a selection owns the top of the panel: both are tasks of their own,
+	     and a door out of them here would read as part of the task. -->
+	{#if chatCharacter && !uiStore.newChatStep && !selectionMode}
+		<LibraryOpenChatRow entry={chatCharacter} label="In this chat" onOpen={handleEditEntry} />
+	{/if}
+
 	{#if sectionEntries.length > 0}
 		<!-- Toolbar: search front and center, three quiet disclosures, one primary action.
 		     The entry count lives in the search placeholder. -->

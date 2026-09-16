@@ -1331,6 +1331,81 @@
 		overflow: hidden;
 	}
 
+	/* ---- "In this chat": the open story's character, one press from its card. It rides
+	   ABOVE the toolbar and outside the list, because the obvious alternative (lifting that
+	   card to the top of the shelf) reorders every card under the reader the moment a chat
+	   opens. Characters shelf only. ---- */
+	.brw-now {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		width: 100%;
+		padding: 0.5rem 0.75rem;
+		border-bottom: 1px solid var(--color-border-subtle);
+		color: var(--color-text-muted);
+		text-align: left;
+		cursor: pointer;
+		transition: background-color 140ms ease;
+	}
+
+	.brw-now:hover {
+		background: color-mix(in srgb, var(--color-bg-tertiary) 55%, transparent);
+		color: var(--color-text-secondary);
+	}
+
+	/* Drawn inside the row: the panel clips its own overflow, so the ring's left and right
+	   edges are cut off at the default outward offset. */
+	.brw-now:focus-visible {
+		outline-offset: -2px;
+	}
+
+	.brw-now-face {
+		flex-shrink: 0;
+		display: grid;
+		place-items: center;
+		width: 1.6rem;
+		aspect-ratio: 3 / 4;
+		border-radius: var(--radius-sm);
+		background: var(--color-bg-tertiary);
+		overflow: hidden;
+	}
+
+	.brw-now-face img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+
+	.brw-now-text {
+		flex: 1;
+		min-width: 0;
+	}
+
+	/* Both lines carry their own line-height: the row is two lines in a fixed frame, and the
+	   reader's own line height would otherwise decide how tall the panel's first row is. */
+	.brw-now-label {
+		display: block;
+		font-family: var(--font-ui);
+		font-size: 0.625rem;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		line-height: 1.4;
+		text-transform: uppercase;
+	}
+
+	.brw-now-name {
+		display: block;
+		font-family: var(--font-ui);
+		font-size: 0.8125rem;
+		font-weight: 600;
+		line-height: 1.3;
+		color: var(--color-text-primary);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
 	/* Toolbar row. Also the position context every BrowsePopover panel anchors to,
 	   so popovers drop from the bar's right edge and never overflow a narrow dock. */
 	.brw-bar {
@@ -1938,6 +2013,10 @@
 		.brw-bar {
 			padding: 0.75rem 1.5rem;
 			gap: 0.625rem;
+		}
+
+		.brw-now {
+			padding: 0.5rem 1.5rem;
 		}
 
 		.brw-chips {

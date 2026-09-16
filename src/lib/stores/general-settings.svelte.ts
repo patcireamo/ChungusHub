@@ -33,6 +33,9 @@ interface GeneralSettings {
 	/** Show the floating Chungus Assistant launcher in the workspace corner. Off hides
 	 *  the button only: the assistant itself is untouched, and Ctrl/⌘+J still opens it. */
 	assistantLauncher: boolean;
+	/** Give the Library's Characters and Personas shelves a row naming what the open chat is
+	 *  played with, one press from that entry's editor. */
+	libraryOpenChatRow: boolean;
 	/** Split Settings on wide screens: the dock keeps the section list and pages
 	 *  open in a wide centered panel. Off = phone-style drill-down everywhere.
 	 *  Inert below dock widths (the panel is a single centered overlay there). */
@@ -70,6 +73,7 @@ const DEFAULT_SETTINGS: GeneralSettings = {
 	autoExpandReasoning: false,
 	personaSwitcher: false,
 	assistantLauncher: true,
+	libraryOpenChatRow: false,
 	settingsSplitView: false,
 	storyMapWheelPans: false,
 	welcomeSeen: false,
@@ -127,6 +131,10 @@ function normalize(raw: Partial<GeneralSettings> | null): GeneralSettings {
 			typeof raw?.assistantLauncher === 'boolean'
 				? raw.assistantLauncher
 				: DEFAULT_SETTINGS.assistantLauncher,
+		libraryOpenChatRow:
+			typeof raw?.libraryOpenChatRow === 'boolean'
+				? raw.libraryOpenChatRow
+				: DEFAULT_SETTINGS.libraryOpenChatRow,
 		settingsSplitView:
 			typeof raw?.settingsSplitView === 'boolean'
 				? raw.settingsSplitView
@@ -157,6 +165,7 @@ class GeneralSettingsStore {
 	followStream = $derived(this.settings.followStream);
 	autoExpandReasoning = $derived(this.settings.autoExpandReasoning);
 	assistantLauncher = $derived(this.settings.assistantLauncher);
+	libraryOpenChatRow = $derived(this.settings.libraryOpenChatRow);
 	settingsSplitView = $derived(this.settings.settingsSplitView);
 	storyMapWheelPans = $derived(this.settings.storyMapWheelPans);
 	welcomeSeen = $derived(this.settings.welcomeSeen);
@@ -218,6 +227,11 @@ class GeneralSettingsStore {
 
 	setAssistantLauncher(enabled: boolean): void {
 		this.settings.assistantLauncher = enabled;
+		this.persist();
+	}
+
+	setLibraryOpenChatRow(enabled: boolean): void {
+		this.settings.libraryOpenChatRow = enabled;
 		this.persist();
 	}
 

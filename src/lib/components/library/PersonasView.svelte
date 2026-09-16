@@ -2,6 +2,8 @@
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { personaStore, LAST_PERSONA_REASON } from '$lib/stores/persona.svelte';
+	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
+	import { chatPersonaEntry } from '$lib/utils/chat-setup';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { workspaceFocus } from '$lib/stores/workspaceFocus.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
@@ -15,6 +17,7 @@
 	import LibraryCompactCard from './LibraryCompactCard.svelte';
 	import LibraryGalleryCard from './LibraryGalleryCard.svelte';
 	import LibraryListRow from './LibraryListRow.svelte';
+	import LibraryOpenChatRow from './LibraryOpenChatRow.svelte';
 	import ConvertEntryDialog from './ConvertEntryDialog.svelte';
 	import LibraryPager from './LibraryPager.svelte';
 	import {
@@ -182,6 +185,16 @@
 		uiStore.libraryEditorId = id;
 	}
 
+	// Who the open chat is played as, through the app's one resolver, so this row and the
+	// composer's Chat Setup chip can never name two different people. The open chat is asked
+	// for first: handed no chat that resolver answers with the app's own persona, which is a
+	// true answer to a different question and would put a row here with no story behind it.
+	let chatPersona = $derived.by(() => {
+		const chat = chatStore.activeChat;
+		if (!generalSettingsStore.libraryOpenChatRow || !chat) return null;
+		return chatPersonaEntry(chat);
+	});
+
 	async function handleDuplicate(id: string) {
 		const entry = await characterLibraryStore.duplicateEntry(id);
 		if (entry) {
@@ -234,6 +247,13 @@
 <div class="brw" class:guard-flash={guardFlash}>
 	<!-- Browse list only. The entry editor pops out centered over the chat
 	     (LibraryEditorOverlay), so it isn't rendered here. -->
+
+	<!-- The persona the open story is played as, one press from its editor. Gone while the New
+	     chat flow is on, since this shelf is that flow's persona picker. -->
+	{#if chatPersona && !uiStore.newChatStep}
+		<LibraryOpenChatRow entry={chatPersona} label="Playing as" onOpen={handleEditEntry} />
+	{/if}
+
 	<!-- Toolbar: search front and center, two quiet disclosures, one primary action.
 	     The entry count lives in the search placeholder. -->
 	<div class="brw-bar">
