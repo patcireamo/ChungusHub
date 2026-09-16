@@ -35,6 +35,12 @@ describe('addLorebookKeys', () => {
 		expect(out.refused).toEqual(['phone']);
 	});
 
+	test('one word offered several times is refused once, so the caller counts keywords', () => {
+		const out = addLorebookKeys(['phone'], ['phone', 'phone', 'phone']);
+		expect(out.next).toEqual(['phone']);
+		expect(out.refused).toEqual(['phone']);
+	});
+
 	test('unrelated keys are added in the order they were offered', () => {
 		const out = addLorebookKeys(['radio'], ['phone', 'tv']);
 		expect(out.next).toEqual(['radio', 'phone', 'tv']);

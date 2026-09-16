@@ -1076,7 +1076,7 @@ export function formatKeys(keys: string[]): string {
 export interface LorebookKeyAddition {
 	/** The list with every accepted key appended, in the order they were offered. */
 	next: string[];
-	/** Keys refused because this list already holds that exact string. */
+	/** Keys refused because this list already holds that exact string, each named once. */
 	refused: string[];
 }
 
@@ -1091,19 +1091,20 @@ export interface LorebookKeyAddition {
  * change after the fact.
  *
  * Pure, and it returns what it refused rather than dropping it quietly: a keystroke that
- * vanishes with no explanation reads as the input being broken.
+ * vanishes with no explanation reads as the input being broken. Each refused key is named
+ * once however many times it was offered, so the caller counts keywords and not tokens.
  */
 export function addLorebookKeys(existing: string[], incoming: string[]): LorebookKeyAddition {
 	const next = [...existing];
 	const held = new Set(existing);
-	const refused: string[] = [];
+	const refused = new Set<string>();
 	for (const key of incoming) {
 		if (held.has(key)) {
-			refused.push(key);
+			refused.add(key);
 			continue;
 		}
 		next.push(key);
 		held.add(key);
 	}
-	return { next, refused };
+	return { next, refused: [...refused] };
 }
