@@ -143,10 +143,11 @@ export function resolveKeyMatch(
  * mappings, so a new source is a single row.
  *
  * `steering` is the one row that is not card text: it is the steering notes standing over this
- * chat (architecture/engines.md). It rides SillyTavern's `matchCharacterDepthPrompt` because
- * that flag names the same job on the other side: scan the guidance this app injects at a
- * depth. Nothing here models a character depth prompt to claim the name instead.
- * A book that opted into it there opts into it here, and back again.
+ * chat (architecture/engines.md). It rides SillyTavern's `matchCharacterDepthPrompt` because on
+ * this side that flag's own subject IS a steering note: a card's `depth_prompt` is imported as a
+ * character-scoped one (architecture/sillytavern-interchange.md). So the two names the boundary
+ * carries point at the same text rather than at two jobs that merely resemble each other, and a
+ * book that opted into it there opts into it here, and back again.
  */
 export const LOREBOOK_SCAN_FIELDS = [
 	{ id: 'characterDescription', label: 'Description', native: 'matchCharacterDescription', card: 'match_character_description' },

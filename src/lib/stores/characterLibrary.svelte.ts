@@ -14,6 +14,7 @@ import { createEmptyCharacter, createEmptyPersona } from '$lib/types/library';
 import type { ImportResult } from '$lib/services/sillyTavernImport';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import type { BookIndex } from '$lib/lorebook/identity';
+import { steeringStore } from '$lib/stores/steering.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
 import { DebouncedWriter } from '$lib/utils/debounced-write';
 import {
@@ -521,6 +522,21 @@ class CharacterLibraryStore {
 			entry.activeVersionId = activeId;
 			entry.data = this.clone(this.getVersion(activeId)!.data);
 			await this.persistEntry(entry);
+		}
+
+		// The card's Character's Note lands as a steering note rather than being dropped with the
+		// rest of the card's extensions. Character scope and not version: the card it came from
+		// has no versions to choose between.
+		if (!isPersona && importResult.depthPrompt) {
+			const { text, depth, role } = importResult.depthPrompt;
+			await steeringStore.create({
+				text,
+				scope: 'character',
+				scopeId: entry.id,
+				title: 'Character’s Note',
+				depth,
+				role
+			});
 		}
 
 		// The card's lorebook, but only when the caller opted in (import is user-confirmed).

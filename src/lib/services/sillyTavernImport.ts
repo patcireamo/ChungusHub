@@ -10,6 +10,7 @@ import type { LibrarySeed, CharacterTraits, LibraryEntryData } from '$lib/types/
 import type { ExportedLibraryEntry } from '$lib/services/libraryExport';
 import type { Lorebook } from '$lib/lorebook/types';
 import { lorebookFromCharacterBook } from '$lib/lorebook/sillytavern';
+import { clampSteeringDepth, type SteeringRole } from '$lib/types/steering';
 import { decodeBase64Utf8, readTextChunk } from '$lib/services/pngText';
 
 /** SillyTavern character card V2 format */
@@ -51,6 +52,14 @@ interface SillyTavernCharacter {
 	};
 }
 
+/** A card's Character's Note, ready to land as a steering note. `depth`/`role` are null
+ *  where the card named none, which is this app's "inherit the app-wide placement". */
+export interface ImportedDepthPrompt {
+	text: string;
+	depth: number | null;
+	role: SteeringRole | null;
+}
+
 export interface ImportResult {
 	character: LibrarySeed;
 	/** Which library shelf this entry belongs on. SillyTavern cards are always characters. */
@@ -66,6 +75,11 @@ export interface ImportResult {
 	 * against and leaves it alone.
 	 */
 	worldName: string | null;
+	/**
+	 * The card's own Character's Note (`extensions.depth_prompt`), which lands as a
+	 * character-scoped steering note rather than a trait. Null when the card names none.
+	 */
+	depthPrompt: ImportedDepthPrompt | null;
 	/** Character versions from a ChungusHub v2 export, in order, recreated with fresh
 	 *  ids on import. Exactly one carries `active`. Absent for SillyTavern cards and v1. */
 	versions?: { name: string; data: LibraryEntryData; active: boolean }[];
@@ -117,9 +131,11 @@ async function importChungusExport(entry: ExportedLibraryEntry): Promise<ImportR
 		entryType: entry.type === 'persona' ? 'persona' : 'character',
 		imageFile,
 		// Embedded lorebooks don't travel in our export (only ids), so nothing to bring in here,
-		// and nothing here names a SillyTavern world either.
+		// and nothing here names a SillyTavern world either. Nor a Character's Note: our own
+		// card never writes one, because on this side that guidance is a steering note.
 		lorebook: null,
 		worldName: null,
+		depthPrompt: null,
 		...(versions ? { versions } : {})
 	};
 }
@@ -179,6 +195,31 @@ function mapSillyTavernToCharacter(stChar: SillyTavernCharacter): LibrarySeed {
 function readWorldName(stChar: SillyTavernCharacter): string | null {
 	const world = stChar.data?.extensions?.world ?? stChar.extensions?.world;
 	return typeof world === 'string' && world.trim() ? world.trim() : null;
+}
+
+/**
+ * The card's Character's Note (`extensions.depth_prompt`).
+ *
+ * The second field read outside `mapSillyTavernToCharacter`, and like `world` it is not a trait:
+ * it is guidance at a depth wearing a role, so it lands as a steering note (architecture/engines.md).
+ * A trait slot would leave the depth and role the card chose with nowhere to go.
+ *
+ * **Blank is no note**: SillyTavern writes this block on every card whether or not the author
+ * filled it in, so taking it at face value shelves a blank note on every character an import
+ * brings in. A depth or role spelled wrong reads as absent (inherit), never as a refusal: the
+ * guidance is the note, and a placement field is not.
+ */
+function readDepthPrompt(stChar: SillyTavernCharacter): ImportedDepthPrompt | null {
+	const raw = stChar.data?.extensions?.depth_prompt ?? stChar.extensions?.depth_prompt;
+	if (!raw || typeof raw !== 'object') return null;
+	const { prompt, depth, role } = raw as { prompt?: unknown; depth?: unknown; role?: unknown };
+	const text = typeof prompt === 'string' ? prompt.trim() : '';
+	if (!text) return null;
+	return {
+		text,
+		depth: typeof depth === 'number' && Number.isFinite(depth) ? clampSteeringDepth(depth) : null,
+		role: role === 'system' || role === 'user' || role === 'assistant' ? role : null
+	};
 }
 
 /**
@@ -255,5 +296,12 @@ export async function importSillyTavernCard(file: File): Promise<ImportResult> {
 			? lorebookFromCharacterBook(rawBook, `${character.name || 'Character'} Lorebook`)
 			: null;
 
-	return { character, entryType: 'character', imageFile, lorebook, worldName: readWorldName(stChar) };
+	return {
+		character,
+		entryType: 'character',
+		imageFile,
+		lorebook,
+		worldName: readWorldName(stChar),
+		depthPrompt: readDepthPrompt(stChar)
+	};
 }
