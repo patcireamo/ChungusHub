@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { resolveEncoding, encodingCount } from './encodings';
+import { resolveEncoding, encodingCount, COUNT_CACHE_MAX_CHARS } from './encodings';
 import { countTokens, countMessages } from './count';
 import { blendRatio, clampRatio, sampleRatio, MIN_ESTIMATE, RATIO_MAX, RATIO_MIN } from './calibration-core';
 
@@ -52,6 +52,45 @@ describe('counting', () => {
 		const msgs = [{ content: 'alpha beta gamma' }, { content: 'delta epsilon' }];
 		const expected = countTokens('alpha beta gamma', 'gpt-4o') + countTokens('delta epsilon', 'gpt-4o');
 		expect(countMessages(msgs, 'gpt-4o')).toBe(expected);
+	});
+});
+
+describe('the count cache', () => {
+	// Counting is memoized per encoding (encodings.ts). BPE is pure, so the only ways a cache
+	// here can be wrong are mixing the two encodings up and handing back a value it did not
+	// compute for that text. Neither would fail a test anywhere else: a meter reading quietly
+	// wrong looks exactly like a meter reading right.
+	test('an equal string assembled at runtime counts the same as the literal', () => {
+		const literal = 'the quick brown fox jumps over the lazy dog';
+		const first = countTokens(literal, 'gpt-4o');
+		expect(countTokens(literal, 'gpt-4o')).toBe(first);
+		expect(countTokens(['the quick brown fox', ' jumps over the lazy dog'].join(''), 'gpt-4o')).toBe(first);
+	});
+
+	test('the same text keeps its own answer under each encoding', () => {
+		// The one way a shared map breaks: whichever encoding asked first wins and the other
+		// silently inherits its number.
+		const s = '这是一段用来测试分词器的中文文本，包含若干汉字与标点符号。';
+		const cl = encodingCount(s, 'cl100k_base');
+		const o2 = encodingCount(s, 'o200k_base');
+		expect(cl).not.toBe(o2);
+		expect(encodingCount(s, 'cl100k_base')).toBe(cl);
+		expect(encodingCount(s, 'o200k_base')).toBe(o2);
+	});
+
+	test('a count is still right after the cache overflows and is dropped', () => {
+		const s = 'a sentence that outlives the cache it was stored in';
+		const before = countTokens(s, 'gpt-4o');
+		const filler = 'lorem ipsum dolor sit amet '.repeat(4000);
+		for (let held = 0; held <= COUNT_CACHE_MAX_CHARS; held += filler.length) {
+			encodingCount(`${held} ${filler}`, 'o200k_base');
+		}
+		expect(countTokens(s, 'gpt-4o')).toBe(before);
+	});
+
+	test('empty text is zero under either encoding', () => {
+		expect(encodingCount('', 'o200k_base')).toBe(0);
+		expect(encodingCount('', 'cl100k_base')).toBe(0);
 	});
 });
 
