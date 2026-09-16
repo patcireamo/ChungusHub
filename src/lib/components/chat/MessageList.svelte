@@ -109,6 +109,7 @@
 	let nearBottom = $state(true);
 	let hasUnseen = $state(false);
 	let showJumpToLatest = $derived(!nearBottom && (isStreaming || hasUnseen));
+	let followStream = $derived(generalSettingsStore.followStream);
 	let lastScrollTop = 0;
 	// Set right before a programmatic snap so the resulting scroll event isn't mistaken for
 	// the user scrolling. Otherwise our own auto-follow reads as intent and releases the pin.
@@ -320,6 +321,9 @@
 		// it: a pinned reader is already at the bottom, and one who scrolled up to read must
 		// not be thrown to the end by the last frame of a reply they already left behind.
 		const streamSettled = chatId === prevChatId && prevIsStreaming && !isStreaming;
+		// A reply's first frame lands like a turn does, so a reader who does not follow the stream
+		// still sees it begin under the turn they sent.
+		const streamStarted = chatId === prevChatId && !prevIsStreaming && isStreaming;
 
 		if (listElement) {
 			if (chatId !== prevChatId) {
@@ -348,10 +352,15 @@
 				// user scrolling up, which drops the pin a frame later.
 				lastScrollTop = listElement.scrollTop;
 				hasUnseen = false;
-			} else if ((isNewMessage || isStreaming) && nearBottom && !streamSettled) {
+			} else if ((isNewMessage || streamStarted || (isStreaming && followStream)) && nearBottom && !streamSettled) {
 				snapToBottom();
 			} else if (isNewMessage) {
 				hasUnseen = true;
+			} else if (isStreaming && !followStream) {
+				// Nothing follows, and a reply growing under a still view fires no scroll event, so
+				// the pin is read off geometry here or the jump pill never appears.
+				const dist = listElement.scrollHeight - listElement.scrollTop - listElement.clientHeight;
+				nearBottom = dist <= NEAR_BOTTOM_PX;
 			}
 		}
 

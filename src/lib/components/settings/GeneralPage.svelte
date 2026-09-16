@@ -30,6 +30,7 @@
 	let transcriptPaging = $derived(generalSettingsStore.transcriptPaging);
 	let transcriptPageSize = $derived(generalSettingsStore.transcriptPageSize);
 	let transcriptLoadMode = $derived(generalSettingsStore.transcriptLoadMode);
+	let followStream = $derived(generalSettingsStore.followStream);
 	let autoExpandReasoning = $derived(generalSettingsStore.autoExpandReasoning);
 	let assistantLauncher = $derived(generalSettingsStore.assistantLauncher);
 	let settingsSplitView = $derived(generalSettingsStore.settingsSplitView);
@@ -200,6 +201,23 @@
 				</div>
 			</div>
 		{/if}
+	</section>
+
+	<section class="card" data-setting="autoscroll">
+		<div class="card-head">
+			<span class="card-title">Autoscroll</span>
+			<InfoTip
+				text="Scrolling up stops it at any time. Off, the chat shows a reply starting and then stays where you are, and the arrow at the bottom of the chat takes you to the newest text."
+			/>
+		</div>
+		<div class="toggle-row" use:toggleRow>
+			<span class="slider-label">Follow replies as they stream</span>
+			<Toggle
+				checked={followStream}
+				onchange={(v) => generalSettingsStore.setFollowStream(v)}
+				label="Follow replies as they stream"
+			/>
+		</div>
 	</section>
 
 	<section class="card" data-setting="assistant-button">

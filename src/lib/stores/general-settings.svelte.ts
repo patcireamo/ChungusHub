@@ -21,6 +21,9 @@ interface GeneralSettings {
 	transcriptPageSize: number;
 	/** What reaches back for earlier turns: the scroll itself, or a press. */
 	transcriptLoadMode: TranscriptLoadMode;
+	/** Keep a streaming reply's newest line in view while the reader sits at the bottom. Off,
+	 *  only a turn landing and the reply's first frame move the view. */
+	followStream: boolean;
 	/** Open the per-message reasoning box by default (streaming and saved turns). */
 	autoExpandReasoning: boolean;
 	/** Read by nothing. Who a story plays as is claimed in the chat itself (the composer's
@@ -63,6 +66,7 @@ const DEFAULT_SETTINGS: GeneralSettings = {
 	transcriptPaging: true,
 	transcriptPageSize: 100,
 	transcriptLoadMode: 'scroll',
+	followStream: true,
 	autoExpandReasoning: false,
 	personaSwitcher: false,
 	assistantLauncher: true,
@@ -109,6 +113,8 @@ function normalize(raw: Partial<GeneralSettings> | null): GeneralSettings {
 			raw?.transcriptLoadMode === 'button' || raw?.transcriptLoadMode === 'scroll'
 				? raw.transcriptLoadMode
 				: DEFAULT_SETTINGS.transcriptLoadMode,
+		followStream:
+			typeof raw?.followStream === 'boolean' ? raw.followStream : DEFAULT_SETTINGS.followStream,
 		autoExpandReasoning:
 			typeof raw?.autoExpandReasoning === 'boolean'
 				? raw.autoExpandReasoning
@@ -148,6 +154,7 @@ class GeneralSettingsStore {
 	transcriptPaging = $derived(this.settings.transcriptPaging);
 	transcriptPageSize = $derived(this.settings.transcriptPageSize);
 	transcriptLoadMode = $derived(this.settings.transcriptLoadMode);
+	followStream = $derived(this.settings.followStream);
 	autoExpandReasoning = $derived(this.settings.autoExpandReasoning);
 	assistantLauncher = $derived(this.settings.assistantLauncher);
 	settingsSplitView = $derived(this.settings.settingsSplitView);
@@ -196,6 +203,11 @@ class GeneralSettingsStore {
 
 	setTranscriptLoadMode(mode: TranscriptLoadMode): void {
 		this.settings.transcriptLoadMode = mode;
+		this.persist();
+	}
+
+	setFollowStream(enabled: boolean): void {
+		this.settings.followStream = enabled;
 		this.persist();
 	}
 

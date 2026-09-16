@@ -204,6 +204,7 @@ export const ANCHOR_PAGES: Record<string, SettingsPage> = {
 	'message-drafts': 'general',
 	'input-history': 'general',
 	'long-chats': 'general',
+	autoscroll: 'general',
 	reasoning: 'general',
 	'assistant-button': 'general',
 	'story-map-scroll': 'general',
