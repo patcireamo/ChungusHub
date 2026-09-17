@@ -980,6 +980,7 @@
 						<button
 							type="button"
 							class="map-label"
+							class:is-selected={n.id === selectedId}
 							class:is-dimmed={searchActive && !matchSet.has(n.id)}
 							style="left: {screenX(n)}px; top: {screenY(n) + rOf(n) * k + 6}px; --bc: {branchColorHex(
 								n.label!.color
@@ -1431,8 +1432,14 @@
 		pointer-events: none;
 	}
 
+	/* Pills are centred on nodes one column apart while the pill itself is several columns
+	   wide, so they overlap and paint order alone decides the top one. Without this ladder the
+	   pill under the pointer stays buried (so does a focus ring, and a search match under a
+	   dimmed miss), and raising it only reads if the raised state is also OPAQUE: the glass
+	   tone the pill rests on lets the name beneath it read straight through. */
 	.map-label {
 		position: absolute;
+		z-index: 1;
 		/* Anchored to the node's centre and pulled back by half its own width, so the
 		   browser's measurement centres it: the thing the SVG version had to guess. */
 		transform: translateX(-50%);
@@ -1454,17 +1461,33 @@
 		transition: opacity 140ms ease;
 	}
 
-	.map-label:hover {
-		background: color-mix(in srgb, var(--bc) 34%, var(--color-bg-elevated));
+	/* These four carry the ladder and all sit at the same specificity, so their source order
+	   IS the z-order: a dimmed pill still rises when pointed at, a selected one outranks its
+	   neighbours (the only raise touch has, since a finger never hovers). */
+	.map-label.is-dimmed {
+		opacity: 0.16;
+		z-index: 0;
+	}
+
+	.map-label.is-selected {
+		z-index: 2;
+	}
+
+	.map-label:hover,
+	.map-label:focus-visible {
+		z-index: 3;
+	}
+
+	.map-label.is-selected,
+	.map-label:hover,
+	.map-label:focus-visible {
+		background: color-mix(in srgb, var(--bc) 34%, var(--color-bg-solid));
+		box-shadow: var(--shadow-md);
 	}
 
 	.map-label:focus-visible {
 		outline: 2px solid color-mix(in srgb, var(--bc) 80%, transparent);
 		outline-offset: 1px;
-	}
-
-	.map-label.is-dimmed {
-		opacity: 0.16;
 	}
 
 	.map-label-dot {
