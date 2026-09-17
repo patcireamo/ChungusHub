@@ -4,6 +4,7 @@ import { db } from '$lib/services/database';
 import { chatStore } from './chat.svelte';
 import { toastStore } from './toast.svelte';
 import { llmService } from '$lib/services/llm/provider';
+import { notifySound } from '$lib/services/notificationSound';
 import { findActivePath, findDeepestLeafFromNode } from '$lib/utils/message-tree';
 import { buildPromptMessages, type BuiltPrompt, type PromptBuildContext } from '$lib/utils/prompt-builder';
 import { promptHoldStore } from './promptHold.svelte';
@@ -191,6 +192,11 @@ class MessageStore {
 				}
 			});
 
+			// The wait is over and the reader was not the one who ended it, so this is the
+			// moment worth a sound. Cancelled is the one ending that stays silent: they were
+			// already here, their finger was on the button.
+			if (result.finishReason !== 'cancelled') notifySound('reply-done');
+
 			// A stop mid-stream comes back as a normal result carrying everything that
 			// streamed before it, and that text is persisted as the turn like any other
 			// reply. The user watched it arrive and stopped because they had enough.
@@ -217,6 +223,7 @@ class MessageStore {
 				// stream opened): nothing streamed, nothing to keep.
 				return null;
 			}
+			notifySound('failed');
 			// The turn is the server's to write, so a break on this side says nothing about
 			// whether one landed: a generation that finished before the connection was lost
 			// is already in the chat. Re-read before surfacing the failure, or the reply sits
@@ -792,6 +799,11 @@ class MessageStore {
 			// Teach the per-model token calibration from the provider's real prompt_tokens.
 			tokenCalibration.record(result.model, countMessages(messages, result.model), result.usage.promptTokens);
 
+			// Sounded on every ending the reader did not cause, the two soft no-ops below
+			// included: nothing more is coming either way, and a warning they cannot see from
+			// another window is not news.
+			if (result.finishReason !== 'cancelled') notifySound('reply-done');
+
 			if (!result.content.trim()) {
 				// A stop before the first token is the user's own doing, not a model that
 				// answered with nothing, so it passes silently.
@@ -854,6 +866,7 @@ class MessageStore {
 			// A stop the server never answered: nothing streamed back, so the stored turn
 			// stays untouched (the kept-tail case resolves normally above).
 			if (!(error instanceof Error && error.name === 'AbortError')) {
+				notifySound('failed');
 				toastStore.failed('continue the reply', error);
 			}
 		} finally {
@@ -970,6 +983,8 @@ class MessageStore {
 				}
 			});
 
+			if (result.finishReason !== 'cancelled') notifySound('reply-done');
+
 			// Same stop contract as generateResponse: keep what streamed, and treat a stop
 			// before the first token as a plain abort (nothing to persist).
 			if (!result.committedMessageId) return;
@@ -989,6 +1004,7 @@ class MessageStore {
 			if (error instanceof Error && error.name === 'AbortError') {
 				// User cancelled
 			} else if (error instanceof Error) {
+				notifySound('failed');
 				// Same re-read as generateResponse: the scene is the server's to write, so a
 				// break here does not mean none landed.
 				await this.refreshAfterFailure(state.chat.id);

@@ -32,6 +32,7 @@ import {
 	AMBIENT_EFFECT_SETTINGS
 } from '$lib/types/ambient';
 import { STEERING_ROLES, STEERING_SCOPES } from '$lib/types/steering';
+import { SOUND_EVENTS, TONES, TONE_IDS } from '$lib/config/sound-events';
 import { palettes } from '$lib/themes/presets';
 // The app's own reading, so this contract and the palette editor's readout can never
 // drift into disagreeing about what a ratio is.
@@ -1312,6 +1313,34 @@ describe('settings deep links (architecture/chungus-assistant.md #1, architectur
 		walk(join(ROOT, 'src', 'lib', 'components'));
 		expect(marked.size, 'found no data-setting attributes, so the scan is stale').toBeGreaterThan(0);
 		expect(anchors.filter((a) => !marked.has(a))).toEqual([]);
+	});
+});
+
+describe('notification sounds (architecture/build-packaging.md #10)', () => {
+	// The registry names a file and a license notice names the same file, and the two live
+	// in different worlds: one is TypeScript, the other is the text that has to travel with
+	// the audio for CC BY to be satisfied. A tone added to the registry and forgotten in
+	// CREDITS.txt ships unattributed, which nothing else in the build would notice.
+	test('every tone has a file and a credit, and every file is a tone', () => {
+		const files = readdirSync(join(ROOT, 'static', 'sounds'))
+			.filter((name) => name.endsWith('.mp3'))
+			.map((name) => name.slice(0, -'.mp3'.length))
+			.sort();
+		expect(files.length, 'found no tones, so the scan is stale').toBeGreaterThan(0);
+		expect([...TONE_IDS].sort()).toEqual(files);
+
+		const credits = read('static', 'sounds', 'CREDITS.txt');
+		expect(TONE_IDS.filter((id) => !credits.includes(`${id}.mp3`))).toEqual([]);
+	});
+
+	test('every event defaults to a tone that exists', () => {
+		expect(SOUND_EVENTS.filter((e) => !TONE_IDS.includes(e.defaultTone)).map((e) => e.id)).toEqual([]);
+	});
+
+	// The correction exists to close a 23 dB spread between the nine, so a tone carrying the
+	// neutral 1 is one nobody measured rather than one that happened to land there.
+	test('every tone carries a measured loudness correction', () => {
+		expect(TONES.filter((t) => t.gain === 1 || !(t.gain > 0)).map((t) => t.id)).toEqual([]);
 	});
 });
 

@@ -12,6 +12,8 @@
 	import { advancedSettingsStore } from '$lib/stores/advanced-settings.svelte';
 	import { promptHoldStore } from '$lib/stores/promptHold.svelte';
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
+	import { audioSettingsStore } from '$lib/stores/audio-settings.svelte';
+	import { initNotificationSounds } from '$lib/services/notificationSound';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 	import { inputHistoryStore } from '$lib/stores/inputHistory.svelte';
 	import { ambientStore } from '$lib/stores/ambient.svelte';
@@ -157,6 +159,11 @@
 			// outage rule has to be armed before any surface can ask it anything.
 			deleteGuard.initialize();
 			await generalSettingsStore.initialize();
+			// Which events make a sound, and how loud. The listeners go up beside it rather
+			// than on the Audio page: the gesture that lets a browser make noise is usually
+			// spent long before anyone opens Settings (architecture/ui-shell-settings.md).
+			await audioSettingsStore.initialize();
+			initNotificationSounds();
 			// Settings only, not the snapshot listing: the Backups root row shows the
 			// schedule, and the listing is fetched when its page opens.
 			await backupStore.initialize();

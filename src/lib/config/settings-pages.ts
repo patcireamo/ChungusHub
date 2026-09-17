@@ -19,6 +19,8 @@ import { connectionStore } from '$lib/stores/connections.svelte';
 import { ENGINES } from '$lib/engines/registry';
 import { backupStore } from '$lib/stores/backups.svelte';
 import { advancedSettingsStore } from '$lib/stores/advanced-settings.svelte';
+import { audioSettingsStore } from '$lib/stores/audio-settings.svelte';
+import { SOUND_EVENTS } from '$lib/config/sound-events';
 import { APP_VERSION } from '$lib/version';
 
 /**
@@ -35,6 +37,7 @@ export type SettingsTab =
 	| 'advanced'
 	| 'security'
 	| 'engines'
+	| 'audio'
 	| 'promptBuilder'
 	| 'regex';
 
@@ -46,6 +49,7 @@ export type SettingsPage =
 	| 'chat'
 	// App
 	| 'general'
+	| 'audio'
 	| 'engines'
 	| 'security'
 	| 'import'
@@ -73,6 +77,7 @@ export type SettingsRowIcon =
 	| 'download'
 	| 'archive'
 	| 'info'
+	| 'bell'
 	| 'sliders';
 
 export interface SettingsRow {
@@ -103,6 +108,11 @@ function enginesSummary(): string {
 	return `${on} of ${ENGINES.length} on`;
 }
 
+function audioSummary(): string {
+	if (!audioSettingsStore.enabled) return 'Off';
+	return `${audioSettingsStore.activeCount} of ${SOUND_EVENTS.length} on`;
+}
+
 /**
  * Reads the settings half only. The listing is server state the page fetches when it opens,
  * and the root row must not be the thing that goes and gets it, since every return to the root
@@ -124,6 +134,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		label: 'App',
 		rows: [
 			{ page: 'general', label: 'General', icon: 'settings' },
+			{ page: 'audio', label: 'Audio', icon: 'bell', preview: audioSummary },
 			{ page: 'engines', label: 'Engines', icon: 'bolt', preview: enginesSummary },
 			{ page: 'security', label: 'Security', icon: 'shield' },
 			{ page: 'backups', label: 'Backups', icon: 'archive', preview: backupsSummary },
@@ -201,6 +212,10 @@ export const ANCHOR_PAGES: Record<string, SettingsPage> = {
 	'interface-defaults': 'interface',
 	'chat-defaults': 'chat',
 	// General
+	// Audio
+	'notification-sounds': 'audio',
+	'sound-events': 'audio',
+
 	'message-drafts': 'general',
 	'input-history': 'general',
 	'long-chats': 'general',
@@ -235,6 +250,7 @@ export const TAB_FALLBACK_PAGE: Record<SettingsTab, SettingsPage> = {
 	interface: 'interface',
 	security: 'security',
 	engines: 'engines',
+	audio: 'audio',
 	promptBuilder: 'prompt-builder',
 	regex: 'regex',
 	advanced: 'advanced'

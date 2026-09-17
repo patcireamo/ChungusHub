@@ -25,6 +25,7 @@ import {
 	type AssistantTurnError
 } from '$lib/services/transport';
 import { llmService } from '$lib/services/llm/provider';
+import { notifySound } from '$lib/services/notificationSound';
 import { DEFAULT_APPROVAL_MODE, readApprovalMode } from '$lib/config/assistant-approval';
 import { applySessionSettings, isSessionSettingsStale } from '$lib/services/assistantSessionSettingsService';
 import { deleteAssistantFile, listAssistantFiles, type AssistantFile } from '$lib/services/assistantFilesService';
@@ -397,6 +398,9 @@ class AssistantSessionStore {
 			// A turn started on THIS page settles through its own promise, which carries the
 			// cases no event can (a pre-flight throw, a dropped socket), so leave it alone.
 			if (this.aborts.has(event.sessionId)) return;
+			// A turn this page did not start, so the feed is the only place its ending is
+			// known. The other half is in `runTurn`, where a turn started here settles.
+			notifySound('assistant-done');
 			this.runtime[event.sessionId] = emptyRuntime();
 			this.absorbCommitted(event.sessionId, event.committed);
 			return;
@@ -434,6 +438,9 @@ class AssistantSessionStore {
 			return;
 		}
 		if (event.kind === 'ask') {
+			// The turn is not finished, it is stopped: nothing moves until this is answered,
+			// which is why it is its own event rather than a quieter shade of the last one.
+			notifySound('assistant-ask');
 			rt.pending = event.ask;
 			return;
 		}
@@ -856,6 +863,7 @@ class AssistantSessionStore {
 			// Nothing is committed client-side for a finished turn any more, so a dropped
 			// socket cannot lose a transcript the server already owns.
 			this.absorbCommitted(sessionId, done.committed);
+			notifySound('assistant-done');
 		} catch (e) {
 			const err = e as AssistantTurnError;
 			if (err?.detached) {
@@ -869,11 +877,13 @@ class AssistantSessionStore {
 				// is over as far as this page knows; a reconnect corrects it either way.
 			} else if (err?.committed) {
 				// The turn failed but the server recorded it (partial steps + error).
+				notifySound('failed');
 				this.absorbCommitted(sessionId, err.committed);
 			} else {
 				// The turn never reached a server commit (client pre-flight throw, busy-lock
 				// or duplicate-id refusal): record a local error bubble so the failure is
 				// visible in the transcript and Retry has a target.
+				notifySound('failed');
 				await this.commitLocalError(sessionId, err);
 			}
 		} finally {
