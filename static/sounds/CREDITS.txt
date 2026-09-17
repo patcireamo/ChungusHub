@@ -1,0 +1,79 @@
+The sounds in this folder are not part of ChungusHub and are not covered by its
+license. Each one keeps the license it was published under, and this notice is
+what carries the credit those licenses ask for, so it travels with the sound
+files wherever they go.
+
+All nine came from Freesound (https://freesound.org/). Six were transcoded to
+MP3 so they play in every browser the app supports; that is a change of format
+and nothing else, with no trimming, mixing or level changes, and each one still
+runs exactly as long as its source. The other three were published as MP3 and
+are copied byte for byte. Every file was renamed, and the entries below map each
+new name back to where it came from.
+
+Files marked * are the transcoded ones.
+
+
+CC0 1.0 UNIVERSAL
+https://creativecommons.org/publicdomain/zero/1.0/
+
+These ask for no credit at all. They are credited anyway.
+
+    alert.mp3 *
+        "Notification 7.ogg" by melokacool
+        https://freesound.org/people/melokacool/sounds/616699/
+
+    bell.mp3
+        "Soft-Notifications - Bell - Ding-Dong.mp3" by LegitCheese
+        https://freesound.org/people/LegitCheese/sounds/571513/
+
+    blip.mp3 *
+        "Message Notification 4" by AnthonyRox
+        https://freesound.org/people/AnthonyRox/sounds/740423/
+
+    fanfare.mp3
+        "Success Fanfare Trumpets.mp3" by FunWithSound
+        https://freesound.org/people/FunWithSound/sounds/456966/
+
+    pop.mp3 *
+        "Notification Sound" by yfjesse
+        https://freesound.org/people/yfjesse/sounds/235911/
+
+    success.mp3
+        "Short Success Sound Glockenspiel Treasure Video Game.mp3" by FunWithSound
+        https://freesound.org/people/FunWithSound/sounds/456965/
+
+
+CREATIVE COMMONS ATTRIBUTION 4.0 INTERNATIONAL
+https://creativecommons.org/licenses/by/4.0/
+
+    complete.mp3 *
+        "UI Completed Status Alert Notification SFX001.wav" by Headphaze
+        https://freesound.org/people/Headphaze/sounds/277033/
+
+    message.mp3 *
+        "Messenger Notification Sound Imitation.wav" by Daphne_in_Wonderland
+        https://freesound.org/people/Daphne_in_Wonderland/sounds/400697/
+
+        Its author built it from two earlier recordings and asks that both be
+        credited as well:
+            "Notification Pop" by elmasmalo1
+            Creative Commons Attribution 3.0 Unported
+            https://freesound.org/people/elmasmalo1/sounds/377017/
+
+            "gluckG.wav" by mamamucodes
+            CC0 1.0 Universal
+            https://freesound.org/people/mamamucodes/sounds/396287/
+
+
+CREATIVE COMMONS ATTRIBUTION 3.0 UNPORTED
+https://creativecommons.org/licenses/by/3.0/
+
+    confirm.mp3 *
+        "Confirmation Downward" by original_sound
+        https://freesound.org/people/original_sound/sounds/366104/
+
+
+Every sound here is offered as-is by its author, with no warranty of any kind
+and no liability for any use of it, as each of the licenses above sets out in
+full. Naming an author is attribution and nothing more: none of them are
+connected with ChungusHub, and none of them endorse it or its use of their work.

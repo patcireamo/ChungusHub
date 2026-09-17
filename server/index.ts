@@ -354,9 +354,14 @@ const MIME: Record<string, string> = {
 	'.ico': 'image/x-icon',
 	'.webmanifest': 'application/manifest+json',
 	'.woff2': 'font/woff2',
-	// The bundled typefaces' licence notice, which Settings → About links. Named here or the
-	// fallback below hands it over as a download instead of a page, and it carries a charset
-	// because a copyright line is exactly where a non-ASCII character shows up.
+	// The bundled notification sounds. Without this they fall through as octet-stream, which a
+	// browser is entitled to refuse to play; Vite serves them correctly from its own table in
+	// dev, so the failure only ever shows up in a built app.
+	'.mp3': 'audio/mpeg',
+	// The bundled typefaces' licence notice and the sounds' credits, which Settings → About
+	// links. Named here or the fallback below hands them over as a download instead of a page,
+	// and it carries a charset because a copyright line is exactly where a non-ASCII character
+	// shows up.
 	'.txt': 'text/plain; charset=utf-8'
 };
 

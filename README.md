@@ -185,6 +185,8 @@ Distributed under the GNU Affero General Public License v3.0. See [LICENSE](LICE
 
 The bundled typefaces are third-party and are not covered by that license. Each is under the SIL Open Font License, Version 1.1, and their copyright notices sit with them in [static/fonts/OFL.txt](static/fonts/OFL.txt).
 
+The bundled notification sounds are third-party too and are not covered by that license either. Each is under CC0 1.0, CC BY 4.0 or CC BY 3.0, credited with them in [static/sounds/CREDITS.txt](static/sounds/CREDITS.txt).
+
 ## Contact
 
 Discord: **patcireamo**
