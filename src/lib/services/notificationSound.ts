@@ -104,7 +104,12 @@ function loadTone(ac: AudioContext, tone: ToneId): Promise<AudioBuffer | null> {
 				console.error(`Notification tone "${tone}" could not be loaded`, error);
 				if (!loadWarned) {
 					loadWarned = true;
-					toastStore.error(`The "${tone}" sound could not be loaded, so it will stay silent.`);
+					// The file ships with the app and is served from this same origin, so the one
+					// thing that realistically stands between them is a download manager
+					// extension, which claims media URLs before the page can read them.
+					toastStore.error(
+						`Couldn't load the "${tone}" sound. A download manager extension may be taking it before the app gets it.`
+					);
 				}
 				return null;
 			});
