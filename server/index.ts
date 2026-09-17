@@ -452,40 +452,103 @@ function serveImage(pathname: string): Response {
 	return new Response('Not found', { status: 404 });
 }
 
+/**
+ * The four pages this server draws itself, for the moments the app cannot be on screen:
+ * a device turned away, a name this install does not answer to, a restore in progress,
+ * and the password gate. One look, held here so it stays one.
+ *
+ * Their colours come from the paint cache the device wrote the last time it ran the app
+ * (`writePaintCache` in src/lib/stores/theme.svelte.ts, stamped back by src/app.html
+ * before its first paint): same origin, same key, and the var names below are hand-kept
+ * in step with both. Nothing cached means the shipped dark palette written into every
+ * fallback, which is what a device that has never been here gets, and what the
+ * wrong-address page always gets, since the name it refuses is an origin of its own.
+ *
+ * The typeface deliberately stays the system stack: /fonts sits behind the very gate
+ * these pages are, so naming the reader's font would only fall through to it anyway.
+ */
+function gatePage(page: {
+	title: string;
+	/** Seconds between self-refreshes; absent for a page that must not retry. */
+	refresh?: number;
+	style?: string;
+	body: string;
+	script?: string;
+}): string {
+	return `<!doctype html><html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+${page.refresh ? `<meta http-equiv="refresh" content="${page.refresh}" />` : ''}
+<title>${page.title} · ChungusHub</title>
+<meta name="theme-color" content="#1a1714" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<script>
+  // Its own element and deliberately no try/catch, same stance as app.html: a corrupt
+  // cache throws where the console can say so, the page carries on with the fallbacks
+  // below, and the unlock form's script further down still runs.
+  (function () {
+    var raw = localStorage.getItem('chungushub:paint');
+    if (!raw) return;
+    var paint = JSON.parse(raw);
+    var html = document.documentElement;
+    for (var key in paint.vars) html.style.setProperty(key, paint.vars[key]);
+    var dark = paint.attrs['data-mode'] === 'dark';
+    html.style.colorScheme = dark ? 'dark' : 'light';
+    document
+      .querySelector('meta[name="theme-color"]')
+      .setAttribute('content', paint.vars['--theme-bg-primary']);
+    document
+      .querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+      .setAttribute('content', dark ? 'black-translucent' : 'default');
+  })();
+</script>
+<style>
+  *{box-sizing:border-box}
+  html{height:100%}
+  /* The column is sized rather than left to the card, and the card is sized in border
+     box. Either one missing and a percentage width has only the card's own max-width to
+     resolve against, so below about 464px the card keeps its 26rem and hangs off the
+     side of the screen with the page scrolling sideways. */
+  body{min-height:100%;margin:0;padding:1.5rem;
+    display:grid;grid-template-columns:minmax(0,1fr);place-items:center;
+    background:var(--theme-bg-primary,#1a1714);color:var(--theme-text-primary,#e7e2da);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .card{max-width:26rem;width:100%;text-align:center;padding:2rem 1.6rem;
+    background:var(--theme-bg-solid,#221e1a);border:1px solid var(--theme-border,#3a342d);
+    border-radius:var(--theme-radius-lg,16px);
+    box-shadow:var(--theme-shadow-lg,0 20px 60px rgba(0,0,0,.45))}
+  h1{font-size:1.2rem;margin:0 0 .6rem}
+  p{margin:.4rem 0;line-height:1.5;color:var(--theme-text-secondary,#b8b0a4);font-size:.92rem}
+  code{background:var(--theme-input-bg,#15120f);border:1px solid var(--theme-border,#3a342d);
+    border-radius:var(--theme-radius-md,8px);padding:.35rem .6rem;display:inline-block;
+    margin-top:.4rem;color:var(--theme-accent,#f0a868);font-size:1.05rem;letter-spacing:.02em}
+${page.style ?? ''}
+</style></head><body><div class="card">
+${page.body}
+</div>${page.script ?? ''}</body></html>`;
+}
+
 /** A clean page for blocked devices that shows the IP the host needs to allow.
  *  Auto-retries every few seconds, so the moment the host clicks Allow the
  *  device falls through into the app, and each retry keeps the attempt fresh
  *  in the settings panel's waiting list. */
 function forbidden(ip: string | null): Response {
 	const shown = ip ? normalizeIp(ip) : 'unknown';
-	const html = `<!doctype html><html lang="en"><head><meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta http-equiv="refresh" content="5" />
-<title>Access denied · ChungusHub</title>
-<style>
-  html,body{height:100%;margin:0}
-  body{display:grid;place-items:center;background:#1a1714;color:#e7e2da;
-    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:1.5rem}
-  .card{max-width:26rem;text-align:center;background:#221e1a;border:1px solid #3a342d;
-    border-radius:16px;padding:2rem 1.6rem;box-shadow:0 20px 60px rgba(0,0,0,.45)}
-  h1{font-size:1.2rem;margin:0 0 .6rem}
-  p{margin:.4rem 0;line-height:1.5;color:#b8b0a4;font-size:.92rem}
-  code{background:#15120f;border:1px solid #3a342d;border-radius:8px;padding:.35rem .6rem;
-    display:inline-block;margin-top:.4rem;color:#f0a868;font-size:1.05rem;letter-spacing:.02em}
-</style></head><body><div class="card">
-  <h1>This device isn't allowed</h1>
+	const html = gatePage({
+		title: 'Access denied',
+		refresh: 5,
+		body: `  <h1>This device isn't allowed</h1>
   <p>ChungusHub only accepts devices on its allowlist.</p>
   <p>Ask the host to add this address:</p>
   <code>${shown}</code>
-  <p>This page retries on its own, so once allowed, you're in.</p>
-</div></body></html>`;
+  <p>This page retries on its own, so once allowed, you're in.</p>`
+	});
 	return new Response(html, { status: 403, headers: htmlHeaders(null) });
 }
 
 /**
  * What a device gets when it reached this install by a name the install does not answer to.
- * Same look as forbidden(), and deliberately not auto-retrying: the settings file is read at
- * startup, so nothing changes until somebody edits it and starts ChungusHub again.
+ * Deliberately not auto-retrying: the settings file is read at startup, so nothing changes
+ * until somebody edits it and starts ChungusHub again.
  *
  * The name is escaped because it is the one thing on this page that came from the request, and
  * a page refusing an attack must not be the attack's way in.
@@ -495,31 +558,19 @@ function unknownHost(host: string | null): Response {
 		/[&<>"]/g,
 		(c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string
 	);
-	const html = `<!doctype html><html lang="en"><head><meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Wrong address · ChungusHub</title>
-<style>
-  html,body{height:100%;margin:0}
-  body{display:grid;place-items:center;background:#1a1714;color:#e7e2da;
-    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:1.5rem}
-  .card{max-width:26rem;text-align:center;background:#221e1a;border:1px solid #3a342d;
-    border-radius:16px;padding:2rem 1.6rem;box-shadow:0 20px 60px rgba(0,0,0,.45)}
-  h1{font-size:1.2rem;margin:0 0 .6rem}
-  p{margin:.4rem 0;line-height:1.5;color:#b8b0a4;font-size:.92rem}
-  code{background:#15120f;border:1px solid #3a342d;border-radius:8px;padding:.35rem .6rem;
-    display:inline-block;margin-top:.4rem;color:#f0a868;font-size:1.05rem;letter-spacing:.02em}
-</style></head><body><div class="card">
-  <h1>ChungusHub doesn't answer to this name</h1>
+	const html = gatePage({
+		title: 'Wrong address',
+		body: `  <h1>ChungusHub doesn't answer to this name</h1>
   <p>You reached it as:</p>
   <code>${shown}</code>
   <p>Its own address always works. If this name is yours, add it to
-  <code>allowedHostnames</code> in the settings file and start ChungusHub again.</p>
-</div></body></html>`;
+  <code>allowedHostnames</code> in the settings file and start ChungusHub again.</p>`
+	});
 	return new Response(html, { status: 403, headers: htmlHeaders(null) });
 }
 
 /**
- * What every device gets once a restore has been claimed. Same look as forbidden().
+ * What every device gets once a restore has been claimed.
  *
  * It exists because the device that asked for the restore had its socket closed in the same
  * second, so from that moment this page is the only surface left that can say what is
@@ -528,68 +579,48 @@ function unknownHost(host: string | null): Response {
  * hopefully behind that instruction would suggest otherwise.
  */
 function maintenancePage(state: NonNullable<typeof maintenance>): Response {
-	const html = `<!doctype html><html lang="en"><head><meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-${state.retry ? '<meta http-equiv="refresh" content="3" />' : ''}
-<title>${state.headline} · ChungusHub</title>
-<style>
-  html,body{height:100%;margin:0}
-  body{display:grid;place-items:center;background:#1a1714;color:#e7e2da;
-    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:1.5rem}
-  .card{max-width:26rem;text-align:center;background:#221e1a;border:1px solid #3a342d;
-    border-radius:16px;padding:2rem 1.6rem;box-shadow:0 20px 60px rgba(0,0,0,.45)}
-  h1{font-size:1.2rem;margin:0 0 .6rem}
-  p{margin:.4rem 0;line-height:1.5;color:#b8b0a4;font-size:.92rem}
-  button{margin-top:1rem;padding:.5rem 1.1rem;border-radius:10px;border:1px solid #3a342d;
-    background:#2a251f;color:#e7e2da;font:inherit;font-size:.88rem;cursor:pointer}
-  button:hover{background:#332d26}
-</style></head><body><div class="card">
-  <h1>${state.headline}</h1>
+	const html = gatePage({
+		title: state.headline,
+		refresh: state.retry ? 3 : undefined,
+		style: `  button{margin-top:1rem;padding:.5rem 1.1rem;border-radius:var(--theme-radius-md,10px);
+    border:1px solid var(--theme-border,#3a342d);background:var(--theme-bg-tertiary,#2a251f);
+    color:var(--theme-text-primary,#e7e2da);font:inherit;font-size:.88rem;cursor:pointer}
+  button:hover{background:var(--theme-bg-elevated,#332d26)}`,
+		body: `  <h1>${state.headline}</h1>
   <p>${state.detail}</p>
   ${state.retry ? '<p>This page comes back on its own when it is done.</p>' : ''}
-  ${state.cancellable ? '<button id="cancel" type="button">Cancel the restore</button>' : ''}
-</div>
-${
-	state.cancellable
-		? `<script>
+  ${state.cancellable ? '<button id="cancel" type="button">Cancel the restore</button>' : ''}`,
+		script: state.cancellable
+			? `<script>
 document.getElementById('cancel').addEventListener('click', () => {
   fetch('/api/backups/cancel-restore', { method: 'POST' }).finally(() => location.reload());
 });
 </script>`
-		: ''
-}
-</body></html>`;
+			: undefined
+	});
 	return new Response(html, { status: 503, headers: htmlHeaders(null) });
 }
 
-/** The password gate for devices without a valid session. Same look as forbidden(). */
+/** The password gate for devices without a valid session. */
 function loginPage(host: string | null, status = 200): Response {
-	const html = `<!doctype html><html lang="en"><head><meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Unlock · ChungusHub</title>
-<style>
-  html,body{height:100%;margin:0}
-  body{display:grid;place-items:center;background:#1a1714;color:#e7e2da;
-    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:1.5rem}
-  .card{max-width:26rem;width:100%;text-align:center;background:#221e1a;border:1px solid #3a342d;
-    border-radius:16px;padding:2rem 1.6rem;box-shadow:0 20px 60px rgba(0,0,0,.45)}
-  h1{font-size:1.2rem;margin:0 0 .6rem}
-  p{margin:.4rem 0 1rem;line-height:1.5;color:#b8b0a4;font-size:.92rem}
+	const html = gatePage({
+		title: 'Unlock',
+		style: `  .lede{margin-bottom:1rem}
   form{display:flex;gap:.5rem}
-  input{flex:1;min-width:0;padding:.6rem .8rem;border-radius:10px;border:1px solid #3a342d;
-    background:#15120f;color:#e7e2da;font-size:1rem}
-  input:focus{outline:none;border-color:#f0a868}
-  button{padding:.6rem 1rem;border-radius:10px;border:0;background:#f0a868;color:#1a1714;
+  input{flex:1;min-width:0;padding:.6rem .8rem;border-radius:var(--theme-radius-md,10px);
+    border:1px solid var(--theme-border,#3a342d);background:var(--theme-input-bg,#15120f);
+    color:var(--theme-text-primary,#e7e2da);font-size:1rem}
+  input:focus{outline:none;border-color:var(--theme-accent,#f0a868)}
+  button{padding:.6rem 1rem;border-radius:var(--theme-radius-md,10px);border:0;
+    background:var(--theme-accent,#f0a868);color:var(--theme-on-accent,#1a1714);
     font-weight:600;font-size:.95rem;cursor:pointer}
-  .err{color:#d97b6c;font-size:.85rem;min-height:1.2em;margin:.6rem 0 0}
-</style></head><body><div class="card">
-  <h1>ChungusHub is locked</h1>
-  <p>Enter the password to use this device.</p>
+  .err{color:var(--theme-error,#d97b6c);font-size:.85rem;min-height:1.2em;margin:.6rem 0 0}`,
+		body: `  <h1>ChungusHub is locked</h1>
+  <p class="lede">Enter the password to use this device.</p>
   <form id="f"><input id="pw" type="password" autocomplete="current-password" autofocus />
   <button type="submit">Unlock</button></form>
-  <p class="err" id="err"></p>
-</div>
-<script>
+  <p class="err" id="err"></p>`,
+		script: `<script>
   document.getElementById('f').addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = document.getElementById('err');
@@ -604,7 +635,8 @@ function loginPage(host: string | null, status = 200): Response {
       ? 'Too many attempts. Wait 30 seconds.'
       : 'Wrong password.';
   });
-</script></body></html>`;
+</script>`
+	});
 	return new Response(html, { status, headers: htmlHeaders(host) });
 }
 
