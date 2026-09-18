@@ -13,7 +13,8 @@
 	import { promptHoldStore } from '$lib/stores/promptHold.svelte';
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 	import { audioSettingsStore } from '$lib/stores/audio-settings.svelte';
-	import { initNotificationSounds } from '$lib/services/notificationSound';
+	import { initAudioUnlock } from '$lib/services/audioContext';
+	import { soundscapeStore } from '$lib/stores/soundscape.svelte';
 	import { regexRulesStore } from '$lib/stores/regex-rules.svelte';
 	import { inputHistoryStore } from '$lib/stores/inputHistory.svelte';
 	import { ambientStore } from '$lib/stores/ambient.svelte';
@@ -159,11 +160,13 @@
 			// outage rule has to be armed before any surface can ask it anything.
 			deleteGuard.initialize();
 			await generalSettingsStore.initialize();
-			// Which events make a sound, and how loud. The listeners go up beside it rather
-			// than on the Audio page: the gesture that lets a browser make noise is usually
-			// spent long before anyone opens Settings (architecture/ui-shell-settings.md).
+			// Which events make a sound and how loud, then which recordings the soundscape
+			// holds. The unlock listeners go up beside them rather than on the Audio page:
+			// the gesture that lets a browser make noise is usually spent long before anyone
+			// opens Settings (architecture/ui-shell-settings.md).
 			await audioSettingsStore.initialize();
-			initNotificationSounds();
+			await soundscapeStore.initialize();
+			initAudioUnlock();
 			// Settings only, not the snapshot listing: the Backups root row shows the
 			// schedule, and the listing is fetched when its page opens.
 			await backupStore.initialize();

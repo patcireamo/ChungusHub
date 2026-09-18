@@ -9,6 +9,13 @@
 		format?: (value: number) => string;
 		/** Double-clicking the track snaps back to this value. */
 		defaultValue?: number;
+		/**
+		 * Where the value actually is right now, when something other than the reader is
+		 * moving it. The FILL follows this while the thumb stays on `value`, so the control
+		 * still says what was set and the track says what is happening. Omit unless something
+		 * really is moving it, or the two are the same line drawn twice.
+		 */
+		liveValue?: number;
 		disabled?: boolean;
 		label?: string;
 	}
@@ -21,6 +28,7 @@
 		oninput,
 		format = (v) => String(v),
 		defaultValue,
+		liveValue,
 		disabled = false,
 		label
 	}: Props = $props();
@@ -100,7 +108,8 @@
 		oninput?.(defaultValue);
 	}
 
-	let fill = $derived(max > min ? (value - min) / (max - min) : 0);
+	let shown = $derived(Math.min(max, Math.max(min, liveValue ?? value)));
+	let fill = $derived(max > min ? (shown - min) / (max - min) : 0);
 </script>
 
 <div class="slider" class:disabled>

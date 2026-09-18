@@ -33,6 +33,13 @@ import {
 } from '$lib/types/ambient';
 import { STEERING_ROLES, STEERING_SCOPES } from '$lib/types/steering';
 import { SOUND_EVENTS, TONES, TONE_IDS } from '$lib/config/sound-events';
+import {
+	AMBIENT_SOUNDS,
+	PEAK_CEILING_DB,
+	SOUND_CATEGORIES,
+	TARGET_LUFS,
+	normalizeGain
+} from '$lib/config/soundscape';
 import { palettes } from '$lib/themes/presets';
 // The app's own reading, so this contract and the palette editor's readout can never
 // drift into disagreeing about what a ratio is.
@@ -1341,6 +1348,65 @@ describe('notification sounds (architecture/build-packaging.md #10)', () => {
 	// neutral 1 is one nobody measured rather than one that happened to land there.
 	test('every tone carries a measured loudness correction', () => {
 		expect(TONES.filter((t) => t.gain === 1 || !(t.gain > 0)).map((t) => t.id)).toEqual([]);
+	});
+});
+
+describe('ambient soundscape (architecture/build-packaging.md #11)', () => {
+	// The registry is TypeScript and the recordings are files in a folder, with nothing
+	// between them: an entry naming a recording that does not ship is a row in the mixer that
+	// can only ever fail to load, and a recording nobody named is weight in every build and
+	// every release archive that no reader can reach.
+	test('every sound has a file and every file is a sound', () => {
+		const onDisk: string[] = [];
+		for (const category of SOUND_CATEGORIES) {
+			const dir = join(ROOT, 'defaults', 'sounds', category.id);
+			for (const name of readdirSync(dir)) {
+				if (name.endsWith('.mp3')) onDisk.push(`${category.id}/${name.slice(0, -'.mp3'.length)}`);
+			}
+		}
+		expect(onDisk.length, 'found no recordings, so the scan is stale').toBeGreaterThan(0);
+		expect(AMBIENT_SOUNDS.map((s) => `${s.category}/${s.id}`).sort()).toEqual(onDisk.sort());
+	});
+
+	// An id is the key a mix stores, so two recordings answering to one would make a stored
+	// mix ambiguous about which is in it.
+	test('ids are unique across every shelf', () => {
+		const ids = AMBIENT_SOUNDS.map((s) => s.id);
+		expect(ids.length).toBe(new Set(ids).size);
+	});
+
+	// The licences these ship under ask for no attribution, so the notice is not one. It is
+	// still a shipping requirement: it is the only thing saying the recordings are outside
+	// the app's own licence, which is what a redistributor needs.
+	test('the licence notice ships with them', () => {
+		const credits = read('defaults', 'sounds', 'CREDITS.txt');
+		expect(credits).toContain('Pixabay Content License');
+		expect(credits).toContain('CC0 1.0');
+	});
+
+	// The measurements are the whole point of the switch, so a recording carrying neither is
+	// one nobody measured rather than one that happened to land on zero.
+	test('every sound carries its measured loudness and peak', () => {
+		expect(AMBIENT_SOUNDS.filter((s) => !(s.lufs < 0)).map((s) => s.id)).toEqual([]);
+		expect(AMBIENT_SOUNDS.filter((s) => !Number.isFinite(s.peak)).map((s) => s.id)).toEqual([]);
+	});
+
+	// Normalization may never make a recording clip, whichever way it moves it. Held against
+	// the shipped measurements rather than argued from the formula, since what matters is
+	// that these 42 files are safe.
+	test('normalizing never raises a recording past the ceiling', () => {
+		const over = AMBIENT_SOUNDS.filter(
+			(s) => s.peak + 20 * Math.log10(normalizeGain(s)) > PEAK_CEILING_DB + 1e-9
+		);
+		expect(over.map((s) => s.id)).toEqual([]);
+	});
+
+	// The reason the switch exists: anything louder than the target has to come down, or one
+	// slider position stays painful on some recordings and inaudible on others.
+	test('normalizing turns every loud recording down', () => {
+		const loud = AMBIENT_SOUNDS.filter((s) => s.lufs > TARGET_LUFS);
+		expect(loud.length, 'nothing is above the target, so the test proves nothing').toBeGreaterThan(0);
+		expect(loud.filter((s) => normalizeGain(s) >= 1).map((s) => s.id)).toEqual([]);
 	});
 });
 

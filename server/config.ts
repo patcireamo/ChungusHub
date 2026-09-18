@@ -317,6 +317,11 @@ export const DEFAULT_CHARACTERS_DIR = resolve(join(BASE_DIR, 'defaults', 'charac
 // into the data dir; dropping a file in this folder is all it takes to ship one).
 export const DEFAULT_BACKGROUNDS_DIR = resolve(join(BASE_DIR, 'defaults', 'backgrounds'));
 
+// Bundled ambient recordings, one `<category>/<id>.mp3` each, served directly from the repo
+// the way the backgrounds are. Third-party work under its own licences, which is what
+// `defaults/sounds/CREDITS.txt` beside them carries.
+export const DEFAULT_SOUNDS_DIR = resolve(join(BASE_DIR, 'defaults', 'sounds'));
+
 // Plain HTTP, and only that: a device on the network connects with no certificate
 // to install and no warning to click through. Browsers count localhost as a secure
 // context, so the host machine still gets the full PWA (installable, clipboard);

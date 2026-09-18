@@ -8,6 +8,8 @@
 		type ToneId
 	} from '$lib/config/sound-events';
 	import { previewTone } from '$lib/services/notificationSound';
+	import { soundscapeStore } from '$lib/stores/soundscape.svelte';
+	import SoundscapeMixer from '$lib/components/audio/SoundscapeMixer.svelte';
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
 	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import PillRow from '$lib/components/ui/PillRow.svelte';
@@ -41,6 +43,7 @@
 	);
 
 	let allSilent = $derived(SOUND_EVENTS.every((e) => audioSettingsStore.toneFor(e.id) === null));
+	let soundscapeOn = $derived(soundscapeStore.config.enabled);
 
 	function toggleOpen(id: SoundEventId): void {
 		openEvent = openEvent === id ? null : id;
@@ -180,6 +183,29 @@
 			{/if}
 		</section>
 	{/if}
+
+	<section class="card" data-setting="soundscape">
+		<div class="card-head">
+			<span class="card-title">Soundscape</span>
+			<InfoTip
+				text="A bed of ambient recordings played underneath the story: rain on a window, a crowded bar, a fire. Any number can play at once, each at its own level."
+			/>
+		</div>
+		<div class="toggle-row" use:toggleRow>
+			<span class="slider-label">Play an ambient soundscape</span>
+			<Toggle
+				checked={soundscapeOn}
+				onchange={(v) => soundscapeStore.setEnabled(v)}
+				label="Play an ambient soundscape"
+			/>
+		</div>
+
+		{#if soundscapeOn}
+			<div class="sub">
+				<SoundscapeMixer />
+			</div>
+		{/if}
+	</section>
 </div>
 
 <style>

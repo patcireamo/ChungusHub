@@ -20,6 +20,7 @@ import { ENGINES } from '$lib/engines/registry';
 import { backupStore } from '$lib/stores/backups.svelte';
 import { advancedSettingsStore } from '$lib/stores/advanced-settings.svelte';
 import { audioSettingsStore } from '$lib/stores/audio-settings.svelte';
+import { soundscapeStore } from '$lib/stores/soundscape.svelte';
 import { SOUND_EVENTS } from '$lib/config/sound-events';
 import { APP_VERSION } from '$lib/version';
 
@@ -108,9 +109,17 @@ function enginesSummary(): string {
 	return `${on} of ${ENGINES.length} on`;
 }
 
+/** Both subjects the page holds, since either can be on without the other. */
 function audioSummary(): string {
-	if (!audioSettingsStore.enabled) return 'Off';
-	return `${audioSettingsStore.activeCount} of ${SOUND_EVENTS.length} on`;
+	const parts: string[] = [];
+	if (audioSettingsStore.enabled) {
+		parts.push(`${audioSettingsStore.activeCount} of ${SOUND_EVENTS.length} events`);
+	}
+	if (soundscapeStore.playing) {
+		const count = soundscapeStore.activeCount;
+		parts.push(count === 1 ? '1 ambient sound' : `${count} ambient sounds`);
+	}
+	return parts.length > 0 ? parts.join(' · ') : 'Off';
 }
 
 /**
@@ -215,6 +224,7 @@ export const ANCHOR_PAGES: Record<string, SettingsPage> = {
 	// Audio
 	'notification-sounds': 'audio',
 	'sound-events': 'audio',
+	soundscape: 'audio',
 
 	'message-drafts': 'general',
 	'input-history': 'general',

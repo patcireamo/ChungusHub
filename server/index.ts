@@ -8,7 +8,7 @@ import { existsSync, statSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join, normalize } from 'node:path';
 import type { ServerWebSocket } from 'bun';
-import { ALLOWED_HOSTNAMES, CLIENT_DIR, CONFIG_ISSUES, CONFIG_NOTICES, CONFIG_OVERRIDES, CONFIG_PATH, DATA_DIR, DEFAULT_BACKGROUNDS_DIR, HOST, IS_COMPILED, OPEN_BROWSER, PORT, SECURITY_PATH, ensureConfigFile, ensureDirs, type ImageCategory } from './config';
+import { ALLOWED_HOSTNAMES, CLIENT_DIR, CONFIG_ISSUES, CONFIG_NOTICES, CONFIG_OVERRIDES, CONFIG_PATH, DATA_DIR, DEFAULT_BACKGROUNDS_DIR, DEFAULT_SOUNDS_DIR, HOST, IS_COMPILED, OPEN_BROWSER, PORT, SECURITY_PATH, ensureConfigFile, ensureDirs, type ImageCategory } from './config';
 import { claimDataDir, type RunningInstance } from './instance-lock';
 import {
 	allowIp,
@@ -408,14 +408,15 @@ function requestedFilePath(pathname: string, prefix: string): string {
 }
 
 /**
- * How a picture is handed back. This is the one route that serves bytes somebody uploaded,
- * from the origin that holds the session cookie, so each header answers a different way of
- * turning one of those files into a page on it: `nosniff` stops the browser from looking
- * inside a `.png` and deciding it is a document, the CSP leaves anything that still manages
- * to be one with no origin, no script and nothing to reach, and CORP keeps another site from
- * reading these at all. The type itself is whitelisted upstream (`imageContentType`).
+ * How a stored file is handed back. `/files/` is the one route that serves bytes somebody
+ * uploaded, from the origin that holds the session cookie, so each header answers a different
+ * way of turning one of those files into a page on it: `nosniff` stops the browser from
+ * looking inside a `.png` and deciding it is a document, the CSP leaves anything that still
+ * manages to be one with no origin, no script and nothing to reach, and CORP keeps another
+ * site from reading these at all. The type is never guessed from the bytes: a picture's is
+ * whitelisted by `imageContentType` and a bundled recording's is fixed by its route.
  */
-function imageHeaders(type: string): Record<string, string> {
+function servedFileHeaders(type: string): Record<string, string> {
 	return {
 		'content-type': type,
 		'cache-control': 'no-cache',
@@ -431,7 +432,24 @@ function serveDefaultBackground(pathname: string): Response {
 	const filePath = join(DEFAULT_BACKGROUNDS_DIR, rel);
 	const type = imageContentType(filePath);
 	if (type && existsSync(filePath) && statSync(filePath).isFile()) {
-		return new Response(Bun.file(filePath), { headers: imageHeaders(type) });
+		return new Response(Bun.file(filePath), { headers: servedFileHeaders(type) });
+	}
+	return new Response('Not found', { status: 404 });
+}
+
+/**
+ * A bundled ambient recording. Its own route rather than a type added to `imageContentType`,
+ * because that whitelist is what stops a stored file being served as something a browser will
+ * run: widening it would widen it for uploads too, while nothing here is ever uploaded.
+ *
+ * The extension is checked rather than trusted, and the folder is fixed, so the only thing
+ * this can answer with is an MP3 that shipped with the app.
+ */
+function serveDefaultSound(pathname: string): Response {
+	const rel = requestedFilePath(pathname, '/files/sounds/');
+	const filePath = join(DEFAULT_SOUNDS_DIR, rel);
+	if (/\.mp3$/i.test(rel) && existsSync(filePath) && statSync(filePath).isFile()) {
+		return new Response(Bun.file(filePath), { headers: servedFileHeaders('audio/mpeg') });
 	}
 	return new Response('Not found', { status: 404 });
 }
@@ -447,7 +465,7 @@ function serveImage(pathname: string): Response {
 	// a stored file becomes a page on this origin.
 	const type = filePath && imageContentType(filePath);
 	if (filePath && type) {
-		return new Response(Bun.file(filePath), { headers: imageHeaders(type) });
+		return new Response(Bun.file(filePath), { headers: servedFileHeaders(type) });
 	}
 	return new Response('Not found', { status: 404 });
 }
@@ -2060,6 +2078,9 @@ function serve(hostname: string) {
 			// Image files (served directly; access is already gated by IP above).
 			if (path.startsWith('/files/backgrounds/')) {
 				return serveDefaultBackground(path);
+			}
+			if (path.startsWith('/files/sounds/')) {
+				return serveDefaultSound(path);
 			}
 			if (path.startsWith('/files/')) {
 				return serveImage(path);
