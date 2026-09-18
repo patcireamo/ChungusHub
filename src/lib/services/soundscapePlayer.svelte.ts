@@ -13,6 +13,7 @@
  * The store is the only caller: it hands over a whole config and this reconciles against what
  * is already sounding, so nothing here has to trust a diff somebody else worked out.
  */
+import { untrack } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { audioContext, fetchAudioBuffer } from '$lib/services/audioContext';
 import { buildLoopBuffer } from '$lib/services/loopBuffer';
@@ -35,6 +36,9 @@ const DRIFT_MAX_SECONDS = 20;
  *  mix breathing while nobody is looking at it. */
 const DRIFT_HORIZON = 25;
 const DRIFT_TICK_MS = 5000;
+/** How often the mixer's fills are re-read. A leg runs for at least eight seconds, so this is
+ *  far finer than the motion and the fill moves well under a pixel between samples. */
+const SAMPLE_MS = 100;
 
 /** A voice lives in the map only while it belongs to the mix: `stopVoice` drops it there and
  *  then lets the fade finish on its own, so the map always answers "what is in the mix". */
@@ -81,6 +85,10 @@ class SoundscapePlayer {
 	private driftTimer: ReturnType<typeof setInterval> | null = null;
 	private sampleTimer: ReturnType<typeof setInterval> | null = null;
 	private watchers = 0;
+	/** What the master was last told, so a volume move is told apart from the mix starting. */
+	private masterOn = false;
+	private heldTimer: ReturnType<typeof setTimeout> | null = null;
+	private heldSaid = false;
 	private config: SoundscapeConfig | null = null;
 	private loadWarned = false;
 
@@ -91,27 +99,38 @@ class SoundscapePlayer {
 	 */
 	watchDrift(): () => void {
 		this.watchers++;
+		// **Nothing reactive may be touched here.** This is called from an effect, and reading
+		// the voices while writing `liveDrift` inside one makes that effect depend on state it
+		// just changed, which Svelte stops as an update loop and which freezes the whole page.
+		// The first sample therefore waits for the timer, a tenth of a second nobody can see.
 		if (this.watchers === 1 && typeof window !== 'undefined') {
-			this.sampleTimer = setInterval(() => this.sampleDrift(), 60);
-			this.sampleDrift();
+			this.sampleTimer = setInterval(() => this.sampleDrift(), SAMPLE_MS);
 		}
 		return () => {
 			this.watchers = Math.max(0, this.watchers - 1);
 			if (this.watchers > 0) return;
 			if (this.sampleTimer) clearInterval(this.sampleTimer);
 			this.sampleTimer = null;
-			this.liveDrift.clear();
+			// The teardown runs inside that same effect, so this write is untracked for the
+			// same reason.
+			untrack(() => this.liveDrift.clear());
 		};
 	}
 
+	/** Runs from the timer alone, never from a render or an effect. Untracked anyway, so a
+	 *  future caller cannot turn it back into a loop without noticing. */
 	private sampleDrift(): void {
-		for (const id of this.liveDrift.keys()) {
-			if (!this.voices.has(id)) this.liveDrift.delete(id);
-		}
-		for (const [id, voice] of this.voices) {
-			const value = voice.drift.gain.value;
-			if (this.liveDrift.get(id) !== value) this.liveDrift.set(id, value);
-		}
+		untrack(() => {
+			for (const id of this.liveDrift.keys()) {
+				if (!this.voices.has(id)) this.liveDrift.delete(id);
+			}
+			for (const [id, voice] of this.voices) {
+				const value = voice.drift.gain.value;
+				// A level that is not drifting reports the same number every tick, so an idle
+				// mix writes nothing at all and redraws nothing.
+				if (this.liveDrift.get(id) !== value) this.liveDrift.set(id, value);
+			}
+		});
 	}
 
 	/** Take a whole config and make the graph match it. */
@@ -137,6 +156,28 @@ class SoundscapePlayer {
 		this.applyMaster();
 		this.applyDrift();
 		this.evictBuffers();
+		if (this.blocked && wanted.length > 0) this.noticeIfHeld();
+	}
+
+	/**
+	 * Say why a restored mix is silent, but only once it has outlasted the reader's next click.
+	 *
+	 * A browser will not make a sound until the page has been touched, so a mix that was
+	 * playing before a reload comes back held. Any click anywhere releases it, which is usually
+	 * a second away and needs no explanation at all; what does need one is the case where
+	 * somebody sits reading a silent app, because the only surface that reports this lives
+	 * three taps inside Settings, which is exactly where they would not think to look.
+	 */
+	private noticeIfHeld(): void {
+		if (this.heldSaid || this.heldTimer) return;
+		this.heldTimer = setTimeout(() => {
+			this.heldTimer = null;
+			if (!this.blocked || this.voices.size === 0) return;
+			this.heldSaid = true;
+			toastStore.info(
+				'Your soundscape starts on your first click. Browsers will not play sound before the page has been touched.'
+			);
+		}, 4000);
 	}
 
 	/**
@@ -159,8 +200,8 @@ class SoundscapePlayer {
 	private applyLevels(): void {
 		const ac = this.ctx;
 		if (!ac) return;
-		for (const id of this.voices.keys()) {
-			this.voices.get(id)?.level.gain.setTargetAtTime(this.levelFor(id), ac.currentTime, 0.02);
+		for (const [id, voice] of this.voices) {
+			voice.level.gain.setTargetAtTime(this.levelFor(id), ac.currentTime, 0.02);
 		}
 	}
 
@@ -171,12 +212,24 @@ class SoundscapePlayer {
 		return (config.levels[id] ?? 0) * (config.normalize ? normalizeGain(sound) : 1);
 	}
 
+	/**
+	 * The slow fade belongs to the mix arriving or leaving, never to the volume slider.
+	 *
+	 * Dragging it calls this on every pointer frame, and restarting a near-second ramp sixty
+	 * times a second means the level never reaches any of them: the sound trails the slider by
+	 * most of a second and reads as a control that is not working.
+	 */
 	private applyMaster(): void {
 		const ac = this.ctx;
 		const master = this.master;
 		const config = this.config;
 		if (!ac || !master || !config) return;
 		const target = config.enabled ? config.volume : 0;
+		if (config.enabled === this.masterOn) {
+			master.gain.setTargetAtTime(target, ac.currentTime, 0.02);
+			return;
+		}
+		this.masterOn = config.enabled;
 		master.gain.cancelScheduledValues(ac.currentTime);
 		master.gain.setValueAtTime(master.gain.value, ac.currentTime);
 		master.gain.linearRampToValueAtTime(target, ac.currentTime + MIX_FADE);
