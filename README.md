@@ -187,6 +187,8 @@ The bundled typefaces are third-party and are not covered by that license. Each 
 
 The bundled notification sounds are third-party too and are not covered by that license either. Each is under CC0 1.0, CC BY 4.0 or CC BY 3.0, credited with them in [static/sounds/CREDITS.txt](static/sounds/CREDITS.txt).
 
+The bundled ambient sounds are third-party as well and sit outside that license too. Each is under the Pixabay Content License or CC0 1.0, recorded with them in [defaults/sounds/CREDITS.txt](defaults/sounds/CREDITS.txt).
+
 ## Contact
 
 Discord: **patcireamo**

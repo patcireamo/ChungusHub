@@ -4,7 +4,7 @@
  *   dist/ChungusHub-portable/
  *     ChungusHub(.exe):    compiled server, Bun runtime embedded
  *     build/:              the built PWA the server serves
- *     defaults/:           bundled presets, skills, characters + backgrounds (first-run seed)
+ *     defaults/:           bundled presets, skills, characters + backgrounds, sounds
  *     README.txt
  *
  * Zip that folder and it runs on a clean machine: no Bun or Node required.
@@ -88,6 +88,9 @@ cpSync(join(root, 'defaults', 'characters'), join(out, 'defaults', 'characters')
 const backgroundsSrc = join(root, 'defaults', 'backgrounds');
 if (!existsSync(backgroundsSrc)) throw new Error('defaults/backgrounds is missing');
 cpSync(backgroundsSrc, join(out, 'defaults', 'backgrounds'), { recursive: true });
+const soundsSrc = join(root, 'defaults', 'sounds');
+if (!existsSync(soundsSrc)) throw new Error('defaults/sounds is missing');
+cpSync(soundsSrc, join(out, 'defaults', 'sounds'), { recursive: true });
 
 // 4. A short note for people who open the zip. It has to be right about where the
 // switches are: a wrong path here sends someone hunting through Settings for a page

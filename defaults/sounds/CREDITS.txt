@@ -1,0 +1,37 @@
+The sounds in this folder are not part of ChungusHub and are not covered by its
+license. Each one keeps the license it was published under, and this notice is
+what records where they came from, so it travels with the sound files wherever
+they go.
+
+They came from the Moodist project (https://github.com/remvze/moodist), which
+states that the sounds it ships are under either the Pixabay Content License or
+CC0 1.0 Universal. That project keeps no per-sound breakdown of which is which,
+so neither does this file. What is known is that every recording here is under
+one of the two:
+
+    Pixabay Content License
+    https://pixabay.com/service/license-summary/
+
+    CC0 1.0 Universal
+    https://creativecommons.org/publicdomain/zero/1.0/
+
+Neither of them asks for credit, and this notice is not one. It is here because
+these files are not ChungusHub's own work, and anyone who redistributes the app
+is entitled to know which terms they are passing on.
+
+Both allow the recordings to be bundled in an application and redistributed that
+way. The Pixabay license draws one line worth repeating: content may not be sold
+or distributed on its own, with nothing built around it. Shipping these files
+inside ChungusHub is fine; lifting them back out and selling them as a sound
+pack is not.
+
+The files are copied byte for byte and keep the names they had. Nothing was
+transcoded, and there was no trimming, mixing or level changes, so each one runs
+exactly as long as its source and sounds exactly as it was published. The set is
+a subset of that project's: recordings that did not suit a roleplay workspace
+were left behind rather than altered. The folder is the list, so a sound added
+or dropped needs no edit here.
+
+Every sound is offered as-is, with no warranty of any kind and no liability for
+any use of it. The Moodist project is not connected with ChungusHub and does not
+endorse it or its use of this work.
