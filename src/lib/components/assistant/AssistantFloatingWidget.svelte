@@ -23,9 +23,12 @@
 	 *  closed launcher: a pulsing ring says "leave it alone", and this one means the opposite. */
 	let waiting = $derived(assistantSessionStore.anyPendingAsk);
 	let isMobile = $derived(viewport.isMobile);
-	/** Settings → General can hide the launcher for a clean workspace. It hides the BUTTON
-	 *  and nothing else: the assistant keeps running, keeps its tabs, and Ctrl/⌘+J opens the
-	 *  panel, which is why the shortcut is not optional. */
+	/** Settings → General can hide the launcher: the fix for a phone reader who keeps having
+	 *  to drag the corner mascot off the text it's sitting on. It hides the BUTTON and nothing
+	 *  else: the assistant keeps running, keeps its tabs, and two other doors open the panel in
+	 *  its place, Ctrl/⌘+J always, and TitleBar grows a plain button of its own
+	 *  (`AssistantNavStatus.svelte` mirrors this launcher's busy/waiting marks; the "just
+	 *  finished" bounce below stays launcher-only, see that component's own doc comment). */
 	let showLauncher = $derived(generalSettingsStore.assistantLauncher);
 
 	// "Just finished" badge: when a turn wraps up while the widget is minimized, mark

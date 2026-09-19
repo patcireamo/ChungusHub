@@ -513,6 +513,61 @@ describe('nav labels and panel titles (architecture/ui-shell-settings.md)', () =
 	});
 });
 
+describe("the assistant's two doors (architecture/chungus-assistant.md)", () => {
+	// One boolean decides which door the CLOSED assistant has, and its ends live in files
+	// that cannot read each other: the widget draws the corner launcher while the setting
+	// is on, TitleBar draws an Assistant button while it is off. Drift either way is both
+	// doors on screen at once, or a closed assistant with no door at all. The settings row
+	// offering the choice asks it the other way round, so it reads the same field NEGATED:
+	// a third spelling of one boolean, and the one most likely to be "tidied" into agreeing
+	// with the other two, which would silently invert the checkbox.
+	const field = (source: string, re: RegExp, what: string): string => {
+		const found = scan(source, re, what);
+		expect(found.length, `expected exactly one ${what}`).toBe(1);
+		return found[0];
+	};
+
+	test('all three spellings name the one setting', () => {
+		const shown = field(
+			read('src', 'lib', 'components', 'assistant', 'AssistantFloatingWidget.svelte'),
+			/showLauncher = \$derived\(generalSettingsStore\.(\w+)\)/g,
+			'launcher gate in AssistantFloatingWidget.svelte'
+		);
+		const hidden = field(
+			read('src', 'lib', 'components', 'layout', 'TitleBar.svelte'),
+			/showAssistantNav = \$derived\(!generalSettingsStore\.(\w+)\)/g,
+			'negated title-bar gate in TitleBar.svelte'
+		);
+		const row = field(
+			read('src', 'lib', 'components', 'assistant', 'AssistantSettingsView.svelte'),
+			/checked=\{!generalSettingsStore\.(\w+)\}/g,
+			'negated settings row in AssistantSettingsView.svelte'
+		);
+		for (const name of [hidden, row]) expect(name).toBe(shown);
+	});
+
+	test('both doors read the same working marks', () => {
+		const marks = (parts: string[]): string[] => {
+			const where = parts[parts.length - 1];
+			return [
+				...new Set(scan(read(...parts), /assistantSessionStore\.(any\w+)/g, `marks in ${where}`))
+			].sort();
+		};
+		const nav = marks(['src', 'lib', 'components', 'assistant', 'AssistantNavStatus.svelte']);
+		const widget = marks([
+			'src',
+			'lib',
+			'components',
+			'assistant',
+			'AssistantFloatingWidget.svelte'
+		]);
+		// A strict subset, deliberately: the launcher also owns the "just finished" latch,
+		// which is not duplicated onto the bar. What the bar DOES show has to come from the
+		// same getters, or the two surfaces disagree about whether the assistant is working.
+		for (const m of nav) expect(widget).toContain(m);
+	});
+});
+
 describe('shared UI recipes (architecture/ui-shell-settings.md)', () => {
 	// `.empty-orb` is the disc ui/EmptyState draws. A panel reaching for it directly is
 	// building a second empty state by hand, which is how the app ended up with three orb

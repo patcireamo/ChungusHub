@@ -225,7 +225,7 @@
 		<div class="card-head">
 			<span class="card-title">Chungus Assistant</span>
 			<InfoTip
-				text="The floating assistant button in the corner of the workspace. Hidden, {MOD_KEY}+J still opens the panel and turn activity announces itself inside it instead."
+				text="The floating assistant button in the corner of the workspace. Off, a plain button in the title bar opens it instead (handy on a phone, where the corner button keeps drifting over the text it covers). {MOD_KEY}+J always opens it too."
 			/>
 		</div>
 		<div class="toggle-row" use:toggleRow>

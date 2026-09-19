@@ -246,8 +246,8 @@ export const SHORTCUTS: ShortcutDef[] = [
 		id: 'assistant',
 		group: 'panels',
 		label: 'Chungus Assistant',
-		// The assistant's other door, and the ONLY one once its floating button is switched
-		// off in Settings → General.
+		// One of the assistant's doors alongside its floating launcher and, when that's
+		// switched off in Settings → General, the title-bar button that takes its place.
 		binding: { mod: true, key: 'j' },
 		run: () => uiStore.toggleAssistant()
 	},

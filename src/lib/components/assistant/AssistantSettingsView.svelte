@@ -14,6 +14,8 @@
 	import { onMount } from 'svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
+	import Toggle from '$lib/components/ui/Toggle.svelte';
+	import { MOD_KEY } from '$lib/components/ui/ShortcutsSheet.svelte';
 	import AssistantSuggestionsSection from './AssistantSuggestionsSection.svelte';
 	import AssistantSkillsSection from './AssistantSkillsSection.svelte';
 	import AssistantApprovalSection from './AssistantApprovalSection.svelte';
@@ -21,6 +23,8 @@
 	import { db } from '$lib/services/database';
 	import { registerSettingsReload } from '$lib/services/syncedSetting';
 	import { toastStore } from '$lib/stores/toast.svelte';
+	import { toggleRow } from '$lib/actions/toggleRow';
+	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 
 	let { onClose }: { onClose: () => void } = $props();
 	let backButton: HTMLButtonElement | undefined = $state();
@@ -103,6 +107,31 @@
 	</header>
 
 	<div class="assistant-settings-body panel-scroll">
+		<section class="as-section">
+			<div class="as-section-head">
+				<h3 class="as-section-title">
+					<Icon name="pin" class="w-3.5 h-3.5" />
+					Launcher
+				</h3>
+				<InfoTip
+					text="Where the assistant waits while it is closed. On, it is a plain Assistant button in the title bar beside the other panels, which is the one that never sits over what you are reading on a phone. Off, it is the floating mascot in the workspace corner. Either way {MOD_KEY}+J opens the panel, and the assistant's sessions and every other setting here are untouched."
+				/>
+			</div>
+			<!-- Reads INVERTED on purpose. The stored setting is `assistantLauncher`, "show the
+			     floating launcher", which is upstream's field and the one Settings > General
+			     presents directly; this row asks the opposite question, because "put it on the
+			     top bar" is what someone comes here wanting. One field, so the two rows can
+			     never disagree, and neither is a second copy of the state. -->
+			<div class="toggle-row" use:toggleRow>
+				<span class="slider-label">Show Chungus Assistant on top bar instead of floating icon</span>
+				<Toggle
+					checked={!generalSettingsStore.assistantLauncher}
+					onchange={(v) => generalSettingsStore.setAssistantLauncher(!v)}
+					label="Show Chungus Assistant on top bar instead of floating icon"
+				/>
+			</div>
+		</section>
+
 		<section class="as-section">
 			<div class="as-section-head">
 				<h3 class="as-section-title">

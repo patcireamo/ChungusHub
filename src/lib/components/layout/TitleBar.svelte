@@ -2,11 +2,13 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import { shortcutLabel } from '$lib/components/ui/ShortcutsSheet.svelte';
 	import MemoryNavStatus from '$lib/components/memory/MemoryNavStatus.svelte';
+	import AssistantNavStatus from '$lib/components/assistant/AssistantNavStatus.svelte';
 	import { uiStore, type OverlayType } from '$lib/stores/ui.svelte';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { viewport } from '$lib/stores/viewport.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { memoryStore } from '$lib/memory/store.svelte';
+	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 
 	let activeOverlay = $derived(uiStore.activeOverlay);
 	let settingsOpen = $derived(uiStore.settingsOpen);
@@ -103,6 +105,19 @@
 		if (item.overlay !== 'memory' || memoryStanding.kind === 'idle') return item.title;
 		return `${item.title} · ${memoryStanding.label}`;
 	}
+
+	// The Chungus Assistant is a free-floating widget, not an `activeOverlay` entry, so it
+	// isn't part of NAV above. Its usual door is the corner mascot launcher; Settings → General
+	// can switch that off (it's forever in the way of the text under it on a phone, dragged
+	// clear only to drift back), and this button becomes the other one: always present rather
+	// than Ctrl/⌘+J alone.
+	let assistantOpen = $derived(uiStore.assistantOpen);
+	let showAssistantNav = $derived(!generalSettingsStore.assistantLauncher);
+	function assistantTitle(): string {
+		return assistantOpen
+			? `Close Chungus Assistant (${shortcut('j')})`
+			: `Chungus Assistant (${shortcut('j')})`;
+	}
 </script>
 
 <header class="title-bar">
@@ -153,6 +168,18 @@
 					<span>{item.label}</span>
 				</button>
 			{/each}
+			{#if showAssistantNav}
+				<button
+					type="button"
+					class="overlay-btn"
+					class:is-active-tint={assistantOpen}
+					title={assistantTitle()}
+					onclick={() => uiStore.toggleAssistant()}
+				>
+					<AssistantNavStatus />
+					<span>Assistant</span>
+				</button>
+			{/if}
 		</div>
 
 		<div class="nav-group nav-group-end">

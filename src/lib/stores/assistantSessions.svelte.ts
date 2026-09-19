@@ -202,10 +202,11 @@ class AssistantSessionStore {
 	}
 
 	/**
-	 * True while an OPEN tab is holding a card: the badge on the closed launcher and the mark
-	 * in the tab strip. Scoped to open tabs on purpose: a badge has to point at something the
-	 * user can actually answer, and a turn left waiting on a closed tab is reached by reopening
-	 * it from history, which hands the card back through `assistantStatus`.
+	 * True while an OPEN tab is holding a card: the badge on the closed launcher (or the
+	 * title-bar button in its place, when the launcher is hidden) and the mark in the tab
+	 * strip. Scoped to open tabs on purpose: a badge has to point at something the user can
+	 * actually answer, and a turn left waiting on a closed tab is reached by reopening it from
+	 * history, which hands the card back through `assistantStatus`.
 	 */
 	get anyPendingAsk(): boolean {
 		return this.openTabIds.some((id) => !!this.runtime[id]?.pending);
@@ -265,8 +266,9 @@ class AssistantSessionStore {
 		return (this.activeTabId && this.runtime[this.activeTabId]) || emptyRuntime();
 	}
 
-	/** True while ANY session is mid-turn. Drives the floating launcher's "working"
-	 *  pulse when the panel is minimized. */
+	/** True while ANY session is mid-turn. Drives the "working" pulse while the panel is
+	 *  minimized: the floating launcher's, or the title-bar button's when the launcher is
+	 *  switched off in its place. */
 	get anyBusy(): boolean {
 		return Object.values(this.runtime).some((r) => r.busy);
 	}
