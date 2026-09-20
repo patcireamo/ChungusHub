@@ -45,10 +45,15 @@ const DRIFT_TICK_MS = 5000;
  *  far finer than the motion and the dot moves imperceptibly between samples. */
 const SAMPLE_MS = 100;
 
-/** Where a wall, a window or a hull stops passing a recording's top end. */
-const MUFFLED_HZ = 620;
-/** Open: above everything in the material, so the filter is there and doing nothing. */
-const OPEN_HZ = 20000;
+/**
+ * A wall, a window or a hull takes the top off a sound without taking it away: the highs arrive
+ * weakened rather than gone. That is the whole difference between something heard through a
+ * wall and something heard underwater, so this is a shelf that leans on everything above it and
+ * never a lowpass that stops passing: cut the top end off outright and every recording turns
+ * into the same submerged rumble whatever it started as.
+ */
+const WALL_HZ = 1000;
+const WALL_CUT_DB = -15;
 /** What open ground between here and there takes off the sound that arrives straight, and what
  *  it hands back as the space in between. Distance is the ratio far more than it is the level:
  *  cutting the direct path alone just makes a recording quiet. */
@@ -81,7 +86,7 @@ interface Voice {
 	id: string;
 	source: AudioBufferSourceNode;
 	drift: GainNode;
-	/** The thing in the way, open until something is. */
+	/** The thing in the way: a high shelf leaning on the top end, flat until something is. */
 	tone: BiquadFilterNode;
 	level: GainNode;
 	/** The two paths out of `level`: straight here, and around by way of the room. */
@@ -234,7 +239,7 @@ class SoundscapePlayer {
 			const muffled = placed?.muffled === true;
 			const distant = placed?.distant === true;
 
-			voice.tone.frequency.setTargetAtTime(muffled ? MUFFLED_HZ : OPEN_HZ, now, PLACE_SETTLE);
+			voice.tone.gain.setTargetAtTime(muffled ? WALL_CUT_DB : 0, now, PLACE_SETTLE);
 			voice.dry.gain.setTargetAtTime(distant ? DISTANT_DRY : 1, now, PLACE_SETTLE);
 			if (distant && !voice.sendWired) {
 				voice.send.connect(this.reverbBus(ac, master));
@@ -390,9 +395,9 @@ class SoundscapePlayer {
 		const drift = ac.createGain();
 		drift.gain.value = 1;
 		const tone = ac.createBiquadFilter();
-		tone.type = 'lowpass';
-		tone.frequency.value = OPEN_HZ;
-		tone.Q.value = 0.7;
+		tone.type = 'highshelf';
+		tone.frequency.value = WALL_HZ;
+		tone.gain.value = 0;
 		const level = ac.createGain();
 		level.gain.value = 0;
 		const dry = ac.createGain();

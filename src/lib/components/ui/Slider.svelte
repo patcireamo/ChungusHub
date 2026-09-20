@@ -11,10 +11,10 @@
 		defaultValue?: number;
 		/**
 		 * Where the value actually is right now, when something other than the reader is moving
-		 * it. Drawn as a read-only bar of its own UNDER the track, marked with a tick at
-		 * `value`, never as a second reading on the track itself: a fill that disagrees with its
-		 * own thumb reads as a control that is broken rather than as a value that is moving.
-		 * Omit unless something really is moving it.
+		 * it. Drawn as a thin mark travelling along the track while the thumb holds `value`, and
+		 * never as a second reading of the FILL: a fill that disagrees with its own thumb reads
+		 * as a control that is broken rather than as a value that is moving. Omit unless
+		 * something really is moving it.
 		 */
 		meter?: number;
 		disabled?: boolean;
@@ -141,7 +141,7 @@
 		{#if meter !== undefined}
 			<!-- A readout, not a control: the screen reader already has the value off the input,
 			     and a second announcement of the same level moving on its own is noise. -->
-			<div class="meter" style="--meter: {meterFill}; --set: {fill}" aria-hidden="true"></div>
+			<span class="live-mark" style="--meter: {meterFill}" aria-hidden="true"></span>
 		{/if}
 	</div>
 	<span class="readout">{format(value)}</span>
@@ -166,6 +166,7 @@
 	   pseudo-elements instead, so the element can be tall enough to hit while the bar stays the
 	   width of a hairline. */
 	.slider-body {
+		position: relative;
 		flex: 1;
 		min-width: 0;
 		display: flex;
@@ -182,49 +183,34 @@
 		cursor: pointer;
 	}
 
-	/* What the value is actually doing, as its own bar under the track. The thumb travels
-	   between its own half-widths rather than edge to edge, so both the fill's end and the tick
-	   are placed on that same span: a mark a few pixels off the thumb it is reporting against
-	   reads as a rendering fault rather than as a level sitting where it was set. */
-	.meter {
-		position: relative;
-		height: 0.2rem;
-		margin-top: -0.15rem;
+	/* What the value is actually doing, drawn ON the track it belongs to. It takes no pointer
+	   events, so the round thumb beside it stays the only thing that can be moved and the two
+	   read as what was set and what is happening rather than as two controls. It is placed on
+	   the thumb's own travel (between its half-widths, not edge to edge), or a mark a few
+	   pixels off the value it reports reads as a rendering fault. */
+	.live-mark {
+		position: absolute;
+		top: 50%;
+		left: calc(var(--meter, 0) * (100% - 0.95rem) + 0.475rem);
+		width: 2px;
+		height: 0.85rem;
+		margin-left: -1px;
+		transform: translateY(-50%);
 		border-radius: var(--radius-full);
-		background: color-mix(in srgb, var(--color-bg-tertiary) 75%, transparent);
+		background: color-mix(in srgb, var(--color-text-primary) 75%, transparent);
+		pointer-events: none;
+		transition: left 180ms linear;
 	}
 
-	.meter::before {
-		content: '';
-		position: absolute;
-		top: 0;
-		bottom: 0;
-		left: 0;
-		width: calc(var(--meter, 0) * (100% - 0.95rem) + 0.475rem);
-		border-radius: inherit;
-		background: color-mix(in srgb, var(--color-accent) 60%, transparent);
-		transition: width 180ms linear;
-	}
-
-	.meter::after {
-		content: '';
-		position: absolute;
-		top: -0.14rem;
-		bottom: -0.14rem;
-		left: calc(var(--set, 0) * (100% - 0.95rem) + 0.475rem);
-		width: 1px;
-		background: color-mix(in srgb, var(--color-text-secondary) 70%, transparent);
-	}
-
-	/* Sampled many times a second, so with transitions cut this steps rather than travels,
+	/* Sampled many times a second, so with transitions cut this jumps rather than travels,
 	   which is the opposite of what asking for less motion wanted. The level is still audible;
 	   only the picture of it goes. */
-	:global([data-motion='reduced']) .meter {
+	:global([data-motion='reduced']) .live-mark {
 		display: none;
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.meter {
+		.live-mark {
 			display: none;
 		}
 	}
