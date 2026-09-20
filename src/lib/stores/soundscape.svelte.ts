@@ -22,9 +22,6 @@ export const DEFAULT_LEVEL = 0.5;
 export const DEFAULT_VOLUME = 0.5;
 
 export interface SoundscapeConfig {
-	/** The one switch over the mix, so it can go quiet without being taken apart. Off on a
-	 *  fresh install: an app that has never made a sound must not start because it updated. */
-	enabled: boolean;
 	/** 0-1 over the whole mix. */
 	volume: number;
 	/** 0-1 per recording. A key here IS membership of the mix. */
@@ -38,7 +35,6 @@ export interface SoundscapeConfig {
 }
 
 const DEFAULT_CONFIG: SoundscapeConfig = {
-	enabled: false,
 	volume: DEFAULT_VOLUME,
 	levels: {},
 	seamless: true,
@@ -71,7 +67,6 @@ function normalize(raw: Partial<SoundscapeConfig> | null): SoundscapeConfig {
 		}
 	}
 	return {
-		enabled: bool(raw?.enabled, DEFAULT_CONFIG.enabled),
 		volume:
 			typeof raw?.volume === 'number' && Number.isFinite(raw.volume)
 				? clamp01(raw.volume)
@@ -86,6 +81,17 @@ function normalize(raw: Partial<SoundscapeConfig> | null): SoundscapeConfig {
 class SoundscapeStore {
 	config = $state<SoundscapeConfig>({ ...DEFAULT_CONFIG, levels: {} });
 
+	/**
+	 * Whether the reader has pressed play, and **deliberately not persisted**.
+	 *
+	 * A mix is a room somebody chose to be in, not a preference the install carries: restored
+	 * from storage it starts held by the browser's gesture gate and then bursts into sound at
+	 * whatever later click happens to release it, which lands nowhere near the press that
+	 * caused it. Starting from silence means the sound only ever begins on the press that asks
+	 * for it. It is per-page for the same reason, so one device is never started from another.
+	 */
+	private started = $state(false);
+
 	/** Every recording in the mix, in registry order rather than insertion order, so the
 	 *  list on screen does not reshuffle itself as it is built. */
 	activeIds = $derived(AMBIENT_SOUNDS.filter((s) => s.id in this.config.levels).map((s) => s.id));
@@ -93,15 +99,15 @@ class SoundscapeStore {
 	/** The Settings root row's line. */
 	activeCount = $derived(this.activeIds.length);
 
-	/** Whether anything is actually sounding: the switch on AND something to play. */
-	playing = $derived(this.config.enabled && this.activeIds.length > 0);
+	/** Whether anything is actually sounding: played AND something to play. */
+	playing = $derived(this.started && this.activeIds.length > 0);
 
 	private writer = new BurstSettingWriter<SoundscapeConfig>(SETTINGS_KEY);
 
 	async initialize(): Promise<void> {
 		this.config = normalize(await readSetting<Partial<SoundscapeConfig> | null>(SETTINGS_KEY, null));
 		registerSettingsReload(() => this.syncReload());
-		soundscapePlayer.apply(this.config);
+		soundscapePlayer.apply(this.config, this.started);
 	}
 
 	async syncReload(): Promise<void> {
@@ -110,7 +116,7 @@ class SoundscapeStore {
 		// would drag a slider out from under the finger holding it.
 		if (this.writer.busy) return;
 		this.config = next;
-		soundscapePlayer.apply(next);
+		soundscapePlayer.apply(next, this.started);
 	}
 
 	levelOf(id: string): number {
@@ -121,8 +127,10 @@ class SoundscapeStore {
 		return id in this.config.levels;
 	}
 
-	setEnabled(enabled: boolean): void {
-		this.write({ ...this.config, enabled });
+	/** Start or stop the mix. Runtime only: nothing about this reaches storage. */
+	setPlaying(playing: boolean): void {
+		this.started = playing;
+		soundscapePlayer.apply(this.config, this.started);
 	}
 
 	setVolume(volume: number): void {
@@ -160,9 +168,12 @@ class SoundscapeStore {
 	}
 
 	private write(next: SoundscapeConfig): void {
+		// An emptied mix takes the press back with it, so the next recording added lands in a
+		// stopped mix rather than starting to sound the instant it is picked.
+		if (Object.keys(next.levels).length === 0) this.started = false;
 		this.config = next;
 		this.writer.write(next);
-		soundscapePlayer.apply(next);
+		soundscapePlayer.apply(next, this.started);
 	}
 }
 

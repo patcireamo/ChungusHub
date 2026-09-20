@@ -32,6 +32,8 @@
 		| 'arrowLeft'
 		| 'arrowRight'
 		| 'stop'
+		| 'play'
+		| 'pause'
 		| 'refresh'
 		| 'dotsVertical'
 		| 'annotation'
@@ -227,6 +229,12 @@
 		stop: {
 			paths: [],
 			fill: true
+		},
+		play: {
+			paths: ['M8 5.5v13l11-6.5-11-6.5z']
+		},
+		pause: {
+			paths: ['M10 5.5v13', 'M15 5.5v13']
 		},
 		refresh: {
 			paths: [

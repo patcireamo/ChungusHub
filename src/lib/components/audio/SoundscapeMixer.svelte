@@ -39,8 +39,30 @@
 
 	type Shelf = SoundCategory | 'all';
 
+	/** How far a level wanders either side of where it was set, as a plain multiplier. The
+	 *  player's own ±3 dB, read back so the pulse below can be scaled against its real range. */
+	const DRIFT_FLOOR = 10 ** (-3 / 20);
+	const DRIFT_CEILING = 10 ** (3 / 20);
+
 	let config = $derived(soundscapeStore.config);
 	let count = $derived(soundscapeStore.activeIds.length);
+	let playing = $derived(soundscapeStore.playing);
+
+	/** Levels are wandering AND something is there to hear it on. */
+	let breathing = $derived(config.drift && playing);
+
+	/**
+	 * Where one recording's level sits inside its wander, 0 at the bottom of the swing and 1 at
+	 * the top. It lights the row's dot and nothing else: a drifting level must be visible
+	 * WITHOUT the slider reporting it, since a fill that disagrees with its own thumb reads as a
+	 * control that is broken, and moving the thumb would leave the reader unable to set a level
+	 * at all while the mix breathes under their finger.
+	 */
+	function pulse(id: string): number {
+		const drift = soundscapePlayer.liveDrift.get(id);
+		if (drift === undefined) return 1;
+		return Math.min(1, Math.max(0, (drift - DRIFT_FLOOR) / (DRIFT_CEILING - DRIFT_FLOOR)));
+	}
 
 	/** Which shelf is on screen. View state, not a preference: it says where the reader is
 	 *  looking right now and means nothing on the next device. */
@@ -53,27 +75,42 @@
 		}))
 	);
 
-	/** The mix is built and silent: a browser plays nothing until the page has been touched. */
-	let held = $derived(soundscapePlayer.blocked && count > 0);
+	/** Play was pressed and the browser still refuses to make a sound. */
+	let held = $derived(playing && soundscapePlayer.blocked);
 
-	// Drift happens in the audio graph, where nothing on screen would ever see it. Sampling
-	// runs only while this surface is mounted, and stops with it.
-	$effect(() => soundscapePlayer.watchDrift());
+	// Drift happens in the audio graph, where nothing on screen would ever see it. Sampling runs
+	// only while this surface is mounted AND something is drawing it, and stops with either.
+	$effect(() => {
+		if (!breathing) return;
+		return soundscapePlayer.watchDrift();
+	});
 </script>
 
 <div class="mixer">
-	<div class="row-block">
-		<span class="slider-label">Overall Level</span>
-		<Slider
-			value={config.volume}
-			min={0}
-			max={1}
-			step={0.01}
-			defaultValue={0.5}
-			format={(v) => (Math.round(v * 100) === 0 ? 'Muted' : `${Math.round(v * 100)}%`)}
-			oninput={(v) => soundscapeStore.setVolume(v)}
-			label="Soundscape volume"
-		/>
+	<div class="transport">
+		<button
+			type="button"
+			class="play"
+			disabled={count === 0}
+			aria-label={playing ? 'Pause the mix' : 'Play the mix'}
+			title={count === 0 ? 'Pick a sound first' : playing ? 'Pause the mix' : 'Play the mix'}
+			onclick={() => soundscapeStore.setPlaying(!playing)}
+		>
+			<Icon name={playing ? 'pause' : 'play'} class="play-glyph" />
+		</button>
+		<div class="transport-level">
+			<span class="slider-label">Overall Level</span>
+			<Slider
+				value={config.volume}
+				min={0}
+				max={1}
+				step={0.01}
+				defaultValue={0.5}
+				format={(v) => (Math.round(v * 100) === 0 ? 'Muted' : `${Math.round(v * 100)}%`)}
+				oninput={(v) => soundscapeStore.setVolume(v)}
+				label="Soundscape volume"
+			/>
+		</div>
 	</div>
 
 	<!-- One line, always, whatever it has to say. Given to the mix only when there is one, it
@@ -82,12 +119,15 @@
 	<div class="status">
 		<span class="status-text" class:is-held={held}>
 			{#if held}
-				Tap anywhere and the mix starts on its own
-			{:else if count > 0}
+				Your browser is still refusing to make a sound
+			{:else if count === 0}
+				Nothing in the mix yet
+			{:else if playing}
+				{count}
+				{count === 1 ? 'sound' : 'sounds'} playing
+			{:else}
 				{count}
 				{count === 1 ? 'sound' : 'sounds'} in the mix
-			{:else}
-				Nothing in the mix yet
 			{/if}
 		</span>
 		{#if count > 0}
@@ -146,7 +186,11 @@
 						title={on ? 'Remove from the mix' : 'Add to the mix'}
 						onclick={() => soundscapeStore.toggleSound(sound.id)}
 					>
-						<span class="dot"></span>
+						<span
+							class="dot"
+							class:is-breathing={on && breathing}
+							style:--pulse={on && breathing ? pulse(sound.id) : 1}
+						></span>
 						<span class="sound-name">{sound.label}</span>
 						{#if failed}
 							<span class="sound-state is-failed-text">Could not load</span>
@@ -156,16 +200,11 @@
 					</button>
 
 					{#if on}
-						<!-- The fill follows what this recording is actually playing at while the thumb
-						     stays where it was set, so a drifting level is visible without the control
-						     ever disagreeing with the stored mix. -->
-						{@const drift = soundscapePlayer.liveDrift.get(sound.id)}
+						<!-- The slider says what was set and only that. What the level is doing on its
+						     own is the row's dot, above. -->
 						<div class="sound-level" transition:slide={{ duration: 160 }}>
 							<Slider
 								value={soundscapeStore.levelOf(sound.id)}
-								liveValue={drift === undefined
-									? undefined
-									: soundscapeStore.levelOf(sound.id) * drift}
 								min={0}
 								max={1}
 								step={0.01}
@@ -233,10 +272,56 @@
 		gap: 0.9rem;
 	}
 
-	.row-block {
+	/* --- Transport --- */
+
+	.transport {
+		display: flex;
+		align-items: center;
+		gap: 0.8rem;
+	}
+
+	.transport-level {
+		flex: 1;
+		min-width: 0;
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
+	}
+
+	.play {
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.75rem;
+		height: 2.75rem;
+		border-radius: var(--radius-full);
+		border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+		background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+		color: var(--color-accent);
+		cursor: pointer;
+		transition:
+			background 120ms ease,
+			border-color 120ms ease,
+			color 120ms ease;
+	}
+
+	.play:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+	}
+
+	/* Nothing to play is a state of the mix, not a fault, so the button goes quiet rather than
+	   disappearing: a control that comes and goes leaves the row reflowing as sounds are picked. */
+	.play:disabled {
+		cursor: default;
+		color: var(--color-text-muted);
+		border-color: color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
+		background: none;
+	}
+
+	.play :global(.play-glyph) {
+		width: 1.05rem;
+		height: 1.05rem;
 	}
 
 	/* --- The status line --- */
@@ -409,6 +494,31 @@
 	.sound.is-failed .dot {
 		background: var(--color-error);
 		border-color: var(--color-error);
+	}
+
+	/* The wander, drawn where it cannot be mistaken for a setting. `--pulse` is the level's real
+	   position inside its own swing, sampled from the audio graph, so this is the recording
+	   breathing rather than a decoration keeping its own time. */
+	.dot.is-breathing {
+		opacity: calc(0.45 + var(--pulse, 1) * 0.55);
+		transform: scale(calc(0.8 + var(--pulse, 1) * 0.35));
+		transition:
+			opacity 180ms linear,
+			transform 180ms linear;
+	}
+
+	/* Sampled ten times a second, so with transitions cut this would be a stepping dot rather
+	   than a breathing one, which is the opposite of what asking for less motion wanted. */
+	:global([data-motion='reduced']) .dot.is-breathing {
+		opacity: 1 !important;
+		transform: none !important;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.dot.is-breathing {
+			opacity: 1 !important;
+			transform: none !important;
+		}
 	}
 
 	.sound-name {

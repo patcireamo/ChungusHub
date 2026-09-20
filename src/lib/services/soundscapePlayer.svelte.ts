@@ -87,9 +87,9 @@ class SoundscapePlayer {
 	private watchers = 0;
 	/** What the master was last told, so a volume move is told apart from the mix starting. */
 	private masterOn = false;
-	private heldTimer: ReturnType<typeof setTimeout> | null = null;
-	private heldSaid = false;
 	private config: SoundscapeConfig | null = null;
+	/** Whether the reader has pressed play. The store owns the reactive copy. */
+	private playing = false;
 	private loadWarned = false;
 
 	/**
@@ -133,14 +133,14 @@ class SoundscapePlayer {
 		});
 	}
 
-	/** Take a whole config and make the graph match it. */
-	apply(config: SoundscapeConfig): void {
+	/** Take a whole config plus whether the mix is running, and make the graph match. */
+	apply(config: SoundscapeConfig, playing: boolean): void {
 		this.config = config;
+		this.playing = playing;
 		if (typeof window === 'undefined') return;
 
-		const wanted = config.enabled ? Object.keys(config.levels) : [];
-		// Never build a context for a reader who has the soundscape switched off, which is
-		// every reader on a fresh install.
+		const wanted = playing ? Object.keys(config.levels) : [];
+		// Never build a context for a mix nobody has started, which is every mix at page load.
 		if (wanted.length === 0 && !this.ctx) return;
 		if (!this.context()) return;
 
@@ -156,28 +156,6 @@ class SoundscapePlayer {
 		this.applyMaster();
 		this.applyDrift();
 		this.evictBuffers();
-		if (this.blocked && wanted.length > 0) this.noticeIfHeld();
-	}
-
-	/**
-	 * Say why a restored mix is silent, but only once it has outlasted the reader's next click.
-	 *
-	 * A browser will not make a sound until the page has been touched, so a mix that was
-	 * playing before a reload comes back held. Any click anywhere releases it, which is usually
-	 * a second away and needs no explanation at all; what does need one is the case where
-	 * somebody sits reading a silent app, because the only surface that reports this lives
-	 * three taps inside Settings, which is exactly where they would not think to look.
-	 */
-	private noticeIfHeld(): void {
-		if (this.heldSaid || this.heldTimer) return;
-		this.heldTimer = setTimeout(() => {
-			this.heldTimer = null;
-			if (!this.blocked || this.voices.size === 0) return;
-			this.heldSaid = true;
-			toastStore.info(
-				'Your soundscape starts on your first click. Browsers will not play sound before the page has been touched.'
-			);
-		}, 4000);
 	}
 
 	/**
@@ -224,12 +202,12 @@ class SoundscapePlayer {
 		const master = this.master;
 		const config = this.config;
 		if (!ac || !master || !config) return;
-		const target = config.enabled ? config.volume : 0;
-		if (config.enabled === this.masterOn) {
+		const target = this.playing ? config.volume : 0;
+		if (this.playing === this.masterOn) {
 			master.gain.setTargetAtTime(target, ac.currentTime, 0.02);
 			return;
 		}
-		this.masterOn = config.enabled;
+		this.masterOn = this.playing;
 		master.gain.cancelScheduledValues(ac.currentTime);
 		master.gain.setValueAtTime(master.gain.value, ac.currentTime);
 		master.gain.linearRampToValueAtTime(target, ac.currentTime + MIX_FADE);
@@ -311,7 +289,7 @@ class SoundscapePlayer {
 
 		// The mix can have moved on entirely while this was loading.
 		const config = this.config;
-		if (!buffer || !config.enabled || !(id in config.levels) || config.seamless !== seamless) {
+		if (!buffer || !this.playing || !(id in config.levels) || config.seamless !== seamless) {
 			return;
 		}
 		const existing = this.voices.get(id);
@@ -358,7 +336,7 @@ class SoundscapePlayer {
 	}
 
 	private applyDrift(): void {
-		const on = this.config?.drift === true && this.config.enabled;
+		const on = this.config?.drift === true && this.playing;
 		if (on && !this.driftTimer) {
 			this.driftTimer = setInterval(() => this.topUpDrift(), DRIFT_TICK_MS);
 		}
