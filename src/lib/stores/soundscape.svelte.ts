@@ -21,11 +21,30 @@ const SETTINGS_KEY = 'soundscapeConfig';
 export const DEFAULT_LEVEL = 0.5;
 export const DEFAULT_VOLUME = 0.5;
 
+/**
+ * Where one recording is standing, relative to the reader.
+ *
+ * The two are different things rather than two strengths of one, which is what makes them
+ * independent: `muffled` is something in the way (a wall, a window, a hull) eating the top of
+ * the sound, `distant` is open ground between here and there, which costs level and hands back
+ * the space in between. Both at once is a real place to be, the far side of a wall and some way
+ * off down the street.
+ */
+export interface SoundEffects {
+	muffled: boolean;
+	distant: boolean;
+}
+
+export const NO_EFFECTS: SoundEffects = { muffled: false, distant: false };
+
 export interface SoundscapeConfig {
 	/** 0-1 over the whole mix. */
 	volume: number;
 	/** 0-1 per recording. A key here IS membership of the mix. */
 	levels: Record<string, number>;
+	/** Per recording, and only for the ones standing somewhere other than here: a recording
+	 *  with nothing on is absent, so the ordinary mix stores nothing at all. */
+	effects: Record<string, SoundEffects>;
 	/** Join each recording's end to its own beginning, so the loop has no seam. */
 	seamless: boolean;
 	/** Bring every recording to one measured loudness (config/soundscape.ts). */
@@ -37,6 +56,7 @@ export interface SoundscapeConfig {
 const DEFAULT_CONFIG: SoundscapeConfig = {
 	volume: DEFAULT_VOLUME,
 	levels: {},
+	effects: {},
 	seamless: true,
 	normalize: true,
 	drift: false
@@ -66,12 +86,30 @@ function normalize(raw: Partial<SoundscapeConfig> | null): SoundscapeConfig {
 			levels[id] = clamp01(value);
 		}
 	}
+
+	// Placement only survives for a recording that is still in the mix, and only while it says
+	// something: an all-false entry is the default written out longhand, and one whose recording
+	// left the mix is a setting for a sound nobody can hear.
+	const effects: Record<string, SoundEffects> = {};
+	const storedEffects = raw?.effects;
+	if (storedEffects && typeof storedEffects === 'object') {
+		for (const [id, value] of Object.entries(storedEffects)) {
+			if (!(id in levels) || !value || typeof value !== 'object') continue;
+			const one: SoundEffects = {
+				muffled: bool((value as Partial<SoundEffects>).muffled, false),
+				distant: bool((value as Partial<SoundEffects>).distant, false)
+			};
+			if (one.muffled || one.distant) effects[id] = one;
+		}
+	}
+
 	return {
 		volume:
 			typeof raw?.volume === 'number' && Number.isFinite(raw.volume)
 				? clamp01(raw.volume)
 				: DEFAULT_CONFIG.volume,
 		levels,
+		effects,
 		seamless: bool(raw?.seamless, DEFAULT_CONFIG.seamless),
 		normalize: bool(raw?.normalize, DEFAULT_CONFIG.normalize),
 		drift: bool(raw?.drift, DEFAULT_CONFIG.drift)
@@ -79,7 +117,7 @@ function normalize(raw: Partial<SoundscapeConfig> | null): SoundscapeConfig {
 }
 
 class SoundscapeStore {
-	config = $state<SoundscapeConfig>({ ...DEFAULT_CONFIG, levels: {} });
+	config = $state<SoundscapeConfig>({ ...DEFAULT_CONFIG, levels: {}, effects: {} });
 
 	/**
 	 * Whether the reader has pressed play, and **deliberately not persisted**.
@@ -127,6 +165,19 @@ class SoundscapeStore {
 		return id in this.config.levels;
 	}
 
+	effectsOf(id: string): SoundEffects {
+		return this.config.effects[id] ?? NO_EFFECTS;
+	}
+
+	setEffect(id: string, key: keyof SoundEffects, on: boolean): void {
+		if (!this.isActive(id)) return;
+		const next = { ...this.effectsOf(id), [key]: on };
+		const effects = { ...this.config.effects };
+		if (next.muffled || next.distant) effects[id] = next;
+		else delete effects[id];
+		this.write({ ...this.config, effects });
+	}
+
 	/** Start or stop the mix. Runtime only: nothing about this reaches storage. */
 	setPlaying(playing: boolean): void {
 		this.started = playing;
@@ -154,17 +205,23 @@ class SoundscapeStore {
 		this.write({ ...this.config, levels: { ...this.config.levels, [id]: clamp01(level) } });
 	}
 
-	/** Add or remove one recording. */
+	/** Add or remove one recording. Its placement leaves with it, or a recording added back
+	 *  later would arrive already standing somewhere the reader has long forgotten choosing. */
 	toggleSound(id: string): void {
 		if (!soundById(id)) return;
 		const levels = { ...this.config.levels };
-		if (id in levels) delete levels[id];
-		else levels[id] = DEFAULT_LEVEL;
-		this.write({ ...this.config, levels });
+		const effects = { ...this.config.effects };
+		if (id in levels) {
+			delete levels[id];
+			delete effects[id];
+		} else {
+			levels[id] = DEFAULT_LEVEL;
+		}
+		this.write({ ...this.config, levels, effects });
 	}
 
 	clear(): void {
-		this.write({ ...this.config, levels: {} });
+		this.write({ ...this.config, levels: {}, effects: {} });
 	}
 
 	private write(next: SoundscapeConfig): void {

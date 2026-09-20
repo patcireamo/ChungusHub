@@ -3,7 +3,12 @@
  *
  * One voice per recording, all summing into one master:
  *
- *     source (loop) -> drift -> level -> master -> destination
+ *     source (loop) -> drift -> tone -> level -> dry  -> master -> destination
+ *                                             -> send -> reverb -> master
+ *
+ * `tone` is whatever is in the way and is open until something is; `dry` and `send` are the two
+ * paths a placed recording takes, straight here and around by way of the room. The reverb is one
+ * shared bus rather than one per voice, and is built only once something asks for it.
  *
  * The two gains are separate on purpose. `level` is the reader's slider times the recording's
  * own loudness correction and is set outright; `drift` is a slow ramp the engine schedules.
@@ -36,9 +41,39 @@ const DRIFT_MAX_SECONDS = 20;
  *  mix breathing while nobody is looking at it. */
 const DRIFT_HORIZON = 25;
 const DRIFT_TICK_MS = 5000;
-/** How often the mixer's fills are re-read. A leg runs for at least eight seconds, so this is
- *  far finer than the motion and the fill moves well under a pixel between samples. */
+/** How often the mixer's dots are re-read. A leg runs for at least eight seconds, so this is
+ *  far finer than the motion and the dot moves imperceptibly between samples. */
 const SAMPLE_MS = 100;
+
+/** Where a wall, a window or a hull stops passing a recording's top end. */
+const MUFFLED_HZ = 620;
+/** Open: above everything in the material, so the filter is there and doing nothing. */
+const OPEN_HZ = 20000;
+/** What open ground between here and there takes off the sound that arrives straight, and what
+ *  it hands back as the space in between. Distance is the ratio far more than it is the level:
+ *  cutting the direct path alone just makes a recording quiet. */
+const DISTANT_DRY = 0.42;
+const DISTANT_SEND = 0.5;
+/** Placement settles rather than switches, so a press is a move and not a cut. */
+const PLACE_SETTLE = 0.12;
+
+/**
+ * A reverb tail built rather than shipped: a couple of seconds of decaying noise, which is all
+ * a convolver needs and which costs nothing to carry, where a recorded impulse would be another
+ * megabyte in every build for a room nobody is trying to identify. The two channels are drawn
+ * independently, so the tail has width instead of sitting as a point in the middle of the head.
+ */
+function buildImpulse(ac: AudioContext, seconds: number, decay: number): AudioBuffer {
+	const length = Math.max(1, Math.floor(ac.sampleRate * seconds));
+	const buffer = ac.createBuffer(2, length, ac.sampleRate);
+	for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+		const data = buffer.getChannelData(channel);
+		for (let i = 0; i < length; i++) {
+			data[i] = (Math.random() * 2 - 1) * (1 - i / length) ** decay;
+		}
+	}
+	return buffer;
+}
 
 /** A voice lives in the map only while it belongs to the mix: `stopVoice` drops it there and
  *  then lets the fade finish on its own, so the map always answers "what is in the mix". */
@@ -46,7 +81,15 @@ interface Voice {
 	id: string;
 	source: AudioBufferSourceNode;
 	drift: GainNode;
+	/** The thing in the way, open until something is. */
+	tone: BiquadFilterNode;
 	level: GainNode;
+	/** The two paths out of `level`: straight here, and around by way of the room. */
+	dry: GainNode;
+	send: GainNode;
+	/** Whether `send` has ever been joined to the reverb bus. It stays joined once it has been,
+	 *  since its gain going to zero is silence and re-patching a live graph is not. */
+	sendWired: boolean;
 	/** Context time the scheduled drift legs reach. */
 	driftUntil: number;
 	/** Which loop shape this voice is playing, so a change of the switch is visible here. */
@@ -77,6 +120,10 @@ class SoundscapePlayer {
 
 	private ctx: AudioContext | null = null;
 	private master: GainNode | null = null;
+	/** Built the first time a recording is put at a distance, and kept for the context's life.
+	 *  A convolver runs whether or not anything is feeding it, so one is never made for a mix
+	 *  that has nothing standing away from the reader. */
+	private reverbIn: ConvolverNode | null = null;
 	private voices = new SvelteMap<string, Voice>();
 	/** Prepared loop buffers, keyed by recording AND loop shape: the two shapes are different
 	 *  audio, and the raw decode they come from is far too large to keep. */
@@ -153,9 +200,48 @@ class SoundscapePlayer {
 		}
 
 		this.applyLevels();
+		this.applyPlacement();
 		this.applyMaster();
 		this.applyDrift();
 		this.evictBuffers();
+	}
+
+	/** The one reverb every distant voice shares. Built on the first one that asks. */
+	private reverbBus(ac: AudioContext, master: GainNode): ConvolverNode {
+		if (this.reverbIn) return this.reverbIn;
+		const convolver = ac.createConvolver();
+		convolver.buffer = buildImpulse(ac, 2.4, 2.6);
+		// A bare noise tail is brighter than any room it stands for, and brighter than the
+		// recording arriving through it, which reads as hiss laid over the mix rather than as
+		// space around it.
+		const tone = ac.createBiquadFilter();
+		tone.type = 'lowpass';
+		tone.frequency.value = 2400;
+		convolver.connect(tone).connect(master);
+		this.reverbIn = convolver;
+		return convolver;
+	}
+
+	/** Put every voice where its two switches say it is standing. */
+	private applyPlacement(): void {
+		const ac = this.ctx;
+		const master = this.master;
+		const config = this.config;
+		if (!ac || !master || !config) return;
+		const now = ac.currentTime;
+		for (const [id, voice] of this.voices) {
+			const placed = config.effects[id];
+			const muffled = placed?.muffled === true;
+			const distant = placed?.distant === true;
+
+			voice.tone.frequency.setTargetAtTime(muffled ? MUFFLED_HZ : OPEN_HZ, now, PLACE_SETTLE);
+			voice.dry.gain.setTargetAtTime(distant ? DISTANT_DRY : 1, now, PLACE_SETTLE);
+			if (distant && !voice.sendWired) {
+				voice.send.connect(this.reverbBus(ac, master));
+				voice.sendWired = true;
+			}
+			voice.send.gain.setTargetAtTime(distant ? DISTANT_SEND : 0, now, PLACE_SETTLE);
+		}
 	}
 
 	/**
@@ -303,16 +389,37 @@ class SoundscapePlayer {
 		source.loop = true;
 		const drift = ac.createGain();
 		drift.gain.value = 1;
+		const tone = ac.createBiquadFilter();
+		tone.type = 'lowpass';
+		tone.frequency.value = OPEN_HZ;
+		tone.Q.value = 0.7;
 		const level = ac.createGain();
 		level.gain.value = 0;
-		source.connect(drift).connect(level).connect(master);
-		// A random entry point, so a mix restored at boot does not replay every recording's
+		const dry = ac.createGain();
+		dry.gain.value = 1;
+		const send = ac.createGain();
+		send.gain.value = 0;
+		source.connect(drift).connect(tone).connect(level);
+		level.connect(dry).connect(master);
+		// A random entry point, so several recordings starting together do not replay their
 		// opening second in unison.
 		source.start(0, Math.random() * buffer.duration);
 		level.gain.linearRampToValueAtTime(this.levelFor(id), ac.currentTime + VOICE_FADE);
 
-		this.voices.set(id, { id, source, drift, level, driftUntil: 0, seamless });
-		// A voice that arrives after `apply` has been and gone still owes itself the timer.
+		this.voices.set(id, {
+			id,
+			source,
+			drift,
+			tone,
+			level,
+			dry,
+			send,
+			sendWired: false,
+			driftUntil: 0,
+			seamless
+		});
+		// A voice that arrives after `apply` has been and gone still owes itself both of these.
+		this.applyPlacement();
 		this.applyDrift();
 	}
 
@@ -326,7 +433,10 @@ class SoundscapePlayer {
 		voice.source.onended = () => {
 			voice.source.disconnect();
 			voice.drift.disconnect();
+			voice.tone.disconnect();
 			voice.level.disconnect();
+			voice.dry.disconnect();
+			voice.send.disconnect();
 		};
 		try {
 			voice.source.stop(ac.currentTime + VOICE_FADE + 0.05);

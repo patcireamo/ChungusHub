@@ -21,7 +21,7 @@
 	 */
 	import { slide } from 'svelte/transition';
 	import { SOUND_CATEGORIES, soundsIn, type SoundCategory } from '$lib/config/soundscape';
-	import { soundscapeStore } from '$lib/stores/soundscape.svelte';
+	import { soundscapeStore, type SoundEffects } from '$lib/stores/soundscape.svelte';
 	import { soundscapePlayer } from '$lib/services/soundscapePlayer.svelte';
 	import Icon, { type IconName } from '$lib/components/ui/Icon.svelte';
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
@@ -37,12 +37,22 @@
 		urban: 'grid'
 	};
 
-	type Shelf = SoundCategory | 'all';
+	/** Two independent things rather than two strengths of one, which is what lets either stand
+	 *  alone and both make sense together: something in the way, and ground to cross. */
+	const PLACEMENTS: { key: keyof SoundEffects; label: string; hint: string }[] = [
+		{
+			key: 'muffled',
+			label: 'Behind a wall',
+			hint: 'Takes the top off it, the way a wall, a window or a hull does.'
+		},
+		{
+			key: 'distant',
+			label: 'Far away',
+			hint: 'Sets it back from you and leaves the space in between audible.'
+		}
+	];
 
-	/** How far a level wanders either side of where it was set, as a plain multiplier. The
-	 *  player's own ±3 dB, read back so the pulse below can be scaled against its real range. */
-	const DRIFT_FLOOR = 10 ** (-3 / 20);
-	const DRIFT_CEILING = 10 ** (3 / 20);
+	type Shelf = SoundCategory | 'all';
 
 	let config = $derived(soundscapeStore.config);
 	let count = $derived(soundscapeStore.activeIds.length);
@@ -52,16 +62,14 @@
 	let breathing = $derived(config.drift && playing);
 
 	/**
-	 * Where one recording's level sits inside its wander, 0 at the bottom of the swing and 1 at
-	 * the top. It lights the row's dot and nothing else: a drifting level must be visible
-	 * WITHOUT the slider reporting it, since a fill that disagrees with its own thumb reads as a
-	 * control that is broken, and moving the thumb would leave the reader unable to set a level
-	 * at all while the mix breathes under their finger.
+	 * What one recording is actually playing at: the level as set, times whatever the wander is
+	 * doing to it. The slider draws this as a bar of its own beneath the track, so the control
+	 * goes on saying what the reader chose while the bar says what is happening. The thumb may
+	 * never report it, or the level cannot be set at all while the mix breathes under a finger.
 	 */
-	function pulse(id: string): number {
-		const drift = soundscapePlayer.liveDrift.get(id);
-		if (drift === undefined) return 1;
-		return Math.min(1, Math.max(0, (drift - DRIFT_FLOOR) / (DRIFT_CEILING - DRIFT_FLOOR)));
+	function liveLevel(id: string): number {
+		const drift = soundscapePlayer.liveDrift.get(id) ?? 1;
+		return Math.min(1, Math.max(0, soundscapeStore.levelOf(id) * drift));
 	}
 
 	/** Which shelf is on screen. View state, not a preference: it says where the reader is
@@ -186,11 +194,7 @@
 						title={on ? 'Remove from the mix' : 'Add to the mix'}
 						onclick={() => soundscapeStore.toggleSound(sound.id)}
 					>
-						<span
-							class="dot"
-							class:is-breathing={on && breathing}
-							style:--pulse={on && breathing ? pulse(sound.id) : 1}
-						></span>
+						<span class="dot"></span>
 						<span class="sound-name">{sound.label}</span>
 						{#if failed}
 							<span class="sound-state is-failed-text">Could not load</span>
@@ -200,11 +204,11 @@
 					</button>
 
 					{#if on}
-						<!-- The slider says what was set and only that. What the level is doing on its
-						     own is the row's dot, above. -->
-						<div class="sound-level" transition:slide={{ duration: 160 }}>
+						{@const placed = soundscapeStore.effectsOf(sound.id)}
+						<div class="sound-open" transition:slide={{ duration: 160 }}>
 							<Slider
 								value={soundscapeStore.levelOf(sound.id)}
+								meter={breathing ? liveLevel(sound.id) : undefined}
 								min={0}
 								max={1}
 								step={0.01}
@@ -213,6 +217,21 @@
 								oninput={(v) => soundscapeStore.setLevel(sound.id, v)}
 								label="{sound.label} level"
 							/>
+							<div class="sound-place" role="group" aria-label="Where {sound.label} is">
+								{#each PLACEMENTS as place (place.key)}
+									<button
+										type="button"
+										class="place"
+										class:is-active-tint={placed[place.key]}
+										aria-pressed={placed[place.key]}
+										title={place.hint}
+										onclick={() =>
+											soundscapeStore.setEffect(sound.id, place.key, !placed[place.key])}
+									>
+										{place.label}
+									</button>
+								{/each}
+							</div>
 						</div>
 					{/if}
 				</div>
@@ -496,31 +515,6 @@
 		border-color: var(--color-error);
 	}
 
-	/* The wander, drawn where it cannot be mistaken for a setting. `--pulse` is the level's real
-	   position inside its own swing, sampled from the audio graph, so this is the recording
-	   breathing rather than a decoration keeping its own time. */
-	.dot.is-breathing {
-		opacity: calc(0.45 + var(--pulse, 1) * 0.55);
-		transform: scale(calc(0.8 + var(--pulse, 1) * 0.35));
-		transition:
-			opacity 180ms linear,
-			transform 180ms linear;
-	}
-
-	/* Sampled ten times a second, so with transitions cut this would be a stepping dot rather
-	   than a breathing one, which is the opposite of what asking for less motion wanted. */
-	:global([data-motion='reduced']) .dot.is-breathing {
-		opacity: 1 !important;
-		transform: none !important;
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.dot.is-breathing {
-			opacity: 1 !important;
-			transform: none !important;
-		}
-	}
-
 	.sound-name {
 		flex: 1;
 		min-width: 0;
@@ -547,9 +541,47 @@
 		color: var(--color-error);
 	}
 
-	.sound-level {
+	.sound-open {
 		display: flex;
-		padding: 0 0.5rem 0.7rem;
+		flex-direction: column;
+		gap: 0.45rem;
+		padding: 0 0.5rem 0.75rem;
+	}
+
+	.sound-place {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+	}
+
+	/* Smaller than a shelf chip on purpose: that one steers the whole catalog, this one is an
+	   option on the row it sits in, and two chips at one size would read as one rank. */
+	.place {
+		min-height: 2rem;
+		padding: 0.25rem 0.65rem;
+		border: 1px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
+		border-radius: var(--radius-full);
+		background: transparent;
+		color: var(--color-text-muted);
+		font-family: var(--font-ui);
+		font-size: 0.7rem;
+		font-weight: 550;
+		cursor: pointer;
+		transition:
+			color 90ms ease,
+			border-color 90ms ease,
+			background 90ms ease;
+	}
+
+	.place:hover {
+		color: var(--color-text-secondary);
+		border-color: color-mix(in srgb, var(--color-border) 90%, transparent);
+	}
+
+	.place.is-active-tint {
+		color: var(--color-accent);
+		background: color-mix(in srgb, var(--color-accent) 13%, transparent);
+		border-color: color-mix(in srgb, var(--color-accent) 33%, transparent);
 	}
 
 	/* --- The three switches --- */
