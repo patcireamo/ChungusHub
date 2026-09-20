@@ -147,9 +147,22 @@
 		opacity: 0.45;
 	}
 
+	/* The bar is 0.35rem of paint; the element around it is the grab. Sized to the box alone it
+	   is a 5px tall target, which on a phone sits between rows many times its size and is the
+	   one control on a settings page a thumb cannot reliably catch. The track is drawn by the
+	   pseudo-elements instead, so the element can be tall enough to hit while the bar stays the
+	   width of a hairline. */
 	input[type='range'] {
 		flex: 1;
 		min-width: 0;
+		height: 1.5rem;
+		background: none;
+		appearance: none;
+		-webkit-appearance: none;
+		cursor: pointer;
+	}
+
+	input[type='range']::-webkit-slider-runnable-track {
 		height: 0.35rem;
 		border-radius: var(--radius-full);
 		background: linear-gradient(
@@ -157,9 +170,16 @@
 			var(--color-accent) calc((var(--fill, 0)) * 100%),
 			var(--color-bg-tertiary) calc((var(--fill, 0)) * 100%)
 		);
-		appearance: none;
-		-webkit-appearance: none;
-		cursor: pointer;
+	}
+
+	input[type='range']::-moz-range-track {
+		height: 0.35rem;
+		border-radius: var(--radius-full);
+		background: linear-gradient(
+			to right,
+			var(--color-accent) calc((var(--fill, 0)) * 100%),
+			var(--color-bg-tertiary) calc((var(--fill, 0)) * 100%)
+		);
 	}
 
 	input[type='range']::-webkit-slider-thumb {
@@ -167,6 +187,9 @@
 		appearance: none;
 		width: 0.95rem;
 		height: 0.95rem;
+		/* WebKit hangs the thumb off the track's top edge, so half the difference between the
+		   two brings it back onto the bar's centre line. */
+		margin-top: -0.3rem;
 		border-radius: var(--radius-full);
 		background: var(--color-accent);
 		border: 2px solid var(--color-bg-primary);
