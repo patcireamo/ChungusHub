@@ -416,10 +416,15 @@ function requestedFilePath(pathname: string, prefix: string): string {
  * site from reading these at all. The type is never guessed from the bytes: a picture's is
  * whitelisted by `imageContentType` and a bundled recording's is fixed by its route.
  */
-function servedFileHeaders(type: string): Record<string, string> {
+/**
+ * `no-cache` is the default because what `/files/` mostly serves is the reader's own library,
+ * where a picture can be replaced under a name it already had and a stale copy is then the
+ * wrong picture. A caller passes something longer only for a file that ships with the build.
+ */
+function servedFileHeaders(type: string, cache = 'no-cache'): Record<string, string> {
 	return {
 		'content-type': type,
-		'cache-control': 'no-cache',
+		'cache-control': cache,
 		'x-content-type-options': 'nosniff',
 		'content-security-policy': "default-src 'none'; sandbox",
 		'cross-origin-resource-policy': 'same-origin'
@@ -449,7 +454,14 @@ function serveDefaultSound(pathname: string): Response {
 	const rel = requestedFilePath(pathname, '/files/sounds/');
 	const filePath = join(DEFAULT_SOUNDS_DIR, rel);
 	if (/\.mp3$/i.test(rel) && existsSync(filePath) && statSync(filePath).isFile()) {
-		return new Response(Bun.file(filePath), { headers: servedFileHeaders('audio/mpeg') });
+		// These ship with the build and cannot change under their own name while it is running,
+		// so a mix re-downloads megabytes on every play without this, which a phone hears as the
+		// sound stuttering as it starts. `private`, because the app can be sitting behind a
+		// password and a shared cache has no business holding what it served afterwards; a week,
+		// because a later build replacing a recording should still be heard eventually.
+		return new Response(Bun.file(filePath), {
+			headers: servedFileHeaders('audio/mpeg', 'private, max-age=604800')
+		});
 	}
 	return new Response('Not found', { status: 404 });
 }

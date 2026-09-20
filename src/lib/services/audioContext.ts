@@ -77,16 +77,64 @@ export function looksLikeMp3(bytes: ArrayBuffer): boolean {
 	return head[0] === 0xff && (head[1] & 0xe0) === 0xe0;
 }
 
-/** Fetch and decode one bundled MP3, throwing with the reason when it is not one. */
-export async function fetchAudioBuffer(ac: AudioContext, url: string): Promise<AudioBuffer> {
-	const response = await fetch(url, { cache: 'no-store' });
+/**
+ * How much of a recording to decode, when the caller only wants the front of it.
+ *
+ * Time maps onto bytes by proportion, exactly for constant bitrate and closely enough for the
+ * rest. The tag at the head of the file rides inside the same share, which is one of the two
+ * reasons the caller asks for more seconds than it means to keep; the other is that a VBR file
+ * can spend its bitrate unevenly.
+ */
+export interface DecodePrefix {
+	keepSeconds: number;
+	totalSeconds: number;
+}
+
+function prefixOf(bytes: ArrayBuffer, prefix: DecodePrefix | undefined): ArrayBuffer {
+	if (!prefix || !(prefix.totalSeconds > prefix.keepSeconds) || prefix.keepSeconds <= 0) {
+		return bytes;
+	}
+	const wanted = Math.ceil(bytes.byteLength * (prefix.keepSeconds / prefix.totalSeconds));
+	return wanted < bytes.byteLength ? bytes.slice(0, wanted) : bytes;
+}
+
+async function readBytes(url: string, mode?: RequestCache): Promise<ArrayBuffer> {
+	const response = await fetch(url, mode ? { cache: mode } : undefined);
 	if (!response.ok) throw new Error(`${url} answered HTTP ${response.status}`);
-	const bytes = await response.arrayBuffer();
+	return response.arrayBuffer();
+}
+
+/**
+ * Fetch and decode one bundled MP3, throwing with the reason when it is not one.
+ *
+ * The response is allowed to cache, since these files ship with the build and never change
+ * under their own name, and re-downloading megabytes on every play is what a phone feels as a
+ * stutter. What a cache costs is that a bad answer would be kept too: the resident half of a
+ * download manager claims any URL ending in a media extension and answers with 204 and no body
+ * at all, so a payload that is not MP3 is fetched again past the cache before it is reported.
+ */
+export async function fetchAudioBuffer(
+	ac: AudioContext,
+	url: string,
+	prefix?: DecodePrefix
+): Promise<AudioBuffer> {
+	let bytes = await readBytes(url);
+	if (!looksLikeMp3(bytes)) bytes = await readBytes(url, 'reload');
 	if (!looksLikeMp3(bytes)) {
 		const head = new TextDecoder().decode(bytes.slice(0, 32)).replace(/\s+/g, ' ').trim();
 		throw new Error(
-			`${url} answered ${response.status} with ${bytes.byteLength} bytes that are not MP3: "${head}"`
+			`${url} answered ${bytes.byteLength} bytes that are not MP3: "${head}"`
 		);
+	}
+
+	const front = prefixOf(bytes, prefix);
+	if (front !== bytes) {
+		try {
+			return await ac.decodeAudioData(front);
+		} catch {
+			// A prefix ends mid-frame and a decoder is entitled to refuse it. Falling back costs
+			// the memory the prefix existed to save, once, which beats losing the recording.
+		}
 	}
 	return ac.decodeAudioData(bytes);
 }

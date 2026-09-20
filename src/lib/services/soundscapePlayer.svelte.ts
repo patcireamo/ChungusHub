@@ -21,7 +21,7 @@
 import { untrack } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { audioContext, fetchAudioBuffer } from '$lib/services/audioContext';
-import { buildLoopBuffer } from '$lib/services/loopBuffer';
+import { CROSSFADE_SECONDS, LOOP_SECONDS, buildLoopBuffer } from '$lib/services/loopBuffer';
 import { normalizeGain, soundById, soundUrl } from '$lib/config/soundscape';
 import type { SoundscapeConfig } from '$lib/stores/soundscape.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
@@ -61,6 +61,15 @@ const DISTANT_DRY = 0.42;
 const DISTANT_SEND = 0.5;
 /** Placement settles rather than switches, so a press is a move and not a cut. */
 const PLACE_SETTLE = 0.12;
+
+/**
+ * Asked for on top of what is actually kept, because the prefix is cut by proportion of the
+ * file's bytes: the tag at the head of an MP3 rides inside that share, and a variable bitrate
+ * spends itself unevenly, so a share cut to the exact second can land short of it. Coming up
+ * short only costs a shorter loop, and the decode falls back to the whole file if a prefix
+ * ending mid-frame is refused outright, so this is margin rather than a guarantee.
+ */
+const PREFIX_MARGIN_SECONDS = 8;
 
 /**
  * A reverb tail built rather than shipped: a couple of seconds of decaying noise, which is all
@@ -134,6 +143,16 @@ class SoundscapePlayer {
 	 *  audio, and the raw decode they come from is far too large to keep. */
 	private buffers = new Map<string, AudioBuffer>();
 	private inflight = new Map<string, Promise<AudioBuffer | null>>();
+	/**
+	 * Recordings start one after another rather than all at once. Four starting together is
+	 * four downloads, four decodes and four buffers asked of a phone in one breath, which it
+	 * answers by collecting memory underneath the mix that is already sounding, heard as the
+	 * stutter that lands hardest on the press that starts everything.
+	 */
+	private loadChain: Promise<void> = Promise.resolve();
+	/** Queued or running, so an `apply` landing per pointer frame through a drag cannot ask for
+	 *  the same recording sixty times over. */
+	private starting = new Set<string>();
 	private driftTimer: ReturnType<typeof setInterval> | null = null;
 	private sampleTimer: ReturnType<typeof setInterval> | null = null;
 	private watchers = 0;
@@ -201,7 +220,7 @@ class SoundscapePlayer {
 		}
 		for (const id of wanted) {
 			const voice = this.voices.get(id);
-			if (!voice || voice.seamless !== config.seamless) void this.startVoice(id);
+			if (!voice || voice.seamless !== config.seamless) this.queueStart(id);
 		}
 
 		this.applyLevels();
@@ -336,7 +355,14 @@ class SoundscapePlayer {
 		if (!sound) return Promise.resolve(null);
 
 		this.loading.add(id);
-		const load = fetchAudioBuffer(ac, soundUrl(sound))
+		// Only the front of a recording is ever kept, so only the front of it is decoded. Whole,
+		// the longest of these is a hundred and twenty megabytes of raw samples to hold for the
+		// instant it takes to cut a minute out of it, which is what a phone runs out of memory
+		// doing.
+		const load = fetchAudioBuffer(ac, soundUrl(sound), {
+			keepSeconds: LOOP_SECONDS + CROSSFADE_SECONDS + PREFIX_MARGIN_SECONDS,
+			totalSeconds: sound.seconds
+		})
 			.then((decoded) => {
 				// The window is taken here and the full decode dropped with it: holding both is
 				// the peak, and holding the second would cost the whole file's memory for as
@@ -369,6 +395,31 @@ class SoundscapePlayer {
 			});
 		this.inflight.set(key, load);
 		return load;
+	}
+
+	/**
+	 * Put one recording at the back of the load queue.
+	 *
+	 * A loop shape flipped while a recording was already loading is picked up on the way out
+	 * rather than lost, but only for a voice that exists and is playing the other shape. A
+	 * MISSING voice is one whose load failed, already reported, and re-queueing that would be a
+	 * retry loop with nothing between its turns.
+	 */
+	private queueStart(id: string): void {
+		if (this.starting.has(id)) return;
+		this.starting.add(id);
+		this.loadChain = this.loadChain
+			.then(() => this.startVoice(id))
+			.catch((error: unknown) => {
+				console.error(`Ambient voice "${id}" could not be started`, error);
+			})
+			.finally(() => {
+				this.starting.delete(id);
+				const config = this.config;
+				if (!config || !this.playing || !(id in config.levels)) return;
+				const voice = this.voices.get(id);
+				if (voice && voice.seamless !== config.seamless) this.queueStart(id);
+			});
 	}
 
 	private async startVoice(id: string): Promise<void> {

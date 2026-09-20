@@ -19,7 +19,7 @@
  */
 import { describe, test, expect } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { PROVIDER_NAMES } from '$lib/types/llm';
@@ -1389,6 +1389,21 @@ describe('ambient soundscape (architecture/build-packaging.md #11)', () => {
 	test('every sound carries its measured loudness and peak', () => {
 		expect(AMBIENT_SOUNDS.filter((s) => !(s.lufs < 0)).map((s) => s.id)).toEqual([]);
 		expect(AMBIENT_SOUNDS.filter((s) => !Number.isFinite(s.peak)).map((s) => s.id)).toEqual([]);
+	});
+
+	// The duration decides how much of a file is decoded, so one that is wrong by a lot means
+	// either a phone decoding a recording whole or a loop cut short. It cannot be measured back
+	// out of the file here, but the bitrate it implies against the file's own size can, and
+	// anything outside what an MP3 can carry is a figure taken off the wrong recording or in
+	// the wrong unit.
+	test('every sound carries a duration that matches the file it names', () => {
+		const wrong = AMBIENT_SOUNDS.filter((s) => {
+			if (!Number.isFinite(s.seconds) || s.seconds <= 0) return true;
+			const bytes = statSync(join(ROOT, 'defaults', 'sounds', s.category, `${s.id}.mp3`)).size;
+			const kbps = (bytes * 8) / s.seconds / 1000;
+			return kbps < 32 || kbps > 320;
+		});
+		expect(wrong.map((s) => s.id)).toEqual([]);
 	});
 
 	// Normalization may never make a recording clip, whichever way it moves it. Held against
