@@ -29,6 +29,22 @@ export function audioContext(): AudioContext | null {
 }
 
 /**
+ * iOS silences Web Audio under the ringer switch unless the page claims playback, so the mix
+ * claims it while it runs and gives it back when it stops: left standing, a notification tone
+ * would cut off the reader's music and ring on a phone set to silent. Only Safari has this.
+ */
+export function claimMediaPlayback(on: boolean): void {
+	if (typeof navigator === 'undefined') return;
+	const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+	if (!session) return;
+	try {
+		session.type = on ? 'playback' : 'auto';
+	} catch {
+		// A document with no page cannot hold a session, and had nothing to play anyway.
+	}
+}
+
+/**
  * Resume a context that already exists. Deliberately never creates one: that is what keeps a
  * reader who has all sound off from paying for an audio graph on every click of the app.
  */

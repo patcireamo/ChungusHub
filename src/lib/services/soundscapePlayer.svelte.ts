@@ -20,7 +20,7 @@
  */
 import { untrack } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { audioContext, fetchAudioBuffer } from '$lib/services/audioContext';
+import { audioContext, claimMediaPlayback, fetchAudioBuffer } from '$lib/services/audioContext';
 import { CROSSFADE_SECONDS, LOOP_SECONDS, buildLoopBuffer } from '$lib/services/loopBuffer';
 import { normalizeGain, soundById, soundUrl } from '$lib/config/soundscape';
 import type { SoundscapeConfig } from '$lib/stores/soundscape.svelte';
@@ -318,6 +318,7 @@ class SoundscapePlayer {
 			return;
 		}
 		this.masterOn = this.playing;
+		claimMediaPlayback(this.playing);
 		master.gain.cancelScheduledValues(ac.currentTime);
 		master.gain.setValueAtTime(master.gain.value, ac.currentTime);
 		master.gain.linearRampToValueAtTime(target, ac.currentTime + MIX_FADE);
