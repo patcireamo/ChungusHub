@@ -127,7 +127,7 @@
 	<div class="status">
 		<span class="status-text" class:is-held={held}>
 			{#if held}
-				Your browser is still refusing to make a sound
+				Your browser is still blocking sound
 			{:else if count === 0}
 				Nothing in the mix yet
 			{:else if playing}
@@ -356,6 +356,12 @@
 	}
 
 	.status-text {
+		/* One line by construction: a sentence that wrapped on a narrow phone would push the
+		   catalog down on the very press that changed it. */
+		min-width: 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		font-family: var(--font-ui);
 		font-size: 0.74rem;
 		color: var(--color-text-muted);
