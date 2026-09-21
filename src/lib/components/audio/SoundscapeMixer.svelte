@@ -63,9 +63,9 @@
 
 	/**
 	 * What one recording is actually playing at: the level as set, times whatever the wander is
-	 * doing to it. The slider draws this as a bar of its own beneath the track, so the control
-	 * goes on saying what the reader chose while the bar says what is happening. The thumb may
-	 * never report it, or the level cannot be set at all while the mix breathes under a finger.
+	 * doing to it. The slider draws this as a thin mark riding its own track, so the thumb goes
+	 * on saying what the reader chose while the mark says what is happening. The thumb may never
+	 * report it, or the level cannot be set at all while the mix breathes under a finger.
 	 */
 	function liveLevel(id: string): number {
 		const drift = soundscapePlayer.liveDrift.get(id) ?? 1;
