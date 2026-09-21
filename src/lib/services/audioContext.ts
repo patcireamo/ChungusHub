@@ -17,10 +17,14 @@ let bound = false;
 /**
  * Created on the first thing that actually needs it, never at boot: a context built before
  * any interaction starts suspended and is console noise for a reader who never turns sound on.
+ *
+ * `playback`, not the default: on a phone the default asks for the low-latency audio path,
+ * where a stall of a few milliseconds anywhere (the volume overlay included) is a hole in the
+ * sound. Nothing here needs to be heard within milliseconds of being asked for.
  */
 export function audioContext(): AudioContext | null {
 	if (typeof window === 'undefined') return null;
-	if (!ctx) ctx = new AudioContext();
+	if (!ctx) ctx = new AudioContext({ latencyHint: 'playback' });
 	return ctx;
 }
 
