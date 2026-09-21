@@ -118,7 +118,8 @@ function randomBetween(min: number, max: number): number {
 }
 
 class SoundscapePlayer {
-	/** Recordings being fetched and decoded right now: the mixer draws those rows as loading. */
+	/** Recordings queued to start or being fetched and decoded: the mixer draws those rows as
+	 *  loading, from the moment they are asked for until the voice sounds or fails. */
 	loading = new SvelteSet<string>();
 	/** Recordings that could not be loaded, with the reason already reported once. */
 	failed = new SvelteSet<string>();
@@ -379,7 +380,6 @@ class SoundscapePlayer {
 		const sound = soundById(id);
 		if (!sound) return Promise.resolve(null);
 
-		this.loading.add(id);
 		// Only the front of a recording is ever kept, so only the front of it is decoded. Whole,
 		// the longest of these is a hundred and twenty megabytes of raw samples to hold for the
 		// instant it takes to cut a minute out of it, which is what a phone runs out of memory
@@ -412,7 +412,6 @@ class SoundscapePlayer {
 				return null;
 			})
 			.finally(() => {
-				this.loading.delete(id);
 				this.inflight.delete(key);
 				// A load that lands after its recording was dropped from the mix cached a buffer
 				// the eviction pass had already been and gone for.
@@ -433,6 +432,9 @@ class SoundscapePlayer {
 	private queueStart(id: string): void {
 		if (this.starting.has(id)) return;
 		this.starting.add(id);
+		// Loading from the moment it is asked for: a row waiting its turn behind another's
+		// download is not sounding either, and a row that says nothing reads as one that is.
+		this.loading.add(id);
 		this.loadChain = this.loadChain
 			.then(() => this.startVoice(id))
 			.catch((error: unknown) => {
@@ -440,6 +442,7 @@ class SoundscapePlayer {
 			})
 			.finally(() => {
 				this.starting.delete(id);
+				this.loading.delete(id);
 				const config = this.config;
 				if (!config || !this.playing || !(id in config.levels)) return;
 				const voice = this.voices.get(id);
