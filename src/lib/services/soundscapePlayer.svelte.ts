@@ -104,6 +104,9 @@ interface Voice {
 	/** Whether `send` has ever been joined to the reverb bus. It stays joined once it has been,
 	 *  since its gain going to zero is silence and re-patching a live graph is not. */
 	sendWired: boolean;
+	/** What the graph was last told, so a reconciliation landing on every pointer frame of a
+	 *  drag re-plans only the automation that actually changed. */
+	applied: { level: number; muffled: boolean; distant: boolean };
 	/** Context time the scheduled drift legs reach. */
 	driftUntil: number;
 	/** Which loop shape this voice is playing, so a change of the switch is visible here. */
@@ -158,6 +161,7 @@ class SoundscapePlayer {
 	private watchers = 0;
 	/** What the master was last told, so a volume move is told apart from the mix starting. */
 	private masterOn = false;
+	private masterTarget = 0;
 	private config: SoundscapeConfig | null = null;
 	/** Whether the reader has pressed play. The store owns the reactive copy. */
 	private playing = false;
@@ -257,6 +261,9 @@ class SoundscapePlayer {
 			const placed = config.effects[id];
 			const muffled = placed?.muffled === true;
 			const distant = placed?.distant === true;
+			if (muffled === voice.applied.muffled && distant === voice.applied.distant) continue;
+			voice.applied.muffled = muffled;
+			voice.applied.distant = distant;
 
 			voice.tone.gain.setTargetAtTime(muffled ? WALL_CUT_DB : 0, now, PLACE_SETTLE);
 			voice.dry.gain.setTargetAtTime(distant ? DISTANT_DRY : 1, now, PLACE_SETTLE);
@@ -289,8 +296,22 @@ class SoundscapePlayer {
 		const ac = this.ctx;
 		if (!ac) return;
 		for (const [id, voice] of this.voices) {
-			voice.level.gain.setTargetAtTime(this.levelFor(id), ac.currentTime, 0.02);
+			const level = this.levelFor(id);
+			if (level === voice.applied.level) continue;
+			voice.applied.level = level;
+			this.steer(voice.level.gain, level, ac.currentTime);
 		}
+	}
+
+	/**
+	 * Take a param to `target` from wherever it is, dropping whatever was still planned for it.
+	 * A target merely added under a ramp still running (a voice joining, the mix arriving) is
+	 * overtaken by that ramp, and a slider dragged inside its window lands back where it was.
+	 */
+	private steer(param: AudioParam, target: number, now: number): void {
+		param.cancelScheduledValues(now);
+		param.setValueAtTime(param.value, now);
+		param.setTargetAtTime(target, now, 0.02);
 	}
 
 	private levelFor(id: string): number {
@@ -314,10 +335,13 @@ class SoundscapePlayer {
 		if (!ac || !master || !config) return;
 		const target = this.playing ? config.volume : 0;
 		if (this.playing === this.masterOn) {
-			master.gain.setTargetAtTime(target, ac.currentTime, 0.02);
+			if (target === this.masterTarget) return;
+			this.masterTarget = target;
+			this.steer(master.gain, target, ac.currentTime);
 			return;
 		}
 		this.masterOn = this.playing;
+		this.masterTarget = target;
 		claimMediaPlayback(this.playing);
 		master.gain.cancelScheduledValues(ac.currentTime);
 		master.gain.setValueAtTime(master.gain.value, ac.currentTime);
@@ -461,7 +485,8 @@ class SoundscapePlayer {
 		// A random entry point, so several recordings starting together do not replay their
 		// opening second in unison.
 		source.start(0, Math.random() * buffer.duration);
-		level.gain.linearRampToValueAtTime(this.levelFor(id), ac.currentTime + VOICE_FADE);
+		const target = this.levelFor(id);
+		level.gain.linearRampToValueAtTime(target, ac.currentTime + VOICE_FADE);
 
 		this.voices.set(id, {
 			id,
@@ -472,6 +497,7 @@ class SoundscapePlayer {
 			dry,
 			send,
 			sendWired: false,
+			applied: { level: target, muffled: false, distant: false },
 			driftUntil: 0,
 			seamless
 		});
