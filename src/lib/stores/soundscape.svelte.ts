@@ -153,8 +153,7 @@ class SoundscapeStore {
 		// A write still owed is newer than anything the server can hand back, so taking this
 		// would drag a slider out from under the finger holding it.
 		if (this.writer.busy) return;
-		this.config = next;
-		soundscapePlayer.apply(next, this.started);
+		this.take(next);
 	}
 
 	levelOf(id: string): number {
@@ -180,7 +179,7 @@ class SoundscapeStore {
 
 	/** Start or stop the mix. Runtime only: nothing about this reaches storage. */
 	setPlaying(playing: boolean): void {
-		this.started = playing;
+		this.started = playing && this.activeIds.length > 0;
 		soundscapePlayer.apply(this.config, this.started);
 	}
 
@@ -225,11 +224,16 @@ class SoundscapeStore {
 	}
 
 	private write(next: SoundscapeConfig): void {
-		// An emptied mix takes the press back with it, so the next recording added lands in a
-		// stopped mix rather than starting to sound the instant it is picked.
+		this.take(next);
+		this.writer.write(next);
+	}
+
+	/** Make `next` the mix, on screen and in the graph, whichever device it came from. An
+	 *  emptied mix takes the press back with it, so the next recording added lands in a
+	 *  stopped mix rather than starting to sound the instant it is picked. */
+	private take(next: SoundscapeConfig): void {
 		if (Object.keys(next.levels).length === 0) this.started = false;
 		this.config = next;
-		this.writer.write(next);
 		soundscapePlayer.apply(next, this.started);
 	}
 }
