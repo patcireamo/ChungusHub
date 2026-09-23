@@ -161,7 +161,7 @@
 			deleteGuard.initialize();
 			await generalSettingsStore.initialize();
 			// Which events make a sound and how loud, then which recordings the soundscape
-			// holds. The unlock listeners go up beside them rather than on the Audio page:
+			// holds. The unlock listeners go up beside them rather than on the Audio pages:
 			// the gesture that lets a browser make noise is usually spent long before anyone
 			// opens Settings (architecture/ui-shell-settings.md).
 			await audioSettingsStore.initialize();

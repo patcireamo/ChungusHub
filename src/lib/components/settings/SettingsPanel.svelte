@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import SoundscapePlayButton from '$lib/components/audio/SoundscapePlayButton.svelte';
 	import SettingsPageView from './SettingsPageView.svelte';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { SETTINGS_GROUPS, ANCHOR_PAGES, type SettingsPage } from '$lib/config/settings-pages';
@@ -144,20 +145,32 @@
 									     that comes and goes (Developer) appears and leaves under a list
 									     that is already on screen in split view. -->
 									{#each group.rows.filter((r) => r.shown?.() ?? true) as row (row.page)}
-										<button
-											type="button"
-											class="drill-row"
-											class:is-active-tint={split && page === row.page}
-											aria-current={split && page === row.page ? 'page' : undefined}
-											onclick={() => go(row.page)}
-										>
-											<Icon name={row.icon} class="w-4 h-4 drill-icon" strokeWidth={1.75} />
-											<span class="drill-label">{row.label}</span>
-											{#if row.preview}
-												<span class="drill-value">{row.preview()}</span>
+										<div class="drill-item">
+											<button
+												type="button"
+												class="drill-row"
+												class:is-active-tint={split && page === row.page}
+												aria-current={split && page === row.page ? 'page' : undefined}
+												onclick={() => go(row.page)}
+											>
+												<Icon name={row.icon} class="w-4 h-4 drill-icon" strokeWidth={1.75} />
+												<span class="drill-label">{row.label}</span>
+												{#if row.preview}
+													<span class="drill-value">{row.preview()}</span>
+												{/if}
+												{#if row.page === 'soundscapes'}
+													<span class="drill-slot" aria-hidden="true"></span>
+												{/if}
+												<Icon name="chevronRight" class="w-4 h-4 drill-chev" strokeWidth={2} />
+											</button>
+											<!-- Laid over the slot its row keeps free rather than placed inside the
+											     row, since a button cannot hold another. -->
+											{#if row.page === 'soundscapes'}
+												<span class="drill-accessory">
+													<SoundscapePlayButton />
+												</span>
 											{/if}
-											<Icon name="chevronRight" class="w-4 h-4 drill-chev" strokeWidth={2} />
-										</button>
+										</div>
 									{/each}
 								</nav>
 							</div>
@@ -247,12 +260,21 @@
 		background: color-mix(in srgb, var(--color-bg-secondary) 86%, transparent);
 	}
 
+	.drill-item {
+		--drill-pad-x: 0.65rem;
+		--drill-gap: 0.55rem;
+		--drill-slot: 2rem;
+		display: grid;
+		align-items: center;
+	}
+
 	.drill-row {
+		grid-area: 1 / 1;
 		display: flex;
 		align-items: center;
-		gap: 0.55rem;
+		gap: var(--drill-gap);
 		width: 100%;
-		padding: 0.72rem 0.65rem;
+		padding: 0.72rem var(--drill-pad-x);
 		border: none;
 		border-radius: var(--radius-md);
 		background: transparent;
@@ -277,7 +299,7 @@
 		color: var(--color-accent);
 	}
 
-	.drill-row + .drill-row {
+	.drill-item + .drill-item > .drill-row {
 		border-top: 1px solid color-mix(in srgb, var(--color-border-subtle) 40%, transparent);
 	}
 
@@ -314,6 +336,21 @@
 
 	.drill-row:has(.drill-value) :global(.drill-chev) {
 		margin-left: 0;
+	}
+
+	.drill-slot {
+		flex-shrink: 0;
+		width: var(--drill-slot);
+	}
+
+	/* Exactly over the slot: past the row's own padding, the chevron (w-4) and the gap before it. */
+	.drill-accessory {
+		grid-area: 1 / 1;
+		justify-self: end;
+		z-index: 1;
+		display: flex;
+		width: var(--drill-slot);
+		margin-right: calc(var(--drill-pad-x) + 1rem + var(--drill-gap));
 	}
 
 	/* ===== Sub-page back ===== */

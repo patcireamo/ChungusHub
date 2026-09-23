@@ -61,7 +61,7 @@ async function playTone(tone: ToneId, volume: number): Promise<void> {
 	if (!ac) {
 		if (!blockedWarned) {
 			blockedWarned = true;
-			toastStore.warning('Your browser is blocking sound. Play a tone from Settings → Audio to allow it.');
+			toastStore.warning('Your browser is blocking sound. Play a tone from Settings → Notifications to allow it.');
 		}
 		return;
 	}
@@ -96,7 +96,7 @@ async function playTone(tone: ToneId, volume: number): Promise<void> {
 /**
  * Play `tone` because the reader asked to hear it. Always plays: it is a press, so it is
  * also the interaction that opens the audio context on a device that demands one, which is
- * why choosing a tone and hearing it are the same gesture on the Audio page.
+ * why choosing a tone and hearing it are the same gesture on the Notifications page.
  */
 export function previewTone(tone: ToneId, volume: number): void {
 	void playTone(tone, volume);

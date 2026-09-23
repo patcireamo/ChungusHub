@@ -10,7 +10,9 @@
  *  - `TAB_FALLBACK_PAGE` covers every `SettingsTab`: the assistant's `tab` ids are
  *    the deep-link contract, and there is no rail for them to point at.
  *  - Previews read singleton stores/services; the root re-renders on every
- *    page return (keyed), so they refresh without being reactive.
+ *    page return (keyed), so they refresh without being reactive. Soundscapes' is
+ *    the exception: its row's play button changes it with the list on screen, so
+ *    everything it reads has to be a rune.
  *  - A page added here needs its arm in `SettingsPageView.svelte`, or its row
  *    opens an empty panel.
  */
@@ -49,9 +51,11 @@ export type SettingsPage =
 	// Appearance
 	| 'interface'
 	| 'chat'
+	// Audio
+	| 'notifications'
+	| 'soundscapes'
 	// App
 	| 'general'
-	| 'audio'
 	| 'engines'
 	| 'security'
 	| 'import'
@@ -80,6 +84,7 @@ export type SettingsRowIcon =
 	| 'archive'
 	| 'info'
 	| 'bell'
+	| 'music'
 	| 'sliders';
 
 export interface SettingsRow {
@@ -110,17 +115,21 @@ function enginesSummary(): string {
 	return `${on} of ${ENGINES.length} on`;
 }
 
-/** Both subjects the page holds, since either can be on without the other. */
-function audioSummary(): string {
-	const parts: string[] = [];
-	if (audioSettingsStore.enabled) {
-		parts.push(`${audioSettingsStore.activeCount} of ${SOUND_EVENTS.length} events`);
-	}
-	if (soundscapeStore.playing) {
-		const heard = soundscapeStore.activeIds.filter((id) => soundscapePlayer.sounding.has(id)).length;
-		if (heard > 0) parts.push(heard === 1 ? '1 ambient sound' : `${heard} ambient sounds`);
-	}
-	return parts.length > 0 ? parts.join(' · ') : 'Off';
+function notificationsSummary(): string {
+	if (!audioSettingsStore.enabled) return 'Off';
+	return `${audioSettingsStore.activeCount} of ${SOUND_EVENTS.length} events`;
+}
+
+/** Counts what is audible, not what was pressed, the way the mixer's own status line does. */
+function soundscapesSummary(): string {
+	if (!soundscapeStore.playing) return 'Off';
+	if (soundscapePlayer.blocked) return 'Sound is blocked';
+	const ids = soundscapeStore.activeIds;
+	const heard = ids.filter((id) => soundscapePlayer.sounding.has(id)).length;
+	const failures = ids.filter((id) => soundscapePlayer.failed.has(id)).length;
+	if (heard === ids.length) return heard === 1 ? '1 sound playing' : `${heard} sounds playing`;
+	if (heard === 0 && failures < ids.length) return 'Starting…';
+	return `${heard} of ${ids.length} playing`;
 }
 
 /**
@@ -144,7 +153,6 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		label: 'App',
 		rows: [
 			{ page: 'general', label: 'General', icon: 'settings' },
-			{ page: 'audio', label: 'Audio', icon: 'bell', preview: audioSummary },
 			{ page: 'engines', label: 'Engines', icon: 'bolt', preview: enginesSummary },
 			{ page: 'security', label: 'Security', icon: 'shield' },
 			{ page: 'backups', label: 'Backups', icon: 'archive', preview: backupsSummary },
@@ -156,6 +164,13 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		rows: [
 			{ page: 'interface', label: 'Interface', icon: 'sun' },
 			{ page: 'chat', label: 'Chat', icon: 'columns' }
+		]
+	},
+	{
+		label: 'Audio',
+		rows: [
+			{ page: 'notifications', label: 'Notifications', icon: 'bell', preview: notificationsSummary },
+			{ page: 'soundscapes', label: 'Soundscapes', icon: 'music', preview: soundscapesSummary }
 		]
 	},
 	{
@@ -221,12 +236,11 @@ export const ANCHOR_PAGES: Record<string, SettingsPage> = {
 	// page and flashes nothing.
 	'interface-defaults': 'interface',
 	'chat-defaults': 'chat',
-	// General
 	// Audio
-	'notification-sounds': 'audio',
-	'sound-events': 'audio',
-	soundscape: 'audio',
-
+	'notification-sounds': 'notifications',
+	'sound-events': 'notifications',
+	soundscape: 'soundscapes',
+	// General
 	'message-drafts': 'general',
 	'input-history': 'general',
 	'long-chats': 'general',
@@ -261,7 +275,7 @@ export const TAB_FALLBACK_PAGE: Record<SettingsTab, SettingsPage> = {
 	interface: 'interface',
 	security: 'security',
 	engines: 'engines',
-	audio: 'audio',
+	audio: 'notifications',
 	promptBuilder: 'prompt-builder',
 	regex: 'regex',
 	advanced: 'advanced'

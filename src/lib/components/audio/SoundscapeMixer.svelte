@@ -17,7 +17,7 @@
 	 * IS the work here, and a slider squeezed beside a label is the one that cannot be placed on
 	 * a phone.
 	 *
-	 * The hosting card and its `data-setting` anchor live in settings/AudioPage.svelte.
+	 * The hosting card and its `data-setting` anchor live in settings/SoundscapesPage.svelte.
 	 */
 	import { tick } from 'svelte';
 	import { slide } from 'svelte/transition';

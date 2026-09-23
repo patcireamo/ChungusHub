@@ -8,7 +8,6 @@
 		type ToneId
 	} from '$lib/config/sound-events';
 	import { previewTone } from '$lib/services/notificationSound';
-	import SoundscapeMixer from '$lib/components/audio/SoundscapeMixer.svelte';
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
 	import Toggle from '$lib/components/ui/Toggle.svelte';
 	import PillRow from '$lib/components/ui/PillRow.svelte';
@@ -66,7 +65,7 @@
 	}
 </script>
 
-<div class="audio">
+<div class="notifications">
 	<section class="card" data-setting="notification-sounds">
 		<div class="card-head">
 			<span class="card-title">Notification Sounds</span>
@@ -181,20 +180,10 @@
 			{/if}
 		</section>
 	{/if}
-
-	<section class="card" data-setting="soundscape">
-		<div class="card-head">
-			<span class="card-title">Soundscape</span>
-			<InfoTip
-				text="A bed of ambient recordings played underneath the story: rain on a window, a crowded bar, a fire. Any number can play at once, each at its own level."
-			/>
-		</div>
-		<SoundscapeMixer />
-	</section>
 </div>
 
 <style>
-	.audio {
+	.notifications {
 		display: flex;
 		flex-direction: column;
 		gap: 0.85rem;

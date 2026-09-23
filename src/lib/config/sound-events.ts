@@ -1,6 +1,6 @@
 /**
  * The notification sounds, in ONE place: the bundled tones and the moments that can play
- * one. Pure data. The Audio settings page renders a row per event and a chip per tone, so a
+ * one. Pure data. The Notifications settings page renders a row per event and a chip per tone, so a
  * sixth surface that deserves a sound is an entry here and a `notify` call at the moment it
  * describes, with nothing else to keep in step.
  *
@@ -64,7 +64,7 @@ export type SoundEventId = 'reply-done' | 'assistant-done' | 'assistant-ask' | '
 
 export interface SoundEventDef {
 	id: SoundEventId;
-	/** The row's own line on the Audio page. A sentence, since it states a moment. */
+	/** The row's own line on the Notifications page. A sentence, since it states a moment. */
 	label: string;
 	/** What actually fires it, under the label. */
 	description: string;
