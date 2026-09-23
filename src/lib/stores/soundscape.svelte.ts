@@ -2,7 +2,7 @@
  * The soundscape: which recordings are in the mix, how loud each one is, and the three
  * switches over the whole thing.
  *
- * The store is the only writer. Every mutation goes through `sync`, which persists to the
+ * The store is the only writer. Every mutation goes through `write`, which persists to the
  * settings spine and hands the same config to the player, so what is stored and what is
  * sounding can never be two different answers. The player holds no subscription of its own
  * for that reason: a second reader of this state would be a second thing to keep in step.
@@ -62,6 +62,8 @@ const DEFAULT_CONFIG: SoundscapeConfig = {
 	drift: false
 };
 
+type Recordings = Pick<SoundscapeConfig, 'levels' | 'effects'>;
+
 function clamp01(value: number): number {
 	return Math.min(1, Math.max(0, value));
 }
@@ -73,17 +75,21 @@ function bool(value: unknown, fallback: boolean): boolean {
 /**
  * Coerce a raw blob into a valid config, the settings-store convention.
  *
- * A level naming a recording this build does not ship is dropped rather than kept: the player
- * would fetch a file that is not there, and a mix cannot hold something nobody can hear.
+ * A recording this build does not ship never reaches the config: the player would fetch a file
+ * that is not there, and a mix cannot hold something nobody can hear. It comes back as
+ * `unshipped` instead of being dropped, since a newer build on another device put it there.
  */
-function normalize(raw: Partial<SoundscapeConfig> | null): SoundscapeConfig {
+function normalize(raw: Partial<SoundscapeConfig> | null): {
+	config: SoundscapeConfig;
+	unshipped: Recordings;
+} {
 	const levels: Record<string, number> = {};
+	const unshipped: Recordings = { levels: {}, effects: {} };
 	const stored = raw?.levels;
 	if (stored && typeof stored === 'object') {
 		for (const [id, value] of Object.entries(stored)) {
-			if (!soundById(id)) continue;
 			if (typeof value !== 'number' || !Number.isFinite(value)) continue;
-			levels[id] = clamp01(value);
+			(soundById(id) ? levels : unshipped.levels)[id] = clamp01(value);
 		}
 	}
 
@@ -94,30 +100,38 @@ function normalize(raw: Partial<SoundscapeConfig> | null): SoundscapeConfig {
 	const storedEffects = raw?.effects;
 	if (storedEffects && typeof storedEffects === 'object') {
 		for (const [id, value] of Object.entries(storedEffects)) {
-			if (!(id in levels) || !value || typeof value !== 'object') continue;
+			const into = id in levels ? effects : id in unshipped.levels ? unshipped.effects : null;
+			if (!into || !value || typeof value !== 'object') continue;
 			const one: SoundEffects = {
 				muffled: bool((value as Partial<SoundEffects>).muffled, false),
 				distant: bool((value as Partial<SoundEffects>).distant, false)
 			};
-			if (one.muffled || one.distant) effects[id] = one;
+			if (one.muffled || one.distant) into[id] = one;
 		}
 	}
 
 	return {
-		volume:
-			typeof raw?.volume === 'number' && Number.isFinite(raw.volume)
-				? clamp01(raw.volume)
-				: DEFAULT_CONFIG.volume,
-		levels,
-		effects,
-		seamless: bool(raw?.seamless, DEFAULT_CONFIG.seamless),
-		normalize: bool(raw?.normalize, DEFAULT_CONFIG.normalize),
-		drift: bool(raw?.drift, DEFAULT_CONFIG.drift)
+		config: {
+			volume:
+				typeof raw?.volume === 'number' && Number.isFinite(raw.volume)
+					? clamp01(raw.volume)
+					: DEFAULT_CONFIG.volume,
+			levels,
+			effects,
+			seamless: bool(raw?.seamless, DEFAULT_CONFIG.seamless),
+			normalize: bool(raw?.normalize, DEFAULT_CONFIG.normalize),
+			drift: bool(raw?.drift, DEFAULT_CONFIG.drift)
+		},
+		unshipped
 	};
 }
 
 class SoundscapeStore {
 	config = $state<SoundscapeConfig>({ ...DEFAULT_CONFIG, levels: {}, effects: {} });
+
+	/** Carried back into every write and seen by nothing else: a tab left open across an upgrade
+	 *  would otherwise erase what the upgrade added the first time anything here moved. */
+	private unshipped: Recordings = { levels: {}, effects: {} };
 
 	/**
 	 * Whether the reader has pressed play, and **deliberately not persisted**.
@@ -134,17 +148,19 @@ class SoundscapeStore {
 	 *  list on screen does not reshuffle itself as it is built. */
 	activeIds = $derived(AMBIENT_SOUNDS.filter((s) => s.id in this.config.levels).map((s) => s.id));
 
-	/** The Settings root row's line. */
-	activeCount = $derived(this.activeIds.length);
-
 	/** Whether anything is actually sounding: played AND something to play. */
 	playing = $derived(this.started && this.activeIds.length > 0);
 
 	private writer = new BurstSettingWriter<SoundscapeConfig>(SETTINGS_KEY);
 
 	async initialize(): Promise<void> {
-		this.config = normalize(await readSetting<Partial<SoundscapeConfig> | null>(SETTINGS_KEY, null));
+		const { config, unshipped } = normalize(
+			await readSetting<Partial<SoundscapeConfig> | null>(SETTINGS_KEY, null)
+		);
+		this.config = config;
+		this.unshipped = unshipped;
 		registerSettingsReload(() => this.syncReload());
+		soundscapePlayer.onExternalPlaying((playing) => this.setPlaying(playing));
 		soundscapePlayer.apply(this.config, this.started);
 	}
 
@@ -153,7 +169,8 @@ class SoundscapeStore {
 		// A write still owed is newer than anything the server can hand back, so taking this
 		// would drag a slider out from under the finger holding it.
 		if (this.writer.busy) return;
-		this.take(next);
+		this.unshipped = next.unshipped;
+		this.take(next.config);
 	}
 
 	levelOf(id: string): number {
@@ -225,7 +242,11 @@ class SoundscapeStore {
 
 	private write(next: SoundscapeConfig): void {
 		this.take(next);
-		this.writer.write(next);
+		this.writer.write({
+			...next,
+			levels: { ...this.unshipped.levels, ...next.levels },
+			effects: { ...this.unshipped.effects, ...next.effects }
+		});
 	}
 
 	/** Make `next` the mix, on screen and in the graph, whichever device it came from. An

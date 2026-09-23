@@ -19,10 +19,13 @@
 	 *
 	 * The hosting card and its `data-setting` anchor live in settings/AudioPage.svelte.
 	 */
+	import { tick } from 'svelte';
 	import { slide } from 'svelte/transition';
-	import { SOUND_CATEGORIES, soundsIn, type SoundCategory } from '$lib/config/soundscape';
+	import { SOUND_CATEGORIES, soundById, soundsIn, type SoundCategory } from '$lib/config/soundscape';
 	import { soundscapeStore, type SoundEffects } from '$lib/stores/soundscape.svelte';
 	import { soundscapePlayer } from '$lib/services/soundscapePlayer.svelte';
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import { holdMsForBlast } from '$lib/components/ui/HoldToConfirmButton.svelte';
 	import Icon, { type IconName } from '$lib/components/ui/Icon.svelte';
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
 	import Slider from '$lib/components/ui/Slider.svelte';
@@ -86,12 +89,62 @@
 	/** Play was pressed and the browser still refuses to make a sound. */
 	let held = $derived(playing && soundscapePlayer.blocked);
 
+	let heard = $derived(
+		soundscapeStore.activeIds.filter((id) => soundscapePlayer.sounding.has(id)).length
+	);
+	let failures = $derived(
+		soundscapeStore.activeIds.filter((id) => soundscapePlayer.failed.has(id)).length
+	);
+
+	let status = $derived.by(() => {
+		if (held) return 'Sound is blocked. Tap anywhere to allow it.';
+		if (count === 0) return 'Nothing in the mix yet';
+		const sounds = count === 1 ? '1 sound' : `${count} sounds`;
+		if (!playing) return `${sounds} in the mix`;
+		if (heard === count) return `${sounds} playing`;
+		// With every recording failed nothing is starting, and a Starting… there would never end.
+		if (heard === 0 && failures < count) return 'Starting…';
+		return `${heard} of ${count} playing`;
+	});
+
+	let transportLabel = $derived(playing ? 'Pause the mix' : 'Play the mix');
+
+	const levelText = (v: number) => (Math.round(v * 100) === 0 ? 'Muted' : `${Math.round(v * 100)}%`);
+
+	// Svelte runs transitions on the Web Animations API, out of reach of the app's reduced-motion CSS.
+	function reducedMotion(): boolean {
+		return (
+			document.documentElement.dataset.motion === 'reduced' ||
+			window.matchMedia('(prefers-reduced-motion: reduce)').matches
+		);
+	}
+
 	// Drift happens in the audio graph, where nothing on screen would ever see it. Sampling runs
 	// only while this surface is mounted AND something is drawing it, and stops with either.
 	$effect(() => {
 		if (!breathing) return;
 		return soundscapePlayer.watchDrift();
 	});
+
+	let confirmingClear = $state(false);
+	let statusLine = $state<HTMLDivElement | null>(null);
+
+	let clearMessage = $derived.by(() => {
+		const only = count === 1 ? soundById(soundscapeStore.activeIds[0]) : null;
+		const goes = only
+			? `"${only.label}" comes out of the mix, along with its level and placement.`
+			: `All ${count} recordings come out of the mix, along with their levels and placements.`;
+		return `${goes} The overall level and the three switches stay as they are.`;
+	});
+
+	async function clearMix(): Promise<void> {
+		confirmingClear = false;
+		soundscapeStore.clear();
+		// Clear all leaves with the mix, so the keyboard is carried to the line that took its
+		// place rather than dropped on <body>.
+		await tick();
+		statusLine?.focus();
+	}
 </script>
 
 <div class="mixer">
@@ -100,8 +153,8 @@
 			type="button"
 			class="play"
 			disabled={count === 0}
-			aria-label={playing ? 'Pause the mix' : 'Play the mix'}
-			title={count === 0 ? 'Pick a sound first' : playing ? 'Pause the mix' : 'Play the mix'}
+			aria-label={transportLabel}
+			title={count > 0 ? transportLabel : undefined}
 			onclick={() => soundscapeStore.setPlaying(!playing)}
 		>
 			<Icon name={playing ? 'pause' : 'play'} class="play-glyph" />
@@ -114,9 +167,9 @@
 				max={1}
 				step={0.01}
 				defaultValue={0.5}
-				format={(v) => (Math.round(v * 100) === 0 ? 'Muted' : `${Math.round(v * 100)}%`)}
+				format={levelText}
 				oninput={(v) => soundscapeStore.setVolume(v)}
-				label="Soundscape volume"
+				label="Overall Level"
 			/>
 		</div>
 	</div>
@@ -124,22 +177,10 @@
 	<!-- One line, always, whatever it has to say. Given to the mix only when there is one, it
 	     would appear on the tap that started the mix and push the catalog down under the finger
 	     that tapped it. -->
-	<div class="status">
-		<span class="status-text" class:is-held={held}>
-			{#if held}
-				Your browser is still blocking sound
-			{:else if count === 0}
-				Nothing in the mix yet
-			{:else if playing}
-				{count}
-				{count === 1 ? 'sound' : 'sounds'} playing
-			{:else}
-				{count}
-				{count === 1 ? 'sound' : 'sounds'} in the mix
-			{/if}
-		</span>
+	<div class="status" bind:this={statusLine} tabindex="-1">
+		<span class="status-text" class:is-held={held}>{status}</span>
 		{#if count > 0}
-			<button type="button" class="clear" onclick={() => soundscapeStore.clear()}>
+			<button type="button" class="clear" onclick={() => (confirmingClear = true)}>
 				Clear all
 			</button>
 		{/if}
@@ -184,8 +225,9 @@
 
 			{#each category.sounds as sound (sound.id)}
 				{@const on = soundscapeStore.isActive(sound.id)}
-				{@const failed = soundscapePlayer.failed.has(sound.id)}
-				{@const loading = soundscapePlayer.loading.has(sound.id)}
+				{@const failed = on && soundscapePlayer.failed.has(sound.id)}
+				{@const loading = on && soundscapePlayer.loading.has(sound.id)}
+				{@const updating = on && soundscapePlayer.updating.has(sound.id)}
 				<div class="sound" class:is-on={on} class:is-failed={failed}>
 					<button
 						type="button"
@@ -200,20 +242,24 @@
 							<span class="sound-state is-failed-text">Could not load</span>
 						{:else if loading}
 							<span class="sound-state">Loading…</span>
+						{:else if updating}
+							<span class="sound-state">Updating…</span>
 						{/if}
 					</button>
 
 					{#if on}
 						{@const placed = soundscapeStore.effectsOf(sound.id)}
-						<div class="sound-open" transition:slide={{ duration: 160 }}>
+						<div class="sound-open" transition:slide={{ duration: reducedMotion() ? 0 : 160 }}>
 							<Slider
 								value={soundscapeStore.levelOf(sound.id)}
-								meter={breathing ? liveLevel(sound.id) : undefined}
+								meter={breathing && soundscapePlayer.sounding.has(sound.id)
+									? liveLevel(sound.id)
+									: undefined}
 								min={0}
 								max={1}
 								step={0.01}
 								defaultValue={0.5}
-								format={(v) => `${Math.round(v * 100)}%`}
+								format={levelText}
 								oninput={(v) => soundscapeStore.setLevel(sound.id, v)}
 								label="{sound.label} level"
 							/>
@@ -258,7 +304,7 @@
 			<span class="switch-text">
 				<span class="switch-label">Match every recording's loudness</span>
 				<InfoTip
-					text="The recordings were made by different people and span 29 dB as published, so without this one slider position is painful on one and inaudible on the next."
+					text="The recordings were made by different people and span 29 dB as published, so without this, one slider position is painful on one and inaudible on the next."
 				/>
 			</span>
 			<Toggle
@@ -283,6 +329,18 @@
 		</div>
 	</div>
 </div>
+
+<ConfirmDialog
+	open={confirmingClear}
+	title="Clear the mix?"
+	message={clearMessage}
+	confirmLabel="Clear all"
+	variant="danger"
+	destructive
+	holdMs={holdMsForBlast(count)}
+	onConfirm={clearMix}
+	onCancel={() => (confirmingClear = false)}
+/>
 
 <style>
 	.mixer {
@@ -350,9 +408,11 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.75rem;
-		/* Fixed, so the sentence it carries can change without the catalog moving. */
-		min-height: 1.5rem;
+		/* Fixed, so neither the sentence nor Clear all arriving beside it can move the catalog: a
+		   button inherits the story's line height, so this line sets its own. */
+		height: 1.5rem;
 		margin-top: -0.2rem;
+		line-height: 1.4;
 	}
 
 	.status-text {

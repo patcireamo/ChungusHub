@@ -21,6 +21,7 @@ import { backupStore } from '$lib/stores/backups.svelte';
 import { advancedSettingsStore } from '$lib/stores/advanced-settings.svelte';
 import { audioSettingsStore } from '$lib/stores/audio-settings.svelte';
 import { soundscapeStore } from '$lib/stores/soundscape.svelte';
+import { soundscapePlayer } from '$lib/services/soundscapePlayer.svelte';
 import { SOUND_EVENTS } from '$lib/config/sound-events';
 import { APP_VERSION } from '$lib/version';
 
@@ -116,8 +117,8 @@ function audioSummary(): string {
 		parts.push(`${audioSettingsStore.activeCount} of ${SOUND_EVENTS.length} events`);
 	}
 	if (soundscapeStore.playing) {
-		const count = soundscapeStore.activeCount;
-		parts.push(count === 1 ? '1 ambient sound' : `${count} ambient sounds`);
+		const heard = soundscapeStore.activeIds.filter((id) => soundscapePlayer.sounding.has(id)).length;
+		if (heard > 0) parts.push(heard === 1 ? '1 ambient sound' : `${heard} ambient sounds`);
 	}
 	return parts.length > 0 ? parts.join(' · ') : 'Off';
 }

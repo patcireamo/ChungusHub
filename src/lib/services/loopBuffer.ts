@@ -2,7 +2,7 @@
  * Turning a recording into something that can loop forever.
  *
  * Pure arithmetic over sample arrays, kept out of the player so it can be tested against a
- * buffer whose every sample is known (services/soundscapePlayer.svelte.ts owns the graph).
+ * buffer whose every sample is known (services/soundscapePlayer.svelte.ts prepares and plays).
  */
 
 /**
@@ -10,7 +10,7 @@
  *
  * A decoded buffer is raw float samples, so one minute of stereo at 48 kHz is 23 MB and the
  * longest recording the app ships would be 114 MB on its own. A mix of five would be a phone
- * running out of memory, so the loop is a window rather than the whole file. Sixteen of the
+ * running out of memory, so the loop is a window rather than the whole file. Seventeen of the
  * shipped recordings are shorter than this and are used whole.
  */
 export const LOOP_SECONDS = 60;

@@ -1,9 +1,9 @@
 /**
  * The app's one AudioContext, and the gesture that unlocks it.
  *
- * Both things that make sound (notification tones, the ambient soundscape) share it: a
- * browser caps how many contexts a page may open, and the unlock below is one piece of
- * behaviour, so a second copy of it would be a second thing to keep in step.
+ * Both things that make sound through Web Audio (notification tones, and the soundscape outside
+ * Gecko) share it: a browser caps how many contexts a page may open, and the unlock below is one
+ * piece of behaviour, so a second copy of it would be a second thing to keep in step.
  *
  * Every browser refuses to make noise until the reader has interacted with the page, and the
  * refusal is silent: the context simply stays suspended and nothing is heard. `wakeAudio` is
@@ -13,14 +13,19 @@
 
 let ctx: AudioContext | null = null;
 let bound = false;
+/** Put to sleep on purpose by the soundscape, so a gesture anywhere in the app leaves it asleep. */
+let resting = false;
+
+/** Long enough for any real download from this same origin; past it the request has stalled. */
+const FETCH_TIMEOUT_MS = 60_000;
 
 /**
  * Created on the first thing that actually needs it, never at boot: a context built before
  * any interaction starts suspended and is console noise for a reader who never turns sound on.
  *
- * `playback`, not the default: on a phone the default asks for the low-latency audio path,
- * where a stall of a few milliseconds anywhere (the volume overlay included) is a hole in the
- * sound. Nothing here needs to be heard within milliseconds of being asked for.
+ * `playback`, not the default: Chromium answers it with its deep-buffer output path, which has
+ * tens of milliseconds of slack where the default has a few. Firefox ignores the hint entirely,
+ * which is one reason the soundscape plays through media elements there instead.
  */
 export function audioContext(): AudioContext | null {
 	if (typeof window === 'undefined') return null;
@@ -45,11 +50,35 @@ export function claimMediaPlayback(on: boolean): void {
 }
 
 /**
- * Resume a context that already exists. Deliberately never creates one: that is what keeps a
- * reader who has all sound off from paying for an audio graph on every click of the app.
+ * Resume a context that already exists, unless it was put to rest on purpose. Deliberately
+ * never creates one: that is what keeps a reader who has all sound off from paying for an audio
+ * graph on every click of the app.
  */
 export function wakeAudio(): void {
-	if (ctx && ctx.state !== 'running') void ctx.resume();
+	if (ctx && !resting && ctx.state !== 'running') void ctx.resume().catch(() => {});
+}
+
+/**
+ * Resume the context from inside the press that asked for sound, synchronously: WebKit lets a
+ * context start only within the gesture itself.
+ */
+export function resumeAudio(): void {
+	resting = false;
+	if (ctx && ctx.state !== 'running') void ctx.resume().catch(() => {});
+}
+
+/**
+ * Let the context stop driving the audio hardware, which a phone otherwise keeps awake for as
+ * long as the page lives. Resolves once it has stopped, or could not.
+ */
+export async function restAudio(): Promise<void> {
+	if (!ctx) return;
+	resting = true;
+	try {
+		await ctx.suspend();
+	} catch {
+		// A closed context is as quiet as a suspended one.
+	}
 }
 
 /**
@@ -118,35 +147,46 @@ function prefixOf(bytes: ArrayBuffer, prefix: DecodePrefix | undefined): ArrayBu
 	return wanted < bytes.byteLength ? bytes.slice(0, wanted) : bytes;
 }
 
+/** An answer that is not MP3 at all, which here is the download manager's signature above
+ *  rather than a broken file, so it is the one failure worth naming that way. */
+export class NotMp3Error extends Error {
+	name = 'NotMp3Error';
+}
+
 async function readBytes(url: string, mode?: RequestCache): Promise<ArrayBuffer> {
-	const response = await fetch(url, mode ? { cache: mode } : undefined);
+	const response = await fetch(url, {
+		cache: mode,
+		signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(FETCH_TIMEOUT_MS) : undefined
+	});
 	if (!response.ok) throw new Error(`${url} answered HTTP ${response.status}`);
 	return response.arrayBuffer();
 }
 
 /**
- * Fetch and decode one bundled MP3, throwing with the reason when it is not one.
+ * Fetch one bundled MP3, throwing with the reason when it is not one.
  *
  * The response is allowed to cache, since these files ship with the build and never change
- * under their own name, and re-downloading megabytes on every play is what a phone feels as a
- * stutter. What a cache costs is that a bad answer would be kept too: the resident half of a
+ * under their own name, and re-downloading megabytes on every play buys nothing. What a cache
+ * costs is that a bad answer would be kept too: the resident half of a
  * download manager claims any URL ending in a media extension and answers with 204 and no body
  * at all, so a payload that is not MP3 is fetched again past the cache before it is reported.
  */
-export async function fetchAudioBuffer(
-	ac: AudioContext,
-	url: string,
-	prefix?: DecodePrefix
-): Promise<AudioBuffer> {
+export async function fetchAudioBytes(url: string): Promise<ArrayBuffer> {
 	let bytes = await readBytes(url);
 	if (!looksLikeMp3(bytes)) bytes = await readBytes(url, 'reload');
 	if (!looksLikeMp3(bytes)) {
 		const head = new TextDecoder().decode(bytes.slice(0, 32)).replace(/\s+/g, ' ').trim();
-		throw new Error(
-			`${url} answered ${bytes.byteLength} bytes that are not MP3: "${head}"`
-		);
+		throw new NotMp3Error(`${url} answered ${bytes.byteLength} bytes that are not MP3: "${head}"`);
 	}
+	return bytes;
+}
 
+/** Decode `bytes`, or only the front of them when the caller keeps only the front. */
+export async function decodeAudioPrefix(
+	ac: BaseAudioContext,
+	bytes: ArrayBuffer,
+	prefix?: DecodePrefix
+): Promise<AudioBuffer> {
 	const front = prefixOf(bytes, prefix);
 	if (front !== bytes) {
 		try {
@@ -157,4 +197,12 @@ export async function fetchAudioBuffer(
 		}
 	}
 	return ac.decodeAudioData(bytes);
+}
+
+export async function fetchAudioBuffer(
+	ac: BaseAudioContext,
+	url: string,
+	prefix?: DecodePrefix
+): Promise<AudioBuffer> {
+	return decodeAudioPrefix(ac, await fetchAudioBytes(url), prefix);
 }
