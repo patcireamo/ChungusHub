@@ -99,7 +99,7 @@ export const AMBIENT_SOUNDS: AmbientSoundDef[] = [
 	{ id: 'rowing-boat', label: 'Rowing Boat', category: 'transport', lufs: -22.1, peak: 0, seconds: 26 },
 	{ id: 'sailboat', label: 'Sailboat', category: 'transport', lufs: -38.2, peak: -1.2, seconds: 161 },
 	{ id: 'submarine', label: 'Submarine', category: 'transport', lufs: -20.3, peak: -3.5, seconds: 46 },
-	{ id: 'train', label: 'Train', category: 'transport', lufs: -14.7, peak: -0.1, seconds: 61 },
+	{ id: 'train', label: 'Train', category: 'transport', lufs: -14.7, peak: -0.1, seconds: 28 },
 
 	{ id: 'busy-street', label: 'Busy Street', category: 'urban', lufs: -27.1, peak: -10.6, seconds: 175 },
 	{ id: 'crowd', label: 'Crowd', category: 'urban', lufs: -34.2, peak: -19.5, seconds: 73 },

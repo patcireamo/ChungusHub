@@ -25,9 +25,12 @@ or distributed on its own, with nothing built around it. Shipping these files
 inside ChungusHub is fine; lifting them back out and selling them as a sound
 pack is not.
 
-The files are copied byte for byte and keep the names they had. Nothing was
-transcoded, and there was no trimming, mixing or level changes, so each one runs
-exactly as long as its source and sounds exactly as it was published. The set is
+The files keep the names they had and are copied byte for byte, with one
+exception: transport/train.mp3 is cut, without re-encoding, to the steady stretch
+of its source (about 4.3 s to 31.8 s), since the rest of that recording is the
+train fading away into silence. Nothing was transcoded, and there was no mixing
+or level change, so every other file runs exactly as long as its source and all
+of them sound exactly as they were published. The set is
 a subset of that project's: recordings that did not suit a roleplay workspace
 were left behind rather than altered. The folder is the list, so a sound added
 or dropped needs no edit here.
