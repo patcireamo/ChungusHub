@@ -427,19 +427,21 @@
 		{/if}
 	</section>
 
-	<!-- The typeface and sound lines are not garnish: both ship inside the app under licenses
-	     of their own, and a page claiming one license over everything it hands the reader would
-	     be claiming one it does not hold. Each notice is linked, not just named, because it
+	<!-- The typeface, sound and recording lines are not garnish: each ships inside the app under
+	     licenses of its own, and a page claiming one license over everything it hands the reader
+	     would be claiming one it does not hold. Each notice is linked, not just named, because it
 	     travels with the app and is served beside the files it covers. -->
 	<p class="legal">
 		ChungusHub is free software under the
 		<a href={LINKS.license} target="_blank" rel="noopener noreferrer">AGPL-3.0</a>. The source is
-		on <a href={LINKS.repo} target="_blank" rel="noopener noreferrer">GitHub</a>. The typefaces and
-		notification sounds it ships with are not covered by that license: the typefaces are under
-		the
+		on <a href={LINKS.repo} target="_blank" rel="noopener noreferrer">GitHub</a>. The typefaces,
+		notification sounds and ambient recordings it ships with are not covered by that license: the
+		typefaces are under the
 		<a href={LINKS.fontLicense} target="_blank" rel="noopener noreferrer">SIL Open Font License</a>,
 		the sounds under
-		<a href={LINKS.soundCredits} target="_blank" rel="noopener noreferrer">Creative Commons</a>.
+		<a href={LINKS.soundCredits} target="_blank" rel="noopener noreferrer">Creative Commons</a>
+		and the recordings under the
+		<a href={LINKS.soundscapeLicense} target="_blank" rel="noopener noreferrer">Pixabay Content License or CC0</a>.
 	</p>
 </div>
 

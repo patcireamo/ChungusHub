@@ -447,18 +447,24 @@ function serveDefaultBackground(pathname: string): Response {
  * because that whitelist is what stops a stored file being served as something a browser will
  * run: widening it would widen it for uploads too, while nothing here is ever uploaded.
  *
- * The extension is checked rather than trusted, and the folder is fixed, so the only thing
- * this can answer with is an MP3 that shipped with the app.
+ * The extension is checked rather than trusted, and the folder is fixed, so the only things
+ * this can answer with are an MP3 that shipped with the app and, named exactly, the licence
+ * notice beside them that Settings → About links.
  */
 function serveDefaultSound(pathname: string): Response {
 	const rel = requestedFilePath(pathname, '/files/sounds/');
 	const filePath = join(DEFAULT_SOUNDS_DIR, rel);
+	if (rel === 'CREDITS.txt' && existsSync(filePath)) {
+		return new Response(Bun.file(filePath), {
+			headers: servedFileHeaders('text/plain; charset=utf-8')
+		});
+	}
 	if (/\.mp3$/i.test(rel) && existsSync(filePath) && statSync(filePath).isFile()) {
 		// These ship with the build and cannot change under their own name while it is running,
-		// so a mix re-downloads megabytes on every play without this, which a phone hears as the
-		// sound stuttering as it starts. `private`, because the app can be sitting behind a
-		// password and a shared cache has no business holding what it served afterwards; a week,
-		// because a later build replacing a recording should still be heard eventually.
+		// so without this a mix re-downloads megabytes on every play for nothing. `private`,
+		// because the app can be sitting behind a password and a shared cache has no business
+		// holding what it served afterwards; a week, because a later build replacing a recording
+		// should still be heard eventually.
 		return new Response(Bun.file(filePath), {
 			headers: servedFileHeaders('audio/mpeg', 'private, max-age=604800')
 		});
