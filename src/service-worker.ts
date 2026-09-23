@@ -9,8 +9,9 @@
  * The bundled ambient recordings are the one exception under `/files/`, and they
  * are the exception because they are not the reader's data: they ship with the
  * build and cannot change under their own name while it is running. Treated as
- * live, a mix re-downloads megabytes on every play, which a phone hears as the
- * sound stuttering as it starts.
+ * live, a mix re-downloads megabytes on every play for nothing. A service worker
+ * exists only in a secure context, so a phone opening the app over plain HTTP on
+ * the LAN never has this one and relies on the route's own cache-control.
  */
 import { build, files, version } from '$service-worker';
 
@@ -37,7 +38,12 @@ async function soundFromCache(request: Request): Promise<Response> {
 	const response = await fetch(request);
 	const type = response.headers.get('content-type') ?? '';
 	if (response.status === 200 && type.startsWith('audio/')) {
-		await cache.put(request, response.clone());
+		// A full or failing store costs the next play a download, never this one its recording.
+		try {
+			await cache.put(request, response.clone());
+		} catch (error) {
+			console.warn('[sw] could not keep a recording:', request.url, error);
+		}
 	}
 	return response;
 }
