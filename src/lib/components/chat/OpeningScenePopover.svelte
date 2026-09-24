@@ -12,7 +12,7 @@
 	 * the panel and its click-away.
 	 */
 	import Icon from '$lib/components/ui/Icon.svelte';
-	import { autoResize } from '$lib/actions/autoResize';
+	import { autoResize, findScroller } from '$lib/actions/autoResize';
 	import { viewport } from '$lib/stores/viewport.svelte';
 	import { hangUnder, type HangTarget } from '$lib/actions/hangUnder';
 
@@ -37,12 +37,15 @@
 	});
 
 	// The trigger can be the transcript's last line, and the click-away layer stops a scroll
-	// from reaching the panel by hand. Observed, not scrolled once: the box grows as it is typed in.
+	// from reaching the panel by hand. Observed, not scrolled once: the box grows as it is typed in,
+	// and a phone's keyboard shortens the transcript around it (`interactive-widget=resizes-content`).
 	$effect(() => {
 		if (!panelElement) return;
 		const panel = panelElement;
 		const observer = new ResizeObserver(() => panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
 		observer.observe(panel);
+		const scroller = findScroller(panel);
+		if (scroller) observer.observe(scroller);
 		return () => observer.disconnect();
 	});
 

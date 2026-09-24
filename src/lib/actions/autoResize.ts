@@ -27,7 +27,7 @@ function resolveValue(param: AutoResizeParam | undefined): unknown {
 }
 
 /** The nearest ancestor that scrolls, or null if nothing above this element does. */
-function findScroller(node: HTMLElement): HTMLElement | null {
+export function findScroller(node: HTMLElement): HTMLElement | null {
 	for (let el = node.parentElement; el; el = el.parentElement) {
 		const overflowY = getComputedStyle(el).overflowY;
 		if (overflowY === 'auto' || overflowY === 'scroll') return el;
