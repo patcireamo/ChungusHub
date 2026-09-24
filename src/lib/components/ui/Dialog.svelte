@@ -232,7 +232,9 @@
 
 	@media (max-width: 700px) {
 		.dialog-panel {
-			--dialog-max-h: 94vh;
+			/* dvh, never vh: vh measures the viewport with the browser bar retracted, so on a
+			   phone a tall panel's foot sits under the bar with no way to scroll it back. */
+			--dialog-max-h: 94dvh;
 			max-width: 100% !important;
 			border-radius: var(--radius-lg);
 		}
