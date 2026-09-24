@@ -125,13 +125,11 @@
 		right: 0;
 	}
 
-	/* Auto margins between pinned edges, never `left: 50%` + a translate: the entry animation
-	   owns `transform` and would override the centring for its whole duration. It also stays
-	   centred once `max-width` narrows the panel on a phone, which a fixed offset would not. */
+	/* Auto margins between pinned edges give up and pin left once the panel is wider than its
+	   trigger. The `translate` property, unlike `transform`, is not the entry animation's to override. */
 	.align-center {
-		left: 0;
-		right: 0;
-		margin-inline: auto;
+		left: 50%;
+		translate: -50% 0;
 	}
 
 	/* `.input-base` is a surface and a border, and every field pairs it with a recipe carrying
