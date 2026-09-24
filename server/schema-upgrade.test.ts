@@ -188,3 +188,22 @@ describe('44: the chat-default version backfill', () => {
 		expect(['aria', 'solo', 'kept', 'torn'].map(raw)).toEqual(afterFirst);
 	});
 });
+
+describe('45: connection headers', () => {
+	test('an existing connection keeps its key and URL, and reads as sending no headers', () => {
+		const up = new Database(':memory:');
+		for (const m of [...MIGRATIONS_FOR_TESTS].sort((a, b) => a.version - b.version)) {
+			if (m.version < 45) up.exec(m.sql);
+		}
+		up.run(
+			"INSERT INTO connection_credentials (connection_id, provider, api_key_encrypted, base_url, updated_at) VALUES ('c1', 'openai-compatible', 'sk-1', 'http://gw.local/v1', 7)"
+		);
+		const before = up.query('SELECT * FROM connection_credentials').get();
+
+		up.exec(MIGRATIONS_FOR_TESTS.find((m) => m.version === 45)!.sql);
+
+		// prepare(), not query(): query() caches the statement, column list included, from before the ALTER.
+		expect(up.prepare('SELECT * FROM connection_credentials').get()).toEqual({ ...(before as object), extra_headers: null });
+		up.close();
+	});
+});

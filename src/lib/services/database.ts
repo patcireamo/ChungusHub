@@ -12,6 +12,7 @@ import type { SteeringNote } from '$lib/types/steering';
 import type { AssistantSession, AssistantMessage } from '$lib/types/assistant';
 import type { BatchResult, Episode, MemoryState, PromotionResult } from '$lib/memory/types';
 import type { UserStats } from '$lib/types/stats';
+import type { ConnectionHeaders } from '$shared/connection-headers';
 import { connectWs, dbRpc } from '$lib/services/transport';
 
 class DatabaseService {
@@ -156,11 +157,16 @@ class DatabaseService {
 	}
 
 	// ===== CONNECTION CREDENTIALS =====
-	getConnectionCredentials(connectionId: string): Promise<{ provider: string; apiKey: string; baseUrl: string | null } | null> {
+	getConnectionCredentials(
+		connectionId: string
+	): Promise<{ provider: string; apiKey: string; baseUrl: string | null; headers: ConnectionHeaders } | null> {
 		return this.call('getConnectionCredentials', connectionId);
 	}
 	setConnectionCredentials(connectionId: string, provider: string, apiKey: string, baseUrl?: string): Promise<void> {
 		return this.call('setConnectionCredentials', connectionId, provider, apiKey, baseUrl);
+	}
+	setConnectionHeaders(connectionId: string, provider: string, headers: ConnectionHeaders): Promise<void> {
+		return this.call('setConnectionHeaders', connectionId, provider, headers);
 	}
 	deleteConnectionCredentials(connectionId: string): Promise<void> { return this.call('deleteConnectionCredentials', connectionId); }
 	copyConnectionCredentials(fromConnectionId: string, toConnectionId: string): Promise<void> {

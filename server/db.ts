@@ -21,6 +21,7 @@ import {
 } from './files';
 import type { SyncScope } from '../shared/sync';
 import type { AssistantFile } from '../shared/assistant-files';
+import { checkHeaders, type ConnectionHeaders } from '../shared/connection-headers';
 
 /** Short stable digest, the chat-tree fingerprint's building block. Truncated SHA-1:
  *  64 bits is far past what "are these two chats the same" needs, and it only ever
@@ -525,6 +526,16 @@ const MIGRATIONS: Migration[] = [
 		      AND v.id = CASE WHEN json_valid(character_library.data_json)
 		                      THEN json_extract(character_library.data_json, '$.activeVersionId') END
 		  );
+		`
+	},
+	{
+		version: 45,
+		name: 'connection_headers',
+		sql: `
+		-- Extra HTTP headers a bring-your-own connection sends, as a JSON object of names to
+		-- values. NULL is "none", which is what every existing row reads as, so a connection
+		-- saved before this column sends exactly the request it always did.
+		ALTER TABLE connection_credentials ADD COLUMN extra_headers TEXT;
 		`
 	}
 ];
@@ -2298,20 +2309,66 @@ class ServerDatabase {
 	// ===== CONNECTION CREDENTIALS =====
 
 	getConnectionCredentials(connectionId: string): unknown {
-		const rows = this.select<{ provider: string; api_key_encrypted: string; base_url: string | null }[]>(
-			'SELECT provider, api_key_encrypted, base_url FROM connection_credentials WHERE connection_id = ?',
+		const rows = this.select<
+			{ provider: string; api_key_encrypted: string; base_url: string | null; extra_headers: string | null }[]
+		>(
+			'SELECT provider, api_key_encrypted, base_url, extra_headers FROM connection_credentials WHERE connection_id = ?',
 			[connectionId]
 		);
 		if (!rows[0]) return null;
-		return { provider: rows[0].provider, apiKey: rows[0].api_key_encrypted, baseUrl: rows[0].base_url };
+		const { provider, api_key_encrypted, base_url, extra_headers } = rows[0];
+		return {
+			provider,
+			apiKey: api_key_encrypted,
+			baseUrl: base_url,
+			headers: extra_headers === null ? {} : this.readStoredHeaders(connectionId, extra_headers)
+		};
 	}
 
+	// A cell that will not parse is reported and left as it is: every request on the
+	// connection fails naming it, rather than going out without headers its endpoint needs.
+	private readStoredHeaders(connectionId: string, raw: string): ConnectionHeaders {
+		try {
+			return checkHeaders(JSON.parse(raw));
+		} catch (e) {
+			throw new Error(
+				`The stored headers of connection ${connectionId} are unreadable (${e instanceof Error ? e.message : e})`
+			);
+		}
+	}
+
+	/** Upserted rather than replaced so a key or URL save keeps the headers. A provider
+	 *  change drops them: they were written for the endpoint being switched away from. */
 	setConnectionCredentials(connectionId: string, provider: string, apiKey: string, baseUrl?: string): void {
 		this.execute(
-			`INSERT OR REPLACE INTO connection_credentials (connection_id, provider, api_key_encrypted, base_url, updated_at)
-			 VALUES (?, ?, ?, ?, ?)`,
+			`INSERT INTO connection_credentials (connection_id, provider, api_key_encrypted, base_url, updated_at)
+			 VALUES (?, ?, ?, ?, ?)
+			 ON CONFLICT(connection_id) DO UPDATE SET
+			   extra_headers = CASE WHEN connection_credentials.provider = excluded.provider
+			                        THEN connection_credentials.extra_headers END,
+			   provider = excluded.provider,
+			   api_key_encrypted = excluded.api_key_encrypted,
+			   base_url = excluded.base_url,
+			   updated_at = excluded.updated_at`,
 			[connectionId, provider, apiKey, baseUrl ?? null, Date.now()]
 		);
+	}
+
+	/** Throws when the row belongs to another provider: a save still in flight from before a
+	 *  provider switch must not hand the new endpoint the old one's headers. */
+	setConnectionHeaders(connectionId: string, provider: string, headers: ConnectionHeaders): void {
+		checkHeaders(headers);
+		const stored = Object.keys(headers).length ? JSON.stringify(headers) : null;
+		const changed = this.execute(
+			`INSERT INTO connection_credentials (connection_id, provider, api_key_encrypted, base_url, extra_headers, updated_at)
+			 VALUES (?, ?, '', NULL, ?, ?)
+			 ON CONFLICT(connection_id) DO UPDATE SET
+			   extra_headers = excluded.extra_headers,
+			   updated_at = excluded.updated_at
+			 WHERE connection_credentials.provider = excluded.provider`,
+			[connectionId, provider, stored, Date.now()]
+		);
+		if (changed === 0) throw new Error(`Connection ${connectionId} no longer uses ${provider}; its headers were not saved`);
 	}
 
 	deleteConnectionCredentials(connectionId: string): void {
@@ -2323,8 +2380,8 @@ class ServerDatabase {
 	 *  has no credentials. */
 	copyConnectionCredentials(fromConnectionId: string, toConnectionId: string): void {
 		this.execute(
-			`INSERT OR REPLACE INTO connection_credentials (connection_id, provider, api_key_encrypted, base_url, updated_at)
-			 SELECT ?, provider, api_key_encrypted, base_url, ? FROM connection_credentials WHERE connection_id = ?`,
+			`INSERT OR REPLACE INTO connection_credentials (connection_id, provider, api_key_encrypted, base_url, extra_headers, updated_at)
+			 SELECT ?, provider, api_key_encrypted, base_url, extra_headers, ? FROM connection_credentials WHERE connection_id = ?`,
 			[toConnectionId, Date.now(), fromConnectionId]
 		);
 	}
@@ -3513,6 +3570,7 @@ export const MUTATION_SCOPES: Record<string, SyncScope> = {
 	// is writing library entries around it anyway, and a mutation with no scope has no shape here.
 	recordImportedSources: 'library',
 	setConnectionCredentials: 'settings',
+	setConnectionHeaders: 'settings',
 	deleteConnectionCredentials: 'settings',
 	copyConnectionCredentials: 'settings',
 	insertLibraryEntry: 'library',

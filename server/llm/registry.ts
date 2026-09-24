@@ -78,10 +78,15 @@ const providers = Object.fromEntries(
 
 function configure(connectionId: string, name: ProviderName): ChatProvider {
 	const provider = providers[name];
-	const creds = serverDb.getConnectionCredentials(connectionId) as { apiKey: string; baseUrl: string | null } | null;
+	const creds = serverDb.getConnectionCredentials(connectionId) as {
+		apiKey: string;
+		baseUrl: string | null;
+		headers: Record<string, string>;
+	} | null;
 	provider.configure({
 		apiKey: creds?.apiKey ?? '',
-		baseUrl: creds?.baseUrl ?? undefined
+		baseUrl: creds?.baseUrl ?? undefined,
+		headers: creds?.headers
 	});
 	return provider;
 }

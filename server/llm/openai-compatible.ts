@@ -82,6 +82,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
 	private readonly profile: ProviderProfile;
 	private readonly extraHeaders: Record<string, string>;
 	private apiKey = '';
+	private connectionHeaders: Record<string, string> = {};
 	private baseUrl: string;
 	/** Typed base URL → the base that PROVED it serves the API (a JSON model list
 	 *  answered there). Nothing weaker is ever pinned. See probeModels(). */
@@ -99,6 +100,7 @@ export class OpenAICompatibleProvider implements ChatProvider {
 
 	configure(config: LLMProviderConfig): void {
 		this.apiKey = config.apiKey;
+		this.connectionHeaders = config.headers ?? {};
 		// Trailing slashes are stripped here so every `${base}/path` concat below stays
 		// well-formed: a pasted ".../v1/" would otherwise request ".../v1//models".
 		this.baseUrl = config.baseUrl?.trim().replace(/\/+$/, '') || this.defaultBaseUrl;
@@ -169,6 +171,12 @@ export class OpenAICompatibleProvider implements ChatProvider {
 	private headers(): Record<string, string> {
 		const h: Record<string, string> = { 'Content-Type': 'application/json', ...this.extraHeaders };
 		if (this.apiKey) h.Authorization = `Bearer ${this.apiKey}`;
+		// Names are case-insensitive on the wire, so ours is dropped under any spelling: left
+		// beside the connection's own, fetch would join the two into one broken value.
+		for (const [name, value] of Object.entries(this.connectionHeaders)) {
+			for (const own of Object.keys(h)) if (own.toLowerCase() === name.toLowerCase()) delete h[own];
+			h[name] = value;
+		}
 		return h;
 	}
 

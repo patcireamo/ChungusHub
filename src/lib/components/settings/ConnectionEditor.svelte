@@ -8,6 +8,8 @@
 	import ModelPicker from './ModelPicker.svelte';
 	import ProviderRoutingPanel from './ProviderRoutingPanel.svelte';
 	import ConnectionHero from './ConnectionHero.svelte';
+	import ConnectionHeaders from './ConnectionHeaders.svelte';
+	import type { ConnectionHeaders as HeaderSet } from '$shared/connection-headers';
 	import { llmService, computePromptBudget } from '$lib/services/llm/provider';
 	import { connectionStore } from '$lib/stores/connections.svelte';
 	import { db } from '$lib/services/database';
@@ -69,6 +71,8 @@
 	// Credentials live server-side (keyed by connection id); the rest is the connection object.
 	let apiKey = $state('');
 	let baseUrl = $state('');
+	/** Null until the stored row has been read, so the headers section never mounts on a guess. */
+	let headers = $state<HeaderSet | null>(null);
 	/** Set when the server had to try a different shape of the typed URL to find the API. */
 	let resolvedBaseUrl = $state<string | null>(null);
 	let status = $state<Status>('idle');
@@ -226,6 +230,7 @@
 		const creds = await db.getConnectionCredentials(id);
 		apiKey = creds?.apiKey ?? '';
 		baseUrl = creds?.baseUrl ?? (meta.baseUrlEditable ? meta.defaultBaseUrl : '');
+		headers = creds?.headers ?? {};
 		account = null;
 		status = 'idle';
 		connectionError = '';
@@ -251,6 +256,7 @@
 		});
 		apiKey = '';
 		baseUrl = m?.baseUrlEditable ? m.defaultBaseUrl : '';
+		headers = {};
 		await llmService.setConnectionCredentials(id, name, '', baseUrl || undefined);
 		account = null;
 		status = 'idle';
@@ -350,6 +356,12 @@
 	}
 
 	async function onRefresh(): Promise<void> {
+		await connect();
+	}
+
+	async function saveHeaders(next: HeaderSet): Promise<void> {
+		if (!conn) return;
+		await db.setConnectionHeaders(id, conn.provider, next);
 		await connect();
 	}
 
@@ -612,6 +624,12 @@
 							label="Service tier"
 						/>
 					</div>
+				</div>
+			{/if}
+
+			{#if meta.baseUrlEditable && headers}
+				<div class="req-sec" data-setting="request-headers">
+					<ConnectionHeaders {headers} onsave={saveHeaders} />
 				</div>
 			{/if}
 		</section>

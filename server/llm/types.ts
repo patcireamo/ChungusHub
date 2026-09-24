@@ -234,6 +234,8 @@ export interface LLMToolResult {
 export interface LLMProviderConfig {
 	apiKey: string;
 	baseUrl?: string;
+	/** The connection's own headers, sent on every request and winning over ours by name. */
+	headers?: Record<string, string>;
 	defaultModel?: string;
 	timeout?: number;
 }

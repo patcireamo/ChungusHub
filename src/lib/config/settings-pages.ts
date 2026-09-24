@@ -208,6 +208,7 @@ export const ANCHOR_PAGES: Record<string, SettingsPage> = {
 	'context-size': 'connections',
 	'prompt-post-processing': 'connections',
 	'prompt-caching': 'connections',
+	'request-headers': 'connections',
 	// Appearance
 	palette: 'interface',
 	// A conditional anchor: it exists only while a palette is open in the editor, so a deep

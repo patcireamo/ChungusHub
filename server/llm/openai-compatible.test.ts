@@ -737,3 +737,62 @@ describe('OpenAICompatibleProvider declared reasoning dialects', () => {
 		expect(sentBody.reasoning).toBeUndefined();
 	});
 });
+
+// ===== Connection headers =====
+// A gateway in front of the API (Azure, Cloudflare, a reverse proxy with basic auth) refuses
+// anything without its own header, the model list included, so the header has to ride every
+// request the connection makes and not just the generation.
+
+/** Answers only requests carrying `api-key: gate-key`, and records what each one carried. */
+const gatewaySeen: { path: string; apiKey: string | null; auth: string | null }[] = [];
+const gatewayServer = Bun.serve({
+	port: 0,
+	fetch(req) {
+		const path = new URL(req.url).pathname;
+		gatewaySeen.push({ path, apiKey: req.headers.get('api-key'), auth: req.headers.get('authorization') });
+		if (req.headers.get('api-key') !== 'gate-key') {
+			return Response.json({ error: { message: 'Missing gateway key' } }, { status: 401 });
+		}
+		if (path === '/v1/models') return Response.json({ data: [{ id: 'local-model' }] });
+		if (path === '/v1/chat/completions') return Response.json(COMPLETION);
+		return new Response('not found', { status: 404 });
+	}
+});
+
+afterAll(() => {
+	gatewayServer.stop(true);
+});
+
+describe('OpenAICompatibleProvider connection headers', () => {
+	const base = () => `http://127.0.0.1:${gatewayServer.port}/v1`;
+
+	test('they ride the model list and the generation alike', async () => {
+		const byo = byoProvider();
+		byo.configure({ apiKey: '', baseUrl: base(), headers: { 'api-key': 'gate-key' } });
+		expect(await byo.fetchAvailableModels()).toEqual([{ id: 'local-model' }]);
+		expect((await byo.complete({ model: 'local-model', messages: USER })).content).toBe('ok');
+	});
+
+	test("a connection's Authorization replaces the key's under any spelling", async () => {
+		gatewaySeen.length = 0;
+		const byo = byoProvider();
+		byo.configure({
+			apiKey: 'sk-ignored',
+			baseUrl: base(),
+			headers: { 'api-key': 'gate-key', authorization: 'Basic dXNlcjpwYXNz' }
+		});
+		await byo.complete({ model: 'local-model', messages: USER });
+		expect(gatewaySeen.at(-1)).toEqual({ path: '/v1/chat/completions', apiKey: 'gate-key', auth: 'Basic dXNlcjpwYXNz' });
+	});
+
+	// One instance serves every connection on the provider, so a connection with no headers
+	// configured after one with them must not inherit them.
+	test('a connection configured without headers sends none', async () => {
+		gatewaySeen.length = 0;
+		const byo = byoProvider();
+		byo.configure({ apiKey: '', baseUrl: base(), headers: { 'api-key': 'gate-key' } });
+		byo.configure({ apiKey: '', baseUrl: base() });
+		await expect(byo.complete({ model: 'local-model', messages: USER })).rejects.toThrow('Missing gateway key');
+		expect(gatewaySeen.every((r) => r.apiKey === null)).toBe(true);
+	});
+});
