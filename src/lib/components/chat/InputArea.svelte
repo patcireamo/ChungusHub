@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
+	import { fade, slide } from 'svelte/transition';
 	import { countTokens, tokenCalibration } from '$lib/tokenizer';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import ChatSetupChip from './ChatSetupChip.svelte';
@@ -19,6 +20,7 @@
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { memoryStore } from '$lib/memory/store.svelte';
 	import { inputDraftStore } from '$lib/stores/inputDraft.svelte';
+	import { openingComposer } from '$lib/stores/openingComposer.svelte';
 	import { inputHistoryStore } from '$lib/stores/inputHistory.svelte';
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 	import { viewport } from '$lib/stores/viewport.svelte';
@@ -107,6 +109,7 @@
 	let content = $state('');
 	let inputTokens = $derived(countTokens(content));
 	let textareaElement: HTMLTextAreaElement;
+	let sendSlot: HTMLDivElement;
 
 	let menuOpen = $state(false);
 	let personaDialogOpen = $state(false);
@@ -335,6 +338,8 @@
 		steeringOpen = false;
 		transformKind = null;
 		commandArmed = false;
+		openingComposer.close();
+		direction = '';
 		if (!chatId) return;
 		void inputDraftStore.load(chatId).then(async (draft) => {
 			// The user may have switched again (or started typing) while the
@@ -670,6 +675,51 @@
 		void executeCommand(picked, parsed.arg);
 	}
 
+	// ===== Opening scene =====
+
+	// The box's other question: what a new opening scene should be about (architecture/engines.md).
+	// The draft and its pictures wait untouched behind it, and the direction is never persisted:
+	// it is not a draft, and one typed and abandoned must not come back later as a request.
+	let direction = $state('');
+	let openingMode = $derived(openingComposer.active);
+
+	$effect(() =>
+		openingComposer.attach({
+			box: textareaElement,
+			landing: sendSlot,
+			refusal: () => (transformOpen ? 'Close the rewrite above the box first.' : null)
+		})
+	);
+
+	$effect(() => {
+		void openingMode;
+		untrack(() => {
+			if (openingMode) {
+				commandArmed = false;
+				menuOpen = false;
+				attachOpen = false;
+				steeringOpen = false;
+			}
+			void tick().then(handleInput);
+		});
+	});
+
+	// Any generation, this scene's or one started elsewhere, answers the question or overtakes it.
+	$effect(() => {
+		if (isStreaming) untrack(() => openingComposer.close());
+	});
+
+	function submitOpening() {
+		if (messageStore.warnIfBusy()) return;
+		openingComposer.close();
+		// On a phone the keyboard would otherwise sit over the scene as it streams in.
+		if (viewport.isTouch) textareaElement?.blur();
+		// Kept, not cleared: rolling the same idea again is then one press.
+		void messageStore.generateOpeningScene(direction).catch((error) => {
+			toastStore.failed('generate the opening scene', error);
+		});
+	}
+
 	// ===== Duplicate this chat =====
 
 	// `/duplicate` raises the Chats panel's own dialog rather than copying on the spot, so the
@@ -816,6 +866,10 @@
 	}
 
 	function handleSubmit() {
+		if (openingMode) {
+			submitOpening();
+			return;
+		}
 		// The Send button is the palette's other door, which is what makes command mode work
 		// on touch, where Enter is a newline.
 		if (commandOpen) {
@@ -938,6 +992,19 @@
 		// Frozen under an open transform strip: the box is readonly-in-effect, so neither
 		// Enter-to-send nor history recall may rewrite the draft the proposal is about.
 		if (transformOpen) return;
+		// The question owns every key: none of the draft's (recall, commands, regenerate) reach
+		// past it. Escape is consumed per the shell Esc contract.
+		if (openingMode) {
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				e.stopPropagation();
+				openingComposer.close();
+			} else if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !viewport.isTouch) {
+				e.preventDefault();
+				submitOpening();
+			}
+			return;
+		}
 		// Ctrl/⌘+Enter regenerates, above command mode because the palette owns plain Enter and
 		// nothing modified. Same gate as the newest turn's own Retry, so the key can never
 		// outreach the button.
@@ -1010,6 +1077,7 @@
 	// history mode, and keep the persisted draft in step.
 	function handleComposerInput() {
 		handleInput();
+		if (openingMode) return;
 		historyPos = null;
 		// A lone "/" in an otherwise empty composer arms command mode; anything that stops
 		// being a command line (a newline, a deleted slash) drops it. Typing always returns
@@ -1060,6 +1128,7 @@
 			class="composer-shell input-base"
 			class:composer-shell--frozen={transformOpen}
 			class:composer-shell--command={commandOpen}
+			class:composer-shell--opening={openingMode}
 			style="box-shadow: var(--shadow-sm);"
 			ondragenter={handleDragEnter}
 			ondragover={handleDragOver}
@@ -1081,7 +1150,23 @@
 					onPick={pickCommand}
 				/>
 			{/if}
-			{#if pendingImages.length || uploadingImages > 0}
+			{#if openingMode}
+				<div class="composer-opening-head" transition:slide={{ duration: 200 }}>
+					<Icon name="sparkles" class="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
+					<span class="composer-opening-title">Opening Scene</span>
+					<span class="composer-opening-hint">Leave it empty for a surprise</span>
+					<button
+						type="button"
+						class="composer-opening-close"
+						onclick={() => openingComposer.close()}
+						aria-label="Back to your message"
+						title="Back to your message"
+					>
+						<Icon name="x" class="w-3.5 h-3.5" strokeWidth={2} />
+					</button>
+				</div>
+			{/if}
+			{#if !openingMode && (pendingImages.length || uploadingImages > 0)}
 				<div class="attach-strip">
 					{#each pendingImages as img (img.path)}
 						<div class="attach-thumb">
@@ -1107,11 +1192,12 @@
 			<div class="composer-main">
 				<textarea
 					bind:this={textareaElement}
-					bind:value={content}
+					bind:value={() => (openingMode ? direction : content), (v) => (openingMode ? (direction = v) : (content = v))}
 					onkeydown={handleKeydown}
 					oninput={handleComposerInput}
-					onpaste={handlePaste}
-				placeholder="Type your message…"
+					onpaste={openingMode ? undefined : handlePaste}
+					aria-label={openingMode ? 'Direction for the opening scene' : undefined}
+				placeholder={openingMode ? 'What should the scene be about?' : 'Type your message…'}
 				disabled={draftLocked || transformOpen}
 					rows="1"
 					class="composer-textarea bg-transparent font-body text-text-primary resize-none
@@ -1121,8 +1207,18 @@
 					style="max-height: 200px; min-height: 2rem;"
 				></textarea>
 
-				<div class="flex items-center gap-1 self-end">
-					{#if isStreaming}
+				<div class="flex items-center gap-1 self-end" bind:this={sendSlot}>
+					{#if openingMode}
+						<button
+							type="button"
+							onclick={submitOpening}
+							class="composer-opening-go"
+							in:fade={{ duration: 180 }}
+						>
+							<Icon name="sparkles" class="w-4 h-4" strokeWidth={1.9} />
+							{direction.trim() ? 'Generate' : 'Surprise me'}
+						</button>
+					{:else if isStreaming}
 						<button
 							type="button"
 							onclick={onCancel}
@@ -1154,7 +1250,8 @@
 				</div>
 			</div>
 
-			<div class="composer-meta">
+			{#if !openingMode}
+			<div class="composer-meta" transition:slide={{ duration: 200 }}>
 				<div class="composer-feature-group">
 					<div class="composer-menu-wrap relative">
 						<button
@@ -1520,6 +1617,7 @@
 					{/if}
 				</div>
 			</div>
+			{/if}
 		</div>
 	</div>
 </div>
@@ -1583,6 +1681,13 @@
 		gap: 0.45rem;
 		border-radius: var(--radius-xl);
 		position: relative;
+		/* Transparent until the opening scene mode tints it, so the halo fades rather than pops. */
+		outline: 3px solid transparent;
+		transition:
+			border-color 140ms ease,
+			box-shadow 140ms ease,
+			background-color 140ms ease,
+			outline-color 220ms ease;
 	}
 
 	/* Covers the composer while a drag is over it, and never interactive: the drop is
@@ -1800,6 +1905,118 @@
 	   of the story above it. The list itself is CommandPalette.svelte. */
 	.composer-shell--command {
 		border-color: var(--color-accent);
+	}
+
+	/* ===== Opening scene mode ===== */
+
+	.composer-shell--opening {
+		border-color: var(--color-accent);
+		outline-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
+	}
+
+	/* One sweep of light across the box as it turns: the moment the star lands. */
+	.composer-shell--opening::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		pointer-events: none;
+		background: linear-gradient(
+				105deg,
+				transparent 40%,
+				color-mix(in srgb, var(--color-accent) 24%, transparent) 50%,
+				transparent 60%
+			)
+			no-repeat;
+		background-size: 300% 100%;
+		background-position: 100% 0;
+		animation: composer-opening-sweep 700ms ease-out forwards;
+	}
+
+	@keyframes composer-opening-sweep {
+		to {
+			background-position: 0 0;
+		}
+	}
+
+	.composer-opening-head {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.1rem 0.2rem 0 0.35rem;
+		color: var(--color-accent);
+		min-width: 0;
+	}
+
+	.composer-opening-title {
+		font-family: var(--font-ui);
+		font-size: 0.78rem;
+		font-weight: 600;
+		white-space: nowrap;
+	}
+
+	.composer-opening-hint {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--font-ui);
+		font-size: 0.72rem;
+		color: var(--color-text-muted);
+	}
+
+	.composer-opening-close {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.6rem;
+		height: 1.6rem;
+		border: none;
+		border-radius: var(--radius-full);
+		background: transparent;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		transition: color 120ms ease, background-color 120ms ease;
+	}
+
+	.composer-opening-close:hover {
+		color: var(--color-text-primary);
+		background: color-mix(in srgb, var(--color-bg-tertiary) 86%, transparent);
+	}
+
+	.composer-opening-go {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		height: 2.25rem;
+		padding: 0 0.95rem;
+		border: none;
+		border-radius: var(--radius-full);
+		background: var(--color-accent);
+		color: var(--color-on-accent);
+		font-family: var(--font-ui);
+		font-size: 0.8rem;
+		font-weight: 600;
+		white-space: nowrap;
+		cursor: pointer;
+		box-shadow: var(--shadow-sm);
+		transition: background-color 150ms ease;
+	}
+
+	.composer-opening-go:hover {
+		background: var(--color-accent-hover);
+	}
+
+	@media (pointer: coarse) {
+		.composer-opening-close {
+			width: 2.4rem;
+			height: 2.4rem;
+		}
+
+		.composer-opening-go {
+			height: 2.6rem;
+		}
 	}
 
 	/* ===== Steering trigger (the panel's own styles live in SteeringPopover) ===== */

@@ -3,7 +3,6 @@
 	import MessageActions from './MessageActions.svelte';
 	import MessageEditor from './MessageEditor.svelte';
 	import BranchNavigator from './BranchNavigator.svelte';
-	import OpeningScenePopover from './OpeningScenePopover.svelte';
 	import MessageReasoning from './MessageReasoning.svelte';
 	import MessageAvatar from './MessageAvatar.svelte';
 	import MessageMeta from './MessageMeta.svelte';
@@ -11,6 +10,7 @@
 	import HoldToConfirmButton, { holdMsForBlast } from '$lib/components/ui/HoldToConfirmButton.svelte';
 	import { deleteGuard } from '$lib/stores/delete-guard.svelte';
 	import { messageStore } from '$lib/stores/messages.svelte';
+	import { openingComposer } from '$lib/stores/openingComposer.svelte';
 	import { chatCursor } from '$lib/stores/chatCursor.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
@@ -434,15 +434,6 @@
 	const canWriteOpening = $derived(
 		message.parentId === null && message.role === 'assistant' && featurePromptsStore.openingSceneEnabled
 	);
-	let openingPopoverOpen = $state(false);
-
-	function handleGenerateOpening(direction: string) {
-		// The store toasts its own generation failures; only its throw-guards reach here, and
-		// the button is gated on the one this row can see.
-		void messageStore.generateOpeningScene(direction).catch((error) => {
-			toastStore.failed('generate the opening scene', error);
-		});
-	}
 
 	const showRegenerate = $derived(
 		isLast && (message.role === 'user' || (message.role === 'assistant' && message.parentId !== null))
@@ -902,34 +893,23 @@
 							{#if siblingCount > 1 || canWriteOpening}
 								<div
 									class="message-pager-slot"
-									class:message-actions-visible={showActions || cursored || openingPopoverOpen}
+									class:message-actions-visible={showActions || cursored}
 								>
 									{#if siblingCount > 1}
 										<BranchNavigator current={siblingIndex} total={siblingCount} onNavigate={handleBranchNavigate} />
 									{/if}
 									{#if canWriteOpening}
-										<div class="opening-anchor">
-											<button
-												bind:this={openingButton}
-												type="button"
-												class="opening-btn"
-												onclick={() => {
-													placeMenus();
-													openingPopoverOpen = true;
-												}}
-												disabled={messageStore.isStreaming}
-												aria-label="Write another opening scene"
-												title="Write another opening scene"
-											>
-												<Icon name="sparkles" class="w-3.5 h-3.5" strokeWidth={1.75} />
-											</button>
-											<OpeningScenePopover
-												open={openingPopoverOpen}
-												hang={{ trigger: openingButton, column: toolbarShellElement }}
-												onClose={() => (openingPopoverOpen = false)}
-												onGenerate={handleGenerateOpening}
-											/>
-										</div>
+										<button
+											bind:this={openingButton}
+											type="button"
+											class="opening-btn"
+											onclick={() => openingComposer.open(openingButton)}
+											disabled={messageStore.isStreaming}
+											aria-label="Write another opening scene"
+											title="Write another opening scene"
+										>
+											<Icon name="sparkles" class="w-3.5 h-3.5" strokeWidth={1.75} />
+										</button>
 									{/if}
 								</div>
 							{/if}
@@ -1292,11 +1272,6 @@
 		transition: opacity 120ms ease;
 	}
 
-	.opening-anchor {
-		position: relative;
-		display: inline-flex;
-	}
-
 	/* Drawn as one more pill in the pager cluster rather than as a stray icon beside it, so
 	   its size tracks BranchNavigator's outer shell: that pill is a 1.6rem button inside
 	   0.16rem of padding and a 1px border, which is what these numbers add up to. */
@@ -1367,8 +1342,7 @@
 	}
 
 	/* Set by placeMenus only while the toolbar is stuck to the bottom edge of the view. */
-	.message-toolbar-menus-up .message-menu,
-	.message-toolbar-menus-up :global(.opening-panel) {
+	.message-toolbar-menus-up .message-menu {
 		top: auto;
 		bottom: 100%;
 		margin-top: 0;

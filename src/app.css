@@ -2324,6 +2324,44 @@
 	}
 }
 
+/* ===== The star utils/shootingStar.ts flies =====
+   Its container is turned along the path, so the tail, which ends at the head, always trails. */
+.shooting-star {
+	position: fixed;
+	left: 0;
+	top: 0;
+	z-index: 1000;
+	pointer-events: none;
+}
+
+.shooting-star-tail {
+	position: absolute;
+	right: 0;
+	top: -1px;
+	width: 72px;
+	height: 2px;
+	border-radius: var(--radius-full);
+	background: linear-gradient(to right, transparent, var(--color-accent));
+	transform-origin: right center;
+}
+
+.shooting-star-head {
+	position: absolute;
+	left: -8px;
+	top: -8px;
+	width: 16px;
+	height: 16px;
+	filter: drop-shadow(0 0 4px var(--color-accent)) drop-shadow(0 0 10px var(--color-accent));
+}
+
+.shooting-star-head > span {
+	display: block;
+	width: 100%;
+	height: 100%;
+	clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+	background: color-mix(in srgb, var(--color-accent) 35%, white);
+}
+
 /* ===== Touch: no form control renders below 16px =====
    iOS Safari zooms the page in the moment a field smaller than that takes focus, and it
    stays zoomed: a viewport wider than the screen, a caret that scrolls out from under the

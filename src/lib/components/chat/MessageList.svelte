@@ -2,7 +2,6 @@
 	import type { Message } from '$lib/types/chat';
 	import MessageComponent from './Message.svelte';
 	import StreamingIndicator from './StreamingIndicator.svelte';
-	import OpeningScenePopover from './OpeningScenePopover.svelte';
 	import ChatSearchBar from './ChatSearchBar.svelte';
 	import { chatSearch } from '$lib/stores/chatSearch.svelte';
 	import { chatCursor } from '$lib/stores/chatCursor.svelte';
@@ -14,7 +13,7 @@
 	import { memoryStore } from '$lib/memory/store.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
-	import { toastStore } from '$lib/stores/toast.svelte';
+	import { openingComposer } from '$lib/stores/openingComposer.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 
@@ -71,19 +70,6 @@
 		}
 		return n;
 	});
-
-	let openingPopoverOpen = $state(false);
-
-	// The store toasts its own generation failures; what reaches here is the guards it throws
-	// on before the try (engine off, no chat), which the trigger already prevents. Catching
-	// keeps one of those from surfacing as an unhandled rejection instead of a message.
-	async function handleGenerateOpeningScene(direction: string) {
-		try {
-			await messageStore.generateOpeningScene(direction);
-		} catch (error) {
-			toastStore.failed('generate the opening scene', error);
-		}
-	}
 
 	// $state, not a plain let: the scroller is handed down to ChatSearchBar as a prop, so
 	// the binding landing has to be a reactive change, not a silent one-way write.
@@ -551,24 +537,16 @@
 					{/if}
 				</p>
 				{#if featurePromptsStore.openingSceneEnabled}
-					<div class="message-empty-action">
-						<!-- Asks the app, not this chat: starting a scene while a reply generates
-						     elsewhere would run two generations over one abort controller. -->
-						<Button
-							variant="secondary"
-							onclick={() => (openingPopoverOpen = true)}
-							disabled={messageStore.isStreaming}
-						>
-							<Icon name="bookOpen" class="w-4 h-4" />
-							Generate an opening scene
-						</Button>
-						<OpeningScenePopover
-							open={openingPopoverOpen}
-							align="center"
-							onClose={() => (openingPopoverOpen = false)}
-							onGenerate={handleGenerateOpeningScene}
-						/>
-					</div>
+					<!-- Asks the app, not this chat: starting a scene while a reply generates
+					     elsewhere would run two generations over one abort controller. -->
+					<Button
+						variant="secondary"
+						onclick={(e) => openingComposer.open(e.currentTarget)}
+						disabled={messageStore.isStreaming}
+					>
+						<Icon name="bookOpen" class="w-4 h-4" />
+						Generate an opening scene
+					</Button>
 				{/if}
 			</div>
 		</div>
@@ -829,12 +807,5 @@
 		font-size: 0.84rem;
 		line-height: 1.45;
 		color: var(--color-text-secondary);
-	}
-
-	/* The popover positions against this, not against the centered card: anchored to the
-	   card it would hang from the card's full width instead of from the button. */
-	.message-empty-action {
-		position: relative;
-		display: inline-block;
 	}
 </style>

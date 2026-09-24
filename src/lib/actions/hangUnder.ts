@@ -50,13 +50,11 @@ function clipBox(node: HTMLElement): Span {
 	return { left: 0, right: document.documentElement.clientWidth };
 }
 
-/** With no target the panel keeps whatever its own CSS places it at. */
-export function hangUnder(node: HTMLElement, target: HangTarget | undefined) {
+export function hangUnder(node: HTMLElement, target: HangTarget) {
 	let current = target;
 
 	function place(): void {
-		const trigger = current?.trigger;
-		const column = current?.column;
+		const { trigger, column } = current;
 		const parent = node.offsetParent;
 		if (!trigger?.parentElement || !column || !parent) return;
 		const left = hangLeft(
@@ -77,7 +75,7 @@ export function hangUnder(node: HTMLElement, target: HangTarget | undefined) {
 	window.addEventListener('resize', place);
 
 	return {
-		update(next: HangTarget | undefined): void {
+		update(next: HangTarget): void {
 			current = next;
 			place();
 		},
