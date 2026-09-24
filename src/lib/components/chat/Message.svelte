@@ -97,6 +97,18 @@
 	let confirmingReplace = $state(false);
 	let deleteMenuElement = $state<HTMLDivElement | undefined>(undefined);
 	let regenerateMenuElement = $state<HTMLDivElement | undefined>(undefined);
+	let bodyElement = $state<HTMLDivElement | undefined>(undefined);
+	let toolbarShellElement = $state<HTMLDivElement | undefined>(undefined);
+	// Measured at the press and held while the menu is open, so it never flips under the reader.
+	let menusOpenUp = $state(false);
+
+	/** Up only while Keep actions in view has the toolbar stuck to the view's bottom edge: nothing
+	 *  below it can be scrolled into view there. A settled toolbar ends flush with the body. */
+	function placeMenus() {
+		if (!bodyElement || !toolbarShellElement) return;
+		menusOpenUp =
+			bodyElement.getBoundingClientRect().bottom - toolbarShellElement.getBoundingClientRect().bottom > 1;
+	}
 
 	// Blast radius of the destructive actions on this message, since the confirmations always
 	// state the real numbers. (Lazy deriveds: only computed while a menu/editor shows them.)
@@ -200,6 +212,7 @@
 	}
 
 	function handleDeleteClick() {
+		placeMenus();
 		showDeleteMenu = true;
 	}
 
@@ -228,6 +241,7 @@
 			await messageStore.retryMessageResponse(message.id, 'replace');
 			return;
 		}
+		placeMenus();
 		showRegenerateMenu = true;
 	}
 
@@ -544,7 +558,7 @@
 				/>
 			{/if}
 
-			<div class="message-body">
+			<div class="message-body" bind:this={bodyElement}>
 				<div class="message-rail {isUser ? 'message-rail-user' : 'message-rail-assistant'}">
 					<div class="message-bubble-shell {isUser ? 'message-bubble-shell-user' : 'message-bubble-shell-assistant'}">
 						<!-- data-message-card: the handle MessageList throws the arrival glow around.
@@ -672,6 +686,8 @@
 					<div
 						class="message-toolbar-shell {isUser ? 'message-toolbar-shell-user' : 'message-toolbar-shell-assistant'}"
 						class:message-toolbar-shell-sticky={floatingActions}
+						class:message-toolbar-menus-up={menusOpenUp}
+						bind:this={toolbarShellElement}
 					>
 						<div class="message-toolbar {isUser ? 'justify-end' : 'justify-start'}">
 							<div
@@ -888,7 +904,10 @@
 											<button
 												type="button"
 												class="opening-btn"
-												onclick={() => (openingPopoverOpen = true)}
+												onclick={() => {
+													placeMenus();
+													openingPopoverOpen = true;
+												}}
 												disabled={messageStore.isStreaming}
 												aria-label="Write another opening scene"
 												title="Write another opening scene"
@@ -1353,10 +1372,9 @@
 		z-index: 3;
 	}
 
-	/* A stuck toolbar sits on the bottom edge of the view, so its menus and the opening panel open
-	   upward, over the card. */
-	.message-toolbar-shell-sticky .message-menu,
-	.message-toolbar-shell-sticky :global(.opening-panel) {
+	/* Set by placeMenus only while the toolbar is stuck to the bottom edge of the view. */
+	.message-toolbar-menus-up .message-menu,
+	.message-toolbar-menus-up :global(.opening-panel) {
 		top: auto;
 		bottom: 100%;
 		margin-top: 0;
