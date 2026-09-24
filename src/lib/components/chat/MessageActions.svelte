@@ -148,6 +148,7 @@
 		color: var(--color-text-secondary);
 		display: inline-flex;
 		align-items: center;
+		justify-content: center;
 		gap: var(--msg-action-gap, 0.3rem);
 		font-family: var(--font-ui);
 		font-size: 0.68rem;
