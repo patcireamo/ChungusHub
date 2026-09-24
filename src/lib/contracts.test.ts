@@ -1537,6 +1537,18 @@ describe('anchored tips (architecture/ui-shell-settings.md)', () => {
 	});
 });
 
+describe('keep actions in view (architecture/chat-sessions.md)', () => {
+	// The opening panel's styles are its own, so the stuck toolbar reaches it by class name. A
+	// renamed panel drops out of the upward rule and opens off screen under a stuck toolbar.
+	test('the upward rule names the opening panel by its real class', () => {
+		const message = read('src', 'lib', 'components', 'chat', 'Message.svelte');
+		const popover = read('src', 'lib', 'components', 'chat', 'OpeningScenePopover.svelte');
+		const named = scan(message, /\.message-toolbar-shell-sticky :global\(\.([\w-]+)\)/g, 'global classes under the sticky toolbar');
+		const panel = scan(popover, /bind:this=\{panelElement\} class="([\w-]+)/g, 'opening panel class');
+		expect(named).toEqual(panel);
+	});
+});
+
 describe('character fields (architecture/library.md #1, architecture/macros.md #1)', () => {
 	// CHARACTER_FIELD_MACROS now derives from PERMANENT_TRAITS, so resolution can't drift.
 	// The macro REFERENCE is still hand-written, and a field whose macro is missing there

@@ -1353,8 +1353,10 @@
 		z-index: 3;
 	}
 
-	/* A stuck toolbar sits on the bottom edge of the view, so its menus open upward, over the card. */
-	.message-toolbar-shell-sticky .message-menu {
+	/* A stuck toolbar sits on the bottom edge of the view, so its menus and the opening panel open
+	   upward, over the card. */
+	.message-toolbar-shell-sticky .message-menu,
+	.message-toolbar-shell-sticky :global(.opening-panel) {
 		top: auto;
 		bottom: 100%;
 		margin-top: 0;

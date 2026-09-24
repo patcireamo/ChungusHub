@@ -27,9 +27,20 @@
 
 	let direction = $state('');
 	let boxElement = $state<HTMLTextAreaElement | undefined>(undefined);
+	let panelElement = $state<HTMLDivElement | undefined>(undefined);
 
 	$effect(() => {
-		if (open) boxElement?.focus();
+		if (open) boxElement?.focus({ preventScroll: true });
+	});
+
+	// The trigger can be the transcript's last line, and the click-away layer stops a scroll
+	// from reaching the panel by hand. Observed, not scrolled once: the box grows as it is typed in.
+	$effect(() => {
+		if (!panelElement) return;
+		const panel = panelElement;
+		const observer = new ResizeObserver(() => panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+		observer.observe(panel);
+		return () => observer.disconnect();
 	});
 
 	function submit() {
@@ -70,7 +81,7 @@
 		tabindex="-1"
 		aria-label="Close"
 	></div>
-	<div class="opening-panel surface-float slide-up align-{align}" style="box-shadow: var(--shadow-md);">
+	<div bind:this={panelElement} class="opening-panel surface-float slide-up align-{align}" style="box-shadow: var(--shadow-md);">
 		<textarea
 			class="opening-box"
 			rows="2"
