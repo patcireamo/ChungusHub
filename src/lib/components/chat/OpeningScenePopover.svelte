@@ -14,16 +14,19 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import { autoResize } from '$lib/actions/autoResize';
 	import { viewport } from '$lib/stores/viewport.svelte';
+	import { hangUnder, type HangTarget } from '$lib/actions/hangUnder';
 
 	interface Props {
 		open: boolean;
 		/** Which edge the panel hangs from, so it never opens off the side of the screen. */
 		align?: 'left' | 'right' | 'center';
+		/** Hang the panel under its trigger instead, measured; `align` then goes unused. */
+		hang?: HangTarget;
 		onClose: () => void;
 		onGenerate: (direction: string) => void;
 	}
 
-	let { open, align = 'left', onClose, onGenerate }: Props = $props();
+	let { open, align = 'left', hang, onClose, onGenerate }: Props = $props();
 
 	let direction = $state('');
 	let boxElement = $state<HTMLTextAreaElement | undefined>(undefined);
@@ -81,7 +84,7 @@
 		tabindex="-1"
 		aria-label="Close"
 	></div>
-	<div bind:this={panelElement} class="opening-panel surface-float slide-up align-{align}" style="box-shadow: var(--shadow-md);">
+	<div bind:this={panelElement} class="opening-panel surface-float slide-up align-{align}" use:hangUnder={hang} style="box-shadow: var(--shadow-md);">
 		<textarea
 			class="opening-box"
 			rows="2"

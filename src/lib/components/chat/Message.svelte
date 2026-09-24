@@ -18,6 +18,7 @@
 	import { themeStore } from '$lib/stores/theme.svelte';
 	import { renderMarkdown } from '$lib/utils/markdown';
 	import { renderedHtml } from '$lib/actions/renderedHtml';
+	import { hangUnder } from '$lib/actions/hangUnder';
 	import { copyText } from '$lib/utils/clipboard';
 	import { previewContinuation } from '$lib/utils/continuation';
 	import { expandSelfRefs } from '$lib/macros';
@@ -99,6 +100,9 @@
 	let regenerateMenuElement = $state<HTMLDivElement | undefined>(undefined);
 	let bodyElement = $state<HTMLDivElement | undefined>(undefined);
 	let toolbarShellElement = $state<HTMLDivElement | undefined>(undefined);
+	let deleteButton = $state<HTMLButtonElement | undefined>(undefined);
+	let regenerateButton = $state<HTMLButtonElement | undefined>(undefined);
+	let openingButton = $state<HTMLButtonElement | undefined>(undefined);
 	// Measured at the press and held while the menu is open, so it never flips under the reader.
 	let menusOpenUp = $state(false);
 
@@ -705,6 +709,8 @@
 									{showContinue}
 									onBranch={handleBranchClick}
 									showBranch
+									bind:deleteButton
+									bind:regenerateButton
 								/>
 
 								{#if showDeleteMenu}
@@ -725,6 +731,7 @@
 									></div>
 									<div
 										bind:this={deleteMenuElement}
+										use:hangUnder={{ trigger: deleteButton, column: toolbarShellElement }}
 										class="message-menu absolute top-full mt-2 w-72 surface-float rounded-[var(--radius-lg)] overflow-hidden z-20 slide-up"
 										style="box-shadow: var(--shadow-md);"
 									>
@@ -821,6 +828,7 @@
 									></div>
 									<div
 										bind:this={regenerateMenuElement}
+										use:hangUnder={{ trigger: regenerateButton, column: toolbarShellElement }}
 										class="message-menu absolute top-full mt-2 w-72 surface-float rounded-[var(--radius-lg)] overflow-hidden z-20 slide-up"
 										style="box-shadow: var(--shadow-md);"
 									>
@@ -902,6 +910,7 @@
 									{#if canWriteOpening}
 										<div class="opening-anchor">
 											<button
+												bind:this={openingButton}
 												type="button"
 												class="opening-btn"
 												onclick={() => {
@@ -916,6 +925,7 @@
 											</button>
 											<OpeningScenePopover
 												open={openingPopoverOpen}
+												hang={{ trigger: openingButton, column: toolbarShellElement }}
 												onClose={() => (openingPopoverOpen = false)}
 												onGenerate={handleGenerateOpening}
 											/>
@@ -1244,12 +1254,8 @@
 	.message-toolbar-shell {
 		margin-top: 0.2rem;
 		display: flex;
-		/* Anchor for the delete and regenerate menus. It has to be the shell and
-		   not the actions slot: the shell spans the whole message column, while
-		   the slot is a small box that slides along the toolbar as the branch
-		   pager comes and goes. A menu pinned to the slot's edge therefore hangs
-		   off the screen on a narrow viewport, in whichever direction the slot
-		   happens to be nearest -- which is what this anchor exists to stop. */
+		/* The box the delete and regenerate menus hang from: its edges are their top and bottom
+		   and its width is their cap. Across, hangUnder lines them up with their own button. */
 		position: relative;
 	}
 
@@ -1352,18 +1358,6 @@
 		max-width: 100%;
 	}
 
-	/* Which column edge each menu opens from. It follows whichever edge the
-	   toolbar was packed against, not the speaker: driving it from the same
-	   selectors that set justify-content is what keeps the two in step, so a
-	   chat style that moves the toolbar moves the menu with it in one place. */
-	.message-toolbar-shell-user .message-menu {
-		right: 0;
-	}
-
-	.message-toolbar-shell-assistant .message-menu {
-		left: 0;
-	}
-
 	/* Keep actions in view (Settings → Chat). z 3 clears the card (1) and its ring (2), which a
 	   stuck toolbar floats over. */
 	.message-toolbar-shell-sticky {
@@ -1450,12 +1444,6 @@
 		order: 2;
 	}
 
-	/* Toolbar is left-packed in this style, so the menu opens rightwards. */
-	:global([data-chat-style='flat']) .message-toolbar-shell-user .message-menu {
-		left: 0;
-		right: auto;
-	}
-
 	/* ===== Chat style: Portraits =====
 	   Forum-log look: every turn is a full-width flat card, both roles aligned
 	   left. The card is a two-column flex row: the portrait is the left column,
@@ -1512,12 +1500,6 @@
 
 	:global([data-chat-style='portrait']) .message-toolbar-shell-user .message-actions-slot {
 		order: 2;
-	}
-
-	/* Toolbar is left-packed in this style, so the menu opens rightwards. */
-	:global([data-chat-style='portrait']) .message-toolbar-shell-user .message-menu {
-		left: 0;
-		right: auto;
 	}
 
 	:global([data-chat-style='portrait']) .message-toolbar {
@@ -1579,12 +1561,6 @@
 
 	:global([data-chat-style='manuscript']) .message-toolbar-shell-user .message-actions-slot {
 		order: 2;
-	}
-
-	/* Toolbar is left-packed in this style, so the menu opens rightwards. */
-	:global([data-chat-style='manuscript']) .message-toolbar-shell-user .message-menu {
-		left: 0;
-		right: auto;
 	}
 
 	:global([data-chat-style='manuscript']) .message-toolbar {

@@ -75,6 +75,7 @@ Most of the suite is not integration testing at all. It works because subsystems
 | `utils/composer-transforms.ts` (transform message shapes, Impersonate's swapped seat) | `utils/composer-transforms.test.ts` | `services/composerTransformService.ts` |
 | `utils/text-diff.ts` | `utils/text-diff.test.ts` | none |
 | `utils/date.ts` | `utils/date.test.ts` | none |
+| `actions/hangUnder.ts` (`hangLeft`: which edge of its button a turn's menu takes, and how far it is pushed back on screen) | `actions/hangUnder.test.ts` | the action in the same file |
 | `debug/format.ts` (prompt-log sizing + request fields) | `debug/format.test.ts` | `debug/promptLog.svelte.ts` |
 | `server/llm/inline-reasoning.ts` | `server/llm/inline-reasoning.test.ts` | none |
 | `server/llm/net.ts` (what bounds a completion) | `server/llm/net.test.ts` | both provider implementations |

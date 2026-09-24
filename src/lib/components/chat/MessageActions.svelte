@@ -19,6 +19,9 @@
 		 *  said, a reply into a hand-written alternate you can swipe between. */
 		onBranch?: () => void;
 		showBranch?: boolean;
+		/** The two buttons that open a menu, which hangs under whichever one opened it. */
+		deleteButton?: HTMLButtonElement;
+		regenerateButton?: HTMLButtonElement;
 	}
 
 	let {
@@ -31,7 +34,9 @@
 		onContinue,
 		showContinue = false,
 		onBranch,
-		showBranch = false
+		showBranch = false,
+		deleteButton = $bindable(),
+		regenerateButton = $bindable()
 	}: Props = $props();
 
 	let justCopied = $state(false);
@@ -75,6 +80,7 @@
 
 	{#if showRegenerate && onRegenerate}
 		<button
+			bind:this={regenerateButton}
 			type="button"
 			class="action-btn"
 			onclick={onRegenerate}
@@ -113,6 +119,7 @@
 	{/if}
 
 	<button
+		bind:this={deleteButton}
 		type="button"
 		class="action-btn action-btn-danger"
 		onclick={onDelete}
