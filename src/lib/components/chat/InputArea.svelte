@@ -300,6 +300,22 @@
 	let totalContextTokens = $derived(Math.round((assembly?.breakdown.total ?? 0) * ratio));
 	let trimmedMessages = $derived(assembly?.trimmedMessages ?? 0);
 	let overBudget = $derived(assembly?.overBudget ?? false);
+	// Against the very budget the trim compares with, in the same base-estimate space, so the
+	// ring closes exactly where history starts being dropped. A zero budget has no room at all.
+	let contextFill = $derived(
+		assembly && promptTarget.contextBudget > 0
+			? Math.min(1, assembly.breakdown.total / promptTarget.contextBudget)
+			: 1
+	);
+	let promptRoom = $derived(Math.round(promptTarget.contextBudget * ratio));
+	let contextRingLabel = $derived(
+		`Prompt tokens: ~${totalContextTokens.toLocaleString()} of ${promptRoom.toLocaleString()}` +
+			(overBudget
+				? ', over the context size'
+				: trimmedMessages > 0
+					? `, ${trimmedMessages} older ${trimmedMessages === 1 ? 'message' : 'messages'} trimmed`
+					: '')
+	);
 
 	// ===== Persisted draft (per chat, survives reloads and device switches) =====
 
@@ -1364,14 +1380,14 @@
 							{/if}
 						</div>
 					{/if}
-
-					<div class="composer-feature-divider" aria-hidden="true"></div>
-
-					<ChatSetupChip />
 				</div>
 
-				<div class="composer-right-group">
-					{#if inputTokens > 0 || totalContextTokens > 0}
+				<!-- Positioning context for the setup panel (ChatSetupChip): anchored to the chip
+				     itself, a right-aligned panel runs off a narrow screen by the ring's width. -->
+				<div class="composer-right-group relative">
+					<ChatSetupChip />
+
+					{#if totalContextTokens > 0}
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
 							class="token-anchor"
@@ -1381,37 +1397,35 @@
 							onfocusin={() => (tokenPopupFocused = true)}
 							onfocusout={() => (tokenPopupFocused = false)}
 						>
+							<!-- Trimming drops the OLDEST live turns, and turns that are live are by
+							     definition not covered by a memory summary, so a silent trim is the one
+							     way story text leaves the prompt with nothing recalling it. The ring's
+							     colour says it without the popover being opened. -->
 							<button
 								type="button"
-								class="token-trigger"
-								class:is-trimmed={trimmedMessages > 0 || overBudget}
-								aria-label="Show token usage breakdown"
+								class="composer-icon-btn context-ring"
+								class:composer-icon-btn--active={tokenPopupOpen}
+								class:is-trimmed={trimmedMessages > 0}
+								class:is-over={overBudget}
+								aria-label={contextRingLabel}
 								aria-expanded={tokenPopupPinned}
 								onclick={() => (tokenPopupPinned = !tokenPopupPinned)}
 							>
-								{#if inputTokens > 0}
-									<span>{inputTokens} input</span>
-								{/if}
-								{#if totalContextTokens > 0}
-									<span>~{totalContextTokens.toLocaleString()} total</span>
-								{/if}
-								<!-- Trimming drops the OLDEST live turns, and turns that are live are by
-								     definition not covered by a memory summary, so a silent trim is the one
-								     way story text leaves the prompt with nothing recalling it. It cannot
-								     live only inside a popover nobody opened. -->
-								{#if trimmedMessages > 0 || overBudget}
-									<span
-										class="inline-flex"
-										title={overBudget
-											? 'Prompt exceeds the context size even with all history trimmed'
-											: `${trimmedMessages} older ${trimmedMessages === 1 ? 'message is' : 'messages are'} being dropped to fit the context size`}
-									>
-										<Icon name="warning" class="w-3 h-3" />
-									</span>
-								{/if}
+								<svg viewBox="0 0 20 20" class="w-4 h-4" aria-hidden="true">
+									<circle class="context-ring-track" cx="10" cy="10" r="7.5" />
+									<circle
+										class="context-ring-fill"
+										cx="10"
+										cy="10"
+										r="7.5"
+										pathLength="100"
+										stroke-dasharray="{contextFill * 100} 100"
+										transform="rotate(-90 10 10)"
+									/>
+								</svg>
 							</button>
 
-							{#if tokenPopupOpen && totalContextTokens > 0}
+							{#if tokenPopupOpen}
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
 								<div
 									class="token-popup surface-float"
@@ -1480,9 +1494,15 @@
 										</div>
 									{/if}
 
-									<div class="token-total">
+									<div
+										class="token-total"
+										title="Out of the room left for the prompt: the context size, less the reply's share and a safety margin"
+									>
 										<span>Total context</span>
-										<span class="token-total-val">~{totalContextTokens.toLocaleString()}</span>
+										<span>
+											<span class="token-total-val">~{totalContextTokens.toLocaleString()}</span>
+											<span class="token-total-room">/ {promptRoom.toLocaleString()}</span>
+										</span>
 									</div>
 									{#if inputTokens > 0}
 										<div class="token-total token-total-sub">
@@ -1665,9 +1685,9 @@
 		color: var(--color-text-secondary);
 	}
 
-	/* Nowrap on purpose: with wrap, flexbox drops the whole right group to a second
-	   line (where space-between lands it flush left, pushing the token popup
-	   off-screen) before letting the feature group wrap internally. */
+	/* Tools on the left, what the story is running on and how full its prompt is on the
+	   right. Nowrap on purpose: the setup chip's label is the one thing on this row that
+	   yields, so every button keeps its size and its line at any width. */
 	.composer-meta {
 		padding-top: 0.45rem;
 		border-top: 1px solid var(--color-border-raised);
@@ -1681,8 +1701,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0.25rem;
-		min-width: 0;
-		flex-wrap: wrap;
+		flex-shrink: 0;
 	}
 
 	/* The dropdown anchor must be a flex box: a block wrapper around an inline-flex
@@ -1730,20 +1749,12 @@
 		cursor: not-allowed;
 	}
 
-	.composer-feature-divider {
-		width: 1px;
-		height: 1.15rem;
-		margin: 0 0.2rem;
-		background: var(--color-border-raised);
-		flex-shrink: 0;
-	}
-
 	.composer-right-group {
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.25rem;
 		justify-content: flex-end;
-		flex-shrink: 0;
+		min-width: 0;
 	}
 
 	.composer-dropdown {
@@ -1813,28 +1824,39 @@
 		background: var(--color-accent);
 	}
 
-	.token-trigger {
-		height: 1.75rem;
-		padding: 0 0.52rem;
-		border: 1px solid var(--color-border-subtle);
-		border-radius: var(--radius-sm);
-		background: color-mix(in srgb, var(--color-bg-tertiary) 70%, transparent);
-		display: inline-flex;
-		align-items: center;
-		gap: 0.28rem;
-		font-family: var(--font-ui);
-		font-size: 0.67rem;
-		color: var(--color-text-muted);
-		cursor: pointer;
+	.token-anchor {
+		display: flex;
+		flex-shrink: 0;
 	}
-	/* History being dropped is the one prompt change with no other tell on screen. */
-	.token-trigger.is-trimmed {
+
+	.context-ring-track,
+	.context-ring-fill {
+		fill: none;
+		stroke-width: 2.5;
+	}
+
+	.context-ring-track {
+		stroke: var(--color-border-raised);
+	}
+
+	.context-ring-fill {
+		stroke: currentColor;
+		stroke-linecap: round;
+		transition: stroke-dasharray 240ms ease;
+	}
+
+	/* History being dropped is the one prompt change with no other tell on screen, so the
+	   colour holds through hover. Listed after .composer-icon-btn so equal specificity wins. */
+	.context-ring.is-trimmed,
+	.context-ring.is-trimmed:hover {
 		color: var(--color-warning);
 		border-color: color-mix(in srgb, var(--color-warning) 45%, transparent);
 	}
 
-	.token-trigger:hover {
-		color: var(--color-text-primary);
+	.context-ring.is-over,
+	.context-ring.is-over:hover {
+		color: var(--color-error);
+		border-color: color-mix(in srgb, var(--color-error) 45%, transparent);
 	}
 
 	/* Portaled to <body>, fixed off the trigger's box. That puts it above every fixed
@@ -1946,6 +1968,11 @@
 	.token-total-val {
 		font-weight: 720;
 		color: var(--color-text-primary);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.token-total-room {
+		color: var(--color-text-muted);
 		font-variant-numeric: tabular-nums;
 	}
 

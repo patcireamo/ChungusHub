@@ -499,8 +499,10 @@
 
 {#if chat}
 	<!-- flex, not a bare block: a block wrapper around the button would reserve baseline
-	     descender space under it and float the chip above the buttons it sits beside. -->
-	<div class="relative flex" bind:this={menuRef}>
+	     descender space under it and float the chip above the buttons it sits beside.
+	     Deliberately not `relative`: the panel is placed against the composer's right group
+	     (InputArea), whose edge is the screen's on a phone. -->
+	<div class="flex min-w-0" bind:this={menuRef}>
 		<button
 			type="button"
 			class="setup-chip"
@@ -521,7 +523,7 @@
 		</button>
 
 		{#if open}
-			<div role="menu" class="setup-panel absolute bottom-full left-0 mb-2 z-20 surface-float rounded-lg shadow-md">
+			<div role="menu" class="setup-panel absolute bottom-full right-0 mb-2 z-20 surface-float rounded-lg shadow-md">
 				<!-- One header for both levels: the panel's title, or the category drilled into
 				     and the way back out. -->
 				<div class="setup-head" class:is-root={!active}>
@@ -695,6 +697,7 @@
 	   misalignment rather than as a different kind of control. */
 	.setup-chip {
 		height: 1.9rem;
+		min-width: 0;
 		max-width: 13rem;
 		/* Tighter on the portrait's side: a circle carries its own edge, so equal padding
 		   reads as a gap. */
