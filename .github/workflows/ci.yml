@@ -39,6 +39,10 @@ jobs:
       # The Windows runner's disk is slow enough that a test writing a real database takes an
       # order of magnitude longer here than on a development machine, so bun's 5s default
       # times out work that is not stuck at all. Something genuinely hung still fails, later.
+      # On Windows, Bun's regex JIT segfaults the run partway through contracts.test.ts
+      # (architecture/testing.md); the interpreter costs the suite about a second.
       - run: bun test --timeout 30000
+        env:
+          BUN_JSC_useRegExpJIT: ${{ runner.os == 'Windows' && 'false' || 'true' }}
 
       - run: bun run build
