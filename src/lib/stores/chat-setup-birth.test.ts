@@ -90,11 +90,15 @@ mock.module('$lib/services/database', () => ({
 		insertMessage: async (message: Record<string, unknown>) => {
 			server.messages.push(copy(message));
 		},
-		getMessagesDelta: async (chatId: string) => ({
-			rev: 1,
-			full: true,
-			messages: server.messages.filter((m) => m.chatId === chatId).map(copy)
-		}),
+		getMessagesDelta: async (chatId: string) =>
+			server.chats.has(chatId)
+				? {
+						rev: 1,
+						chat: copy(server.chats.get(chatId)!),
+						full: true,
+						messages: server.messages.filter((m) => m.chatId === chatId).map(copy)
+					}
+				: null,
 		getLastPersonaByChat: async () => ({}),
 
 		getAllLibraryEntries: async () => server.entries.map(copy),

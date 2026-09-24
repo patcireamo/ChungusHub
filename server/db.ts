@@ -1365,17 +1365,18 @@ class ServerDatabase {
 	 * and a `sinceRev` AHEAD of the chat answers full too rather than guessing: the only way
 	 * a client gets ahead is a database swapped under it (a restore), and its cache describes
 	 * rows this database never held. Null when the chat itself is gone.
+	 *
+	 * The chat row rides along from the same read: a path is its leaf walked through these
+	 * rows, and a leaf read apart from them can name a turn a delete has already taken.
 	 */
 	getMessagesDelta(chatId: string, sinceRev: number | null): unknown {
 		return this.inTransaction(() => {
-			const chat = this.select<{ messages_rev: number }[]>(
-				'SELECT messages_rev FROM chats WHERE id = ?',
-				[chatId]
-			)[0];
-			if (!chat) return null;
-			const rev = chat.messages_rev;
+			const row = this.select<Record<string, unknown>[]>('SELECT * FROM chats WHERE id = ?', [chatId])[0];
+			if (!row) return null;
+			const chat = this.mapChat(row);
+			const rev = row.messages_rev as number;
 			if (sinceRev === null || sinceRev > rev) {
-				return { rev, full: true, messages: this.getMessagesByChat(chatId) };
+				return { rev, chat, full: true, messages: this.getMessagesByChat(chatId) };
 			}
 			const upserts = this.select<Record<string, unknown>[]>(
 				'SELECT * FROM messages WHERE chat_id = ? AND rev > ?',
@@ -1385,7 +1386,7 @@ class ServerDatabase {
 				'SELECT message_id FROM message_tombstones WHERE chat_id = ? AND rev > ?',
 				[chatId, sinceRev]
 			).map((r) => r.message_id);
-			return { rev, full: false, upserts, deletedIds };
+			return { rev, chat, full: false, upserts, deletedIds };
 		});
 	}
 

@@ -24,13 +24,16 @@ type Delta =
 	| { rev: number; full: false; upserts: unknown[]; deletedIds: string[] };
 
 /** Deltas the fake server owes, one entry per call, each settled by hand so the test
- *  decides which read comes back first. */
+ *  decides which read comes back first. The chat row is taken when the call arrives,
+ *  as the server's one read takes it. */
 let owed: { resolve: (delta: Delta) => void }[] = [];
 
 const CHAT = { id: 'chat-1', title: 'Overlap', activeLeafId: 'reply', rootMessageId: 'greeting' };
 /** The chat row as the server currently holds it. Moved between reads to model a swipe,
  *  which changes this row and no message row at all. */
 let serverChat = { ...CHAT };
+/** A chat row read on its own, on the far side of a write from the rows. Null reads live. */
+let chatReadApart: typeof serverChat | null = null;
 
 /**
  * Bun's module registry is process-wide and one run loads every test file into it, so a stub
@@ -56,8 +59,11 @@ afterAll(() => {
 mock.module('$lib/services/database', () => ({
 	...realDatabase,
 	db: {
-		getChat: async () => ({ ...serverChat }),
-		getMessagesDelta: () => new Promise<Delta>((resolve) => owed.push({ resolve })),
+		getChat: async () => ({ ...(chatReadApart ?? serverChat) }),
+		getMessagesDelta: () => {
+			const chat = { ...serverChat };
+			return new Promise((resolve) => owed.push({ resolve: (delta: Delta) => resolve({ ...delta, chat }) }));
+		},
 		getAllChats: async () => [{ ...serverChat }]
 	}
 }));
@@ -88,6 +94,7 @@ const EDITED_USER = row('user', 'greeting', 'user', 'rewritten');
 beforeEach(() => {
 	owed = [];
 	serverChat = { ...CHAT };
+	chatReadApart = null;
 	chatStore.activeChatId = CHAT.id;
 	chatStore.currentChatState = {
 		chat: { ...CHAT },
@@ -191,5 +198,42 @@ describe('overlapping transcript loads', () => {
 
 		expect((await fresh).find((m) => m.id === 'user')!.content).toBe('rewritten');
 		expect(ids()).toEqual(['greeting', 'user']);
+	});
+});
+
+/** Deleting the turn being read retreats the leaf on the server. Every step between that
+ *  write and the next load is a frame, and an empty path draws as an empty chat. */
+describe('a delete that takes the leaf', () => {
+	const DELETED_REPLY: Delta = { rev: 6, full: false, upserts: [], deletedIds: ['reply'] };
+	const pathIds = () => chatStore.currentChatState!.activePath.map((m) => m.id);
+
+	test('a mid-delete refresh leaves the transcript alone, and the load moves it once', async () => {
+		serverChat = { ...CHAT, activeLeafId: 'user' };
+
+		const fresh = chatStore.freshMessages(CHAT.id);
+		await settle();
+		owed[0].resolve(DELETED_REPLY);
+		expect((await fresh).map((m) => m.id)).toEqual(['greeting', 'user']);
+		expect(pathIds()).toEqual(['greeting', 'user', 'reply']);
+		expect(chatStore.currentChatState!.messagesRev).toBe(5);
+
+		const load = chatStore.loadChatState(CHAT.id);
+		await settle();
+		owed[1].resolve(DELETED_REPLY);
+		await load;
+		expect(pathIds()).toEqual(['greeting', 'user']);
+		expect(chatStore.currentChatState!.messagesRev).toBe(6);
+	});
+
+	test('a load draws its path from the chat row read with its rows', async () => {
+		serverChat = { ...CHAT, activeLeafId: 'user' };
+		chatReadApart = { ...CHAT };
+
+		const load = chatStore.loadChatState(CHAT.id);
+		await settle();
+		owed[0].resolve(DELETED_REPLY);
+		await load;
+
+		expect(pathIds()).toEqual(['greeting', 'user']);
 	});
 });

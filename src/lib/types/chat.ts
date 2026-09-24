@@ -361,10 +361,11 @@ export interface ChatState {
 }
 
 /** What changed in a chat after the rev the client already holds, or the whole transcript
- *  when there is no usable baseline (`sinceRev` null, or a rev this database never issued). */
+ *  when there is no usable baseline (`sinceRev` null, or a rev this database never issued).
+ *  `chat` is the row as it stood in that same read, so its leaf is always among the rows. */
 export type MessagesDelta =
-	| { rev: number; full: true; messages: Message[] }
-	| { rev: number; full: false; upserts: Message[]; deletedIds: string[] };
+	| { rev: number; chat: Chat; full: true; messages: Message[] }
+	| { rev: number; chat: Chat; full: false; upserts: Message[]; deletedIds: string[] };
 
 /** The generation in flight, and the chat that owns it.
  *

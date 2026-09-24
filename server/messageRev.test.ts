@@ -80,9 +80,10 @@ function addMessage(chatId: string, parentId: string | null, role: string, conte
 	return id;
 }
 
-type Delta =
+type Delta = { chat: { activeLeafId: string | null } } & (
 	| { rev: number; full: true; messages: { id: string }[] }
-	| { rev: number; full: false; upserts: { id: string }[]; deletedIds: string[] };
+	| { rev: number; full: false; upserts: { id: string }[]; deletedIds: string[] }
+);
 
 const delta = (chatId: string, since: number | null): Delta | null => serverDb.getMessagesDelta(chatId, since);
 
@@ -151,6 +152,18 @@ describe('getMessagesDelta', () => {
 		if (d.full) throw new Error('unreachable');
 		expect(d.upserts).toEqual([]);
 		expect(new Set(d.deletedIds)).toEqual(new Set([user, reply, child]));
+	});
+
+	test('the answer carries the chat row from the same read, leaf already off the deleted turn', () => {
+		const { chatId, user, reply } = seedChain();
+		const base = delta(chatId, null)!.rev;
+
+		serverDb.deleteMessageOnly(reply);
+		const d = delta(chatId, base)!;
+		if (d.full) throw new Error('unreachable');
+		expect(d.deletedIds).toEqual([reply]);
+		// The client draws its path from this leaf through these rows, so the two must agree.
+		expect(d.chat.activeLeafId).toBe(user);
 	});
 
 	test('metadata writes move their row: branch label, sprite label, persona, continuation', () => {
