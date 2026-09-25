@@ -12,7 +12,6 @@ import { viewport } from '$lib/stores/viewport.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
 
 export interface OpeningComposerHost {
-	/** The box itself. Focused inside the press, which is the only focus iOS raises its keyboard for. */
 	box: HTMLTextAreaElement;
 	/** Where a star from a door lands. */
 	landing: HTMLElement;
@@ -42,15 +41,15 @@ class OpeningComposerStore {
 			toastStore.info(refused);
 			return;
 		}
-		// The flight bridges the distance between a door and the box on a pointer screen. A touch
-		// press has to focus the box before it returns, so there it turns at once.
+		// The flight bridges the distance between a door and the box on a pointer screen; on touch
+		// the box turns at once and waits for a tap, so the keyboard never jumps up on its own.
 		const still =
 			document.documentElement.dataset.motion === 'reduced' ||
 			matchMedia('(prefers-reduced-motion: reduce)').matches;
 		const fly = door && !viewport.isTouch && !still;
 		if (!fly) {
 			this.active = true;
-			host.box.focus();
+			if (!viewport.isTouch) host.box.focus();
 			return;
 		}
 		this.flying = true;

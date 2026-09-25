@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
-	import { fade, slide } from 'svelte/transition';
+	import { fade } from 'svelte/transition';
 	import { countTokens, tokenCalibration } from '$lib/tokenizer';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import ChatSetupChip from './ChatSetupChip.svelte';
@@ -1150,22 +1150,6 @@
 					onPick={pickCommand}
 				/>
 			{/if}
-			{#if openingMode}
-				<div class="composer-opening-head" transition:slide={{ duration: 200 }}>
-					<Icon name="sparkles" class="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
-					<span class="composer-opening-title">Opening Scene</span>
-					<span class="composer-opening-hint">Leave it empty for a surprise</span>
-					<button
-						type="button"
-						class="composer-opening-close"
-						onclick={() => openingComposer.close()}
-						aria-label="Back to your message"
-						title="Back to your message"
-					>
-						<Icon name="x" class="w-3.5 h-3.5" strokeWidth={2} />
-					</button>
-				</div>
-			{/if}
 			{#if !openingMode && (pendingImages.length || uploadingImages > 0)}
 				<div class="attach-strip">
 					{#each pendingImages as img (img.path)}
@@ -1197,7 +1181,7 @@
 					oninput={handleComposerInput}
 					onpaste={openingMode ? undefined : handlePaste}
 					aria-label={openingMode ? 'Direction for the opening scene' : undefined}
-				placeholder={openingMode ? 'What should the scene be about?' : 'Type your message…'}
+				placeholder={openingMode ? 'Describe the scene…' : 'Type your message…'}
 				disabled={draftLocked || transformOpen}
 					rows="1"
 					class="composer-textarea bg-transparent font-body text-text-primary resize-none
@@ -1250,8 +1234,26 @@
 				</div>
 			</div>
 
+			<!-- The tool row and the opening scene's row share one cell and cross-fade, so the box never
+			     changes height as it turns: stacked, the shell's gap would drop out under the reader. -->
+			<div class="composer-foot">
+			{#if openingMode}
+				<div class="composer-opening-foot" transition:fade={{ duration: 180 }}>
+					<Icon name="sparkles" class="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
+					<span class="composer-opening-title">Opening Scene</span>
+					<button
+						type="button"
+						class="composer-icon-btn composer-opening-close"
+						onclick={() => openingComposer.close()}
+						aria-label="Back to your message"
+						title="Back to your message"
+					>
+						<Icon name="x" class="w-4 h-4" />
+					</button>
+				</div>
+			{/if}
 			{#if !openingMode}
-			<div class="composer-meta" transition:slide={{ duration: 200 }}>
+			<div class="composer-meta" transition:fade={{ duration: 180 }}>
 				<div class="composer-feature-group">
 					<div class="composer-menu-wrap relative">
 						<button
@@ -1618,6 +1620,7 @@
 				</div>
 			</div>
 			{/if}
+			</div>
 		</div>
 	</div>
 </div>
@@ -1939,11 +1942,23 @@
 		}
 	}
 
-	.composer-opening-head {
+	.composer-foot {
+		display: grid;
+	}
+
+	.composer-foot > .composer-meta,
+	.composer-foot > .composer-opening-foot {
+		grid-area: 1 / 1;
+	}
+
+	/* The tool row's rule and spacing, and a button of its recipe, so the two rows stand the same
+	   height and the cross-fade moves nothing. */
+	.composer-opening-foot {
 		display: flex;
 		align-items: center;
 		gap: 0.4rem;
-		padding: 0.1rem 0.2rem 0 0.35rem;
+		padding: 0.45rem 0 0 0.35rem;
+		border-top: 1px solid var(--color-border-raised);
 		color: var(--color-accent);
 		min-width: 0;
 	}
@@ -1955,36 +1970,11 @@
 		white-space: nowrap;
 	}
 
-	.composer-opening-hint {
-		flex: 1;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-family: var(--font-ui);
-		font-size: 0.72rem;
-		color: var(--color-text-muted);
-	}
-
 	.composer-opening-close {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 1.6rem;
-		height: 1.6rem;
-		border: none;
-		border-radius: var(--radius-full);
-		background: transparent;
-		color: var(--color-text-muted);
-		cursor: pointer;
-		transition: color 120ms ease, background-color 120ms ease;
+		margin-left: auto;
 	}
 
-	.composer-opening-close:hover {
-		color: var(--color-text-primary);
-		background: color-mix(in srgb, var(--color-bg-tertiary) 86%, transparent);
-	}
-
+	/* The Send button's height at every size: a taller one would grow the box as it turns. */
 	.composer-opening-go {
 		display: inline-flex;
 		align-items: center;
@@ -2006,17 +1996,6 @@
 
 	.composer-opening-go:hover {
 		background: var(--color-accent-hover);
-	}
-
-	@media (pointer: coarse) {
-		.composer-opening-close {
-			width: 2.4rem;
-			height: 2.4rem;
-		}
-
-		.composer-opening-go {
-			height: 2.6rem;
-		}
 	}
 
 	/* ===== Steering trigger (the panel's own styles live in SteeringPopover) ===== */
