@@ -391,23 +391,14 @@
 				nearBottom = true;
 				hasUnseen = false;
 			} else if (isNewMessage && !isExtension) {
-				// Branch switch. The pin as it stood BEFORE the swap is part of the reading
-				// position, and this effect still sees it: it runs before any scroll event the
-				// swap itself fires. A reader at the bottom is reading the newest turn, which is
-				// exactly the turn a swipe replaces, and the control they pressed sits at that
-				// turn's bottom. Holding their offset instead measures a longer alternative as
-				// far from the bottom and strands them mid-message with the controls below it.
-				if (nearBottom) {
-					snapToBottom();
-				} else {
-					// Scrolled up: keep the reading position, and re-baseline the pin from real
-					// geometry, because the content under the viewport just changed wholesale, so
-					// the stale nearBottom from the previous branch must not let the next stream
-					// token yank the view down.
-					const dist = listElement.scrollHeight - listElement.scrollTop - listElement.clientHeight;
-					nearBottom = dist <= NEAR_BOTTOM_PX;
-				}
-				// Written on both paths: the swap can shrink the content and let the browser clamp
+				// Branch switch: never scrolled, pinned or not. A sibling with more turns below it
+				// would otherwise throw the reader to that branch's end, and they lose the turn they
+				// were swiping on. The pin is re-baselined from real geometry instead, because the
+				// content under the viewport just changed wholesale and a stale pin from the previous
+				// branch must not let the next stream token yank the view down.
+				const dist = listElement.scrollHeight - listElement.scrollTop - listElement.clientHeight;
+				nearBottom = dist <= NEAR_BOTTOM_PX;
+				// Written as well: the swap can shrink the content and let the browser clamp
 				// `scrollTop` by itself, and a clamp measured against a stale value reads as the
 				// user scrolling up, which drops the pin a frame later.
 				lastScrollTop = listElement.scrollTop;

@@ -1,3 +1,29 @@
+<script module lang="ts">
+	/**
+	 * A swipe to a sibling spans two instances: the pressed turn unmounts and its sibling mounts in
+	 * its place. So the page leaving is handed over as a picture, and the sibling slides it out
+	 * while its own page slides in. Claimed once, by the turn that takes the same slot.
+	 */
+	interface HandedPage {
+		slot: string;
+		fromId: string;
+		direction: 'prev' | 'next';
+		picture: HTMLElement;
+		height: number;
+		at: number;
+	}
+
+	let handedPage: HandedPage | null = null;
+
+	function takeHandedPage(slot: string, id: string): HandedPage | null {
+		const page = handedPage;
+		// Stale after a moment: a swipe the store refused never lands, and must not replay later.
+		if (!page || page.slot !== slot || page.fromId === id || performance.now() - page.at > 3000) return null;
+		handedPage = null;
+		return page;
+	}
+</script>
+
 <script lang="ts">
 	import { fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
@@ -99,6 +125,13 @@
 
 	const PAGE_TURN_MS = 240;
 
+	function stillMotion(): boolean {
+		return (
+			document.documentElement.dataset.motion === 'reduced' ||
+			matchMedia('(prefers-reduced-motion: reduce)').matches
+		);
+	}
+
 	function settlePage(page: HTMLElement, from: number, to: number) {
 		pageSettle?.cancel();
 		if (Math.abs(from - to) < 1) return;
@@ -123,10 +156,7 @@
 		{ direction }: { direction: 'in' | 'out' | 'both' }
 	) {
 		const turning = blank || (direction === 'out' ? pendingOpening : leavingBlank);
-		const still =
-			!turning ||
-			document.documentElement.dataset.motion === 'reduced' ||
-			matchMedia('(prefers-reduced-motion: reduce)').matches;
+		const still = !turning || stillMotion();
 		if (!still && pageElement?.contains(node)) {
 			const el = node as HTMLElement;
 			// Out of the flow as it leaves, so the card measures only the page coming in.
@@ -365,8 +395,43 @@
 	}
 
 	function handleBranchNavigate(direction: 'prev' | 'next') {
+		if (pageElement && !stillMotion()) {
+			const picture = pageElement.cloneNode(true) as HTMLElement;
+			// A picture, not a second copy of the story: nothing in it can be pressed or found.
+			picture.querySelectorAll('[data-search-text]').forEach((el) => el.removeAttribute('data-search-text'));
+			picture.setAttribute('aria-hidden', 'true');
+			picture.setAttribute('inert', '');
+			handedPage = { slot: pageSlot, fromId: message.id, direction, picture, height: pageElement.offsetHeight, at: performance.now() };
+		}
 		// Use store method to fetch fresh data and navigate (avoids stale allMessages race condition)
 		messageStore.navigateToSibling(message.id, direction);
+	}
+
+	// Siblings share a parent, so the parent names the slot a swipe lands in.
+	const pageSlot = $derived(`${message.chatId}:${message.parentId ?? 'root'}`);
+
+	$effect(() => {
+		const handed = pageElement ? takeHandedPage(pageSlot, message.id) : null;
+		if (handed && pageElement) swipeIn(pageElement, handed);
+	});
+
+	function swipeIn(page: HTMLElement, handed: HandedPage) {
+		// The row's own arrival fade would hide the page leaving; a swipe is its entrance.
+		page.closest('.message-row')?.getAnimations().forEach((a) => a.cancel());
+		const away = handed.direction === 'next' ? -36 : 36;
+		const incoming = [...page.children] as HTMLElement[];
+		const picture = handed.picture;
+		Object.assign(picture.style, { position: 'absolute', top: '0', left: '0', right: '0', pointerEvents: 'none' });
+		page.append(picture);
+		settlePage(page, handed.height, incoming.reduce((h, el) => Math.max(h, el.offsetHeight), 0));
+		const timing = { duration: PAGE_TURN_MS, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' };
+		picture
+			.animate([{ transform: 'translateX(0)', opacity: 1 }, { transform: `translateX(${away}px)`, opacity: 0 }], timing)
+			.finished.catch(() => {})
+			.finally(() => picture.remove());
+		for (const el of incoming) {
+			el.animate([{ transform: `translateX(${-away}px)`, opacity: 0 }, { transform: 'translateX(0)', opacity: 1 }], timing);
+		}
 	}
 
 	// ===== The keyboard on this turn =====
