@@ -1,4 +1,5 @@
 import { readSetting, writeSetting, registerSettingsReload } from '$lib/services/syncedSetting';
+import { libraryViewPrefs, personasViewPrefs } from '$lib/stores/browseViewPrefs.svelte';
 
 export type InputHistoryScope = 'global' | 'chat';
 
@@ -38,9 +39,6 @@ interface GeneralSettings {
 	 *  assistant's own settings page asks it inverted, "on top bar instead of floating
 	 *  icon", which is where somebody looking for it goes first. */
 	assistantLauncher: boolean;
-	/** Give the Library's Characters and Personas shelves a row naming what the open chat is
-	 *  played with, one press from that entry's editor. */
-	libraryOpenChatRow: boolean;
 	/** Split Settings on wide screens: the dock keeps the section list and pages
 	 *  open in a wide centered panel. Off = phone-style drill-down everywhere.
 	 *  Inert below dock widths (the panel is a single centered overlay there). */
@@ -78,7 +76,6 @@ const DEFAULT_SETTINGS: GeneralSettings = {
 	autoExpandReasoning: false,
 	personaSwitcher: false,
 	assistantLauncher: true,
-	libraryOpenChatRow: false,
 	settingsSplitView: false,
 	storyMapWheelPans: false,
 	welcomeSeen: false,
@@ -136,10 +133,6 @@ function normalize(raw: Partial<GeneralSettings> | null): GeneralSettings {
 			typeof raw?.assistantLauncher === 'boolean'
 				? raw.assistantLauncher
 				: DEFAULT_SETTINGS.assistantLauncher,
-		libraryOpenChatRow:
-			typeof raw?.libraryOpenChatRow === 'boolean'
-				? raw.libraryOpenChatRow
-				: DEFAULT_SETTINGS.libraryOpenChatRow,
 		settingsSplitView:
 			typeof raw?.settingsSplitView === 'boolean'
 				? raw.settingsSplitView
@@ -170,14 +163,23 @@ class GeneralSettingsStore {
 	followStream = $derived(this.settings.followStream);
 	autoExpandReasoning = $derived(this.settings.autoExpandReasoning);
 	assistantLauncher = $derived(this.settings.assistantLauncher);
-	libraryOpenChatRow = $derived(this.settings.libraryOpenChatRow);
 	settingsSplitView = $derived(this.settings.settingsSplitView);
 	storyMapWheelPans = $derived(this.settings.storyMapWheelPans);
 	welcomeSeen = $derived(this.settings.welcomeSeen);
 	assistantCostSeen = $derived(this.settings.assistantCostSeen);
 
 	async initialize(): Promise<void> {
-		this.settings = normalize(await readSetting<Partial<GeneralSettings> | null>(SETTINGS_KEY, null));
+		const raw = await readSetting<(Partial<GeneralSettings> & { libraryOpenChatRow?: unknown }) | null>(
+			SETTINGS_KEY,
+			null
+		);
+		// The Library shelves' old shared switch, carried to each shelf's own. `normalize` drops it,
+		// so it leaves the blob with the next save, and a failed carry is simply tried again.
+		if (typeof raw?.libraryOpenChatRow === 'boolean') {
+			await libraryViewPrefs.adoptOpenChatRow(raw.libraryOpenChatRow);
+			await personasViewPrefs.adoptOpenChatRow(raw.libraryOpenChatRow);
+		}
+		this.settings = normalize(raw);
 		registerSettingsReload(() => this.syncReload());
 	}
 
@@ -232,11 +234,6 @@ class GeneralSettingsStore {
 
 	setAssistantLauncher(enabled: boolean): void {
 		this.settings.assistantLauncher = enabled;
-		this.persist();
-	}
-
-	setLibraryOpenChatRow(enabled: boolean): void {
-		this.settings.libraryOpenChatRow = enabled;
 		this.persist();
 	}
 

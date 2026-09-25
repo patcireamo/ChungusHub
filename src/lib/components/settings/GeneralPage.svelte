@@ -33,7 +33,6 @@
 	let followStream = $derived(generalSettingsStore.followStream);
 	let autoExpandReasoning = $derived(generalSettingsStore.autoExpandReasoning);
 	let assistantLauncher = $derived(generalSettingsStore.assistantLauncher);
-	let libraryOpenChatRow = $derived(generalSettingsStore.libraryOpenChatRow);
 	let settingsSplitView = $derived(generalSettingsStore.settingsSplitView);
 	let storyMapWheelPans = $derived(generalSettingsStore.storyMapWheelPans);
 
@@ -234,23 +233,6 @@
 				checked={assistantLauncher}
 				onchange={(v) => generalSettingsStore.setAssistantLauncher(v)}
 				label="Floating assistant button"
-			/>
-		</div>
-	</section>
-
-	<section class="card" data-setting="library-open-chat">
-		<div class="card-head">
-			<span class="card-title">Library</span>
-			<InfoTip
-				text="A row above the browse bar on the Characters and Personas shelves: the character the open chat plays, and the persona it is played as. One press opens that entry, and the shelf under it is left exactly as it was."
-			/>
-		</div>
-		<div class="toggle-row" use:toggleRow>
-			<span class="slider-label">Show the open chat's character and persona</span>
-			<Toggle
-				checked={libraryOpenChatRow}
-				onchange={(v) => generalSettingsStore.setLibraryOpenChatRow(v)}
-				label="Show the open chat's character and persona"
 			/>
 		</div>
 	</section>

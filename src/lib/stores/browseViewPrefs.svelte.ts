@@ -21,6 +21,8 @@ interface BrowseViewState {
 	 *  same-named characters is told apart, and an install that hid them by surprise would
 	 *  read as art that failed to load. */
 	listPortraits: boolean;
+	/** A row above the browse bar naming what the open chat is played with on this shelf. */
+	openChatRow: boolean;
 }
 
 export const DEFAULTS: BrowseViewState = {
@@ -29,7 +31,8 @@ export const DEFAULTS: BrowseViewState = {
 	sort: 'newest',
 	perPage: 50,
 	listTags: false,
-	listPortraits: true
+	listPortraits: true,
+	openChatRow: false
 };
 
 const VIEW_MODES: ViewMode[] = ['grid', 'list', 'gallery'];
@@ -45,7 +48,8 @@ function normalize(raw: Partial<BrowseViewState> | null): BrowseViewState {
 	const listTags = typeof raw?.listTags === 'boolean' ? raw.listTags : DEFAULTS.listTags;
 	const listPortraits =
 		typeof raw?.listPortraits === 'boolean' ? raw.listPortraits : DEFAULTS.listPortraits;
-	return { viewMode, cardSize, sort, perPage, listTags, listPortraits };
+	const openChatRow = typeof raw?.openChatRow === 'boolean' ? raw.openChatRow : DEFAULTS.openChatRow;
+	return { viewMode, cardSize, sort, perPage, listTags, listPortraits, openChatRow };
 }
 
 class BrowseViewPrefs {
@@ -57,6 +61,7 @@ class BrowseViewPrefs {
 	perPage = $state<number>(DEFAULTS.perPage);
 	listTags = $state<boolean>(DEFAULTS.listTags);
 	listPortraits = $state<boolean>(DEFAULTS.listPortraits);
+	openChatRow = $state<boolean>(DEFAULTS.openChatRow);
 
 	constructor(key: string) {
 		this.#key = key;
@@ -65,6 +70,14 @@ class BrowseViewPrefs {
 	async initialize(): Promise<void> {
 		this.apply(normalize(await readSetting<Partial<BrowseViewState> | null>(this.#key, null)));
 		registerSettingsReload(() => this.syncReload());
+	}
+
+	/** Seeds `openChatRow` from the one switch both shelves shared before, unless this shelf
+	 *  already stored its own. Runs before `initialize`, while that old key still exists. */
+	async adoptOpenChatRow(value: boolean): Promise<void> {
+		const raw = await readSetting<Partial<BrowseViewState> | null>(this.#key, null);
+		if (typeof raw?.openChatRow === 'boolean') return;
+		await writeSetting(this.#key, { ...raw, openChatRow: value });
 	}
 
 	async syncReload(): Promise<void> {
@@ -78,6 +91,7 @@ class BrowseViewPrefs {
 		this.perPage = state.perPage;
 		this.listTags = state.listTags;
 		this.listPortraits = state.listPortraits;
+		this.openChatRow = state.openChatRow;
 	}
 
 	setViewMode(mode: ViewMode): void {
@@ -110,6 +124,11 @@ class BrowseViewPrefs {
 		this.persist();
 	}
 
+	setOpenChatRow(openChatRow: boolean): void {
+		this.openChatRow = openChatRow;
+		this.persist();
+	}
+
 	private persist(): void {
 		writeSetting(this.#key, {
 			viewMode: this.viewMode,
@@ -117,7 +136,8 @@ class BrowseViewPrefs {
 			sort: this.sort,
 			perPage: this.perPage,
 			listTags: this.listTags,
-			listPortraits: this.listPortraits
+			listPortraits: this.listPortraits,
+			openChatRow: this.openChatRow
 		} satisfies BrowseViewState);
 	}
 }

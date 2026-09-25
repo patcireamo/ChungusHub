@@ -10,7 +10,6 @@
 	import { importSillyTavernCard } from '$lib/services/sillyTavernImport';
 	import { createBookIndex } from '$lib/lorebook/identity';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
-	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -356,7 +355,7 @@
 	// The character of the chat behind the panel, resolved against the WHOLE library rather
 	// than the page on screen: a filter, a sort or a page is exactly what this steps over.
 	let chatCharacter = $derived.by(() => {
-		if (!generalSettingsStore.libraryOpenChatRow) return null;
+		if (!libraryViewPrefs.openChatRow) return null;
 		const characterId = chatStore.activeChat?.characterId;
 		if (!characterId) return null;
 		return (
@@ -849,8 +848,17 @@
 					</div>
 				</div>
 
-				{#if viewMode === 'list'}
-					<div class="brw-sec space-y-2.5">
+				<div class="brw-sec space-y-2.5">
+					<div class="flex items-center justify-between gap-2">
+						<span class="brw-sec-title">Show Chat's Character</span>
+						<Toggle
+							size="sm"
+							checked={libraryViewPrefs.openChatRow}
+							onchange={(v) => libraryViewPrefs.setOpenChatRow(v)}
+							label="Show the open chat's character above the shelf"
+						/>
+					</div>
+					{#if viewMode === 'list'}
 						<div class="flex items-center justify-between gap-2">
 							<span class="brw-sec-title">Show Portraits</span>
 							<Toggle
@@ -869,8 +877,8 @@
 								label="Show tags on each row"
 							/>
 						</div>
-					</div>
-				{/if}
+					{/if}
+				</div>
 
 				{#if viewMode === 'grid'}
 					<div class="brw-sec">

@@ -2,7 +2,6 @@
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { personaStore, LAST_PERSONA_REASON } from '$lib/stores/persona.svelte';
-	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 	import { chatPersonaEntry } from '$lib/utils/chat-setup';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { workspaceFocus } from '$lib/stores/workspaceFocus.svelte';
@@ -191,7 +190,7 @@
 	// true answer to a different question and would put a row here with no story behind it.
 	let chatPersona = $derived.by(() => {
 		const chat = chatStore.activeChat;
-		if (!generalSettingsStore.libraryOpenChatRow || !chat) return null;
+		if (!personasViewPrefs.openChatRow || !chat) return null;
 		return chatPersonaEntry(chat);
 	});
 
@@ -379,8 +378,17 @@
 				</div>
 			</div>
 
-			{#if viewMode === 'list'}
-				<div class="brw-sec">
+			<div class="brw-sec space-y-2.5">
+				<div class="flex items-center justify-between gap-2">
+					<span class="brw-sec-title">Show Chat's Persona</span>
+					<Toggle
+						size="sm"
+						checked={personasViewPrefs.openChatRow}
+						onchange={(v) => personasViewPrefs.setOpenChatRow(v)}
+						label="Show the open chat's persona above the shelf"
+					/>
+				</div>
+				{#if viewMode === 'list'}
 					<div class="flex items-center justify-between gap-2">
 						<span class="brw-sec-title">Show Portraits</span>
 						<Toggle
@@ -390,8 +398,8 @@
 							label="Show portraits on each row"
 						/>
 					</div>
-				</div>
-			{/if}
+				{/if}
+			</div>
 
 			{#if viewMode === 'grid'}
 				<div class="brw-sec">
