@@ -21,14 +21,37 @@ import type { PortraitFocus } from '$lib/utils/portrait-focus';
 
 /**
  * SillyTavern's selectiveLogic enum: how primary and secondary keys combine.
- * AND_ANY=0, NOT_ALL=1, NOT_ANY=2, AND_ALL=3.
+ * AND_ANY=0, NOT_ALL=1, NOT_ANY=2, AND_ALL=3. `glyph` is what the editors' Filter control
+ * offers it as.
  */
-export const LOREBOOK_LOGICS: { id: number; label: string; hint: string }[] = [
-	{ id: 0, label: 'AND ANY', hint: 'A primary key matches AND at least one secondary key matches.' },
-	{ id: 3, label: 'AND ALL', hint: 'A primary key matches AND every secondary key matches.' },
-	{ id: 2, label: 'NOT ANY', hint: 'A primary key matches AND none of the secondary keys match.' },
-	{ id: 1, label: 'NOT ALL', hint: 'A primary key matches AND not all secondary keys match.' }
+export const LOREBOOK_LOGICS: { id: number; label: string; glyph: string; hint: string }[] = [
+	{ id: 0, label: 'AND ANY', glyph: '＋ any of', hint: 'A primary key matches AND at least one secondary key matches.' },
+	{ id: 3, label: 'AND ALL', glyph: '＋ all of', hint: 'A primary key matches AND every secondary key matches.' },
+	{ id: 2, label: 'NOT ANY', glyph: '－ none of', hint: 'A primary key matches AND none of the secondary keys match.' },
+	{ id: 1, label: 'NOT ALL', glyph: '－ not all of', hint: 'A primary key matches AND not all secondary keys match.' }
 ];
+
+/**
+ * The one line explaining each entry knob. The entry row and the bulk editor both read these,
+ * so a knob is never explained two ways.
+ */
+export const LOREBOOK_ENTRY_TIPS = {
+	order: 'Lower is injected first.',
+	probability: 'Chance to fire · 100 = always.',
+	scanDepth: 'Recent messages this entry searches · 0 = the whole chat.',
+	scanFields:
+		'Text searched besides the chat: the cards in play, and the steering standing over this reply. Nothing picked = the chat alone.',
+	wokenBy:
+		'What may wake this entry: the story text, or the content of entries that already fired. A level stages that: the next one opens only once the level below it wakes nothing new.',
+	wakesOthers: "When off, this entry's own content is never re-read, so it cannot pull other entries in.",
+	triggers: 'Which generations this entry may join. Nothing picked = all of them.',
+	timing:
+		'After it fires it stays in for Sticky more replies, then sits out Cooldown of them. Delay holds it back until the chat has that many messages.',
+	group:
+		'Only one entry per label reaches a prompt, and several labels are comma-separated. A prioritized entry takes the slot first, Decide by matches narrows it to whichever matched most keys, and whatever is left goes to a weighted roll.',
+	placement:
+		'It joins the block the preset placed at {{lorebook}}, or rides inside the story as its own turn, that many turns back from the newest. Without {{chatHistory}} in the preset an at-depth entry falls back to the block.'
+} as const;
 
 // ===== how one key is matched =====
 
@@ -280,6 +303,34 @@ export function lorebookWokenBy(recursion: ResolvedRecursion): LorebookWokenBy {
 	return recursion.delayLevel > 0 ? 'entriesOnly' : 'both';
 }
 
+const WOKEN_BY_LABELS: Record<LorebookWokenBy, string> = {
+	both: 'The chat and other entries',
+	chatOnly: 'The chat only',
+	entriesOnly: 'Other entries only',
+	never: 'Never (SillyTavern)'
+};
+
+/**
+ * The readings a Woken by control offers, worded: the one list both the entry row and the bulk
+ * editor draw. An always-active entry has no keys to place, so it is offered two and its own
+ * wording for the default says what being always active already means. A reading the entry's
+ * nature has no option for arrived with an import, and naming it beats showing an empty
+ * control, the same way a foreign placement is named rather than hidden.
+ */
+export function lorebookWokenByOptions(
+	constant: boolean,
+	current?: LorebookWokenBy
+): { id: LorebookWokenBy; label: string }[] {
+	const offered: LorebookWokenBy[] = constant
+		? ['both', 'entriesOnly']
+		: ['both', 'chatOnly', 'entriesOnly'];
+	if (current && !offered.includes(current)) offered.push(current);
+	return offered.map((id) => ({
+		id,
+		label: id === 'both' && constant ? 'Nothing, it is always in' : WOKEN_BY_LABELS[id]
+	}));
+}
+
 // ===== where an entry lands =====
 
 /**
@@ -311,6 +362,12 @@ export const LOREBOOK_ROLES: { id: number; label: string; role: LorebookRole }[]
 	{ id: 0, label: 'System', role: 'system' },
 	{ id: 1, label: 'User', role: 'user' },
 	{ id: 2, label: 'Assistant', role: 'assistant' }
+];
+
+/** The two places this app has for an entry, worded as both editors offer them. */
+export const LOREBOOK_PLACEMENTS: { id: number; label: string }[] = [
+	{ id: LOREBOOK_POSITION_BLOCK, label: 'In the lorebook block' },
+	{ id: LOREBOOK_POSITION_AT_DEPTH, label: 'At a depth in the chat' }
 ];
 
 /** How far back an at-depth entry lands when it names no depth. SillyTavern's own default. */
@@ -366,6 +423,15 @@ export function firesOnTrigger(triggers: string[] | undefined, current: Lorebook
 	if (!triggers?.length) return true;
 	return TRIGGER_ALIASES[current].some((t) => triggers.includes(t));
 }
+
+/** The three windows an entry's own past opens, in the order both editors lay them out. */
+export const LOREBOOK_TIMED_FIELDS = [
+	{ field: 'sticky', label: 'Sticky' },
+	{ field: 'cooldown', label: 'Cooldown' },
+	{ field: 'delay', label: 'Delay' }
+] as const;
+
+export type LorebookTimedField = (typeof LOREBOOK_TIMED_FIELDS)[number]['field'];
 
 export interface LorebookEntry {
 	/** Our stable id. SillyTavern's per-book `uid` is positional and regenerated on export. */
