@@ -406,7 +406,7 @@ export const DEFAULT_APPEARANCE: AppearanceState = {
 	speakerCaps: false,
 	messageActions: 'hover',
 	compactActions: false,
-	floatingActions: false,
+	floatingActions: true,
 	branchPager: 'always',
 	glass: 'full',
 	motion: 'full',
