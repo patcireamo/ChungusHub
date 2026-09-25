@@ -63,18 +63,21 @@ class MessageStore {
 	 *  surfaces can ask BEFORE tearing down their own state (e.g. closing an editor whose
 	 *  draft would otherwise be lost to a rejected call). */
 	warnIfBusy(): boolean {
+		if (!this.busy) return false;
 		// A held request is busy too (its turn is one press away from existing), but saying
 		// "still generating" about a prompt that has not left the browser sends the reader
 		// looking for a Stop button that is not the answer.
-		if (promptHoldStore.holding) {
-			toastStore.warning('A prompt is waiting for your review. Send it or cancel it first.');
-			return true;
-		}
-		if (this.isProcessing || this.isStreaming) {
-			toastStore.warning('A reply is still generating. Wait for it, or stop it first.');
-			return true;
-		}
-		return false;
+		toastStore.warning(
+			promptHoldStore.holding
+				? 'A prompt is waiting for your review. Send it or cancel it first.'
+				: 'A reply is still generating. Wait for it, or stop it first.'
+		);
+		return true;
+	}
+
+	/** What `warnIfBusy` refuses, asked without the toast. */
+	get busy(): boolean {
+		return promptHoldStore.holding || this.isProcessing || this.isStreaming;
 	}
 
 	/**

@@ -25,6 +25,7 @@ import { chatCursor } from '$lib/stores/chatCursor.svelte';
 import { chatSearch } from '$lib/stores/chatSearch.svelte';
 import { chatStore } from '$lib/stores/chat.svelte';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
+import { openingComposer } from '$lib/stores/openingComposer.svelte';
 import { moveFocus } from '$lib/services/spatial-focus';
 import { uiStore } from '$lib/stores/ui.svelte';
 import type { Direction } from '$lib/utils/spatial-nav';
@@ -123,9 +124,11 @@ const FOCUS_KEYS: Record<string, Direction> = {
 /** A chat genuinely on screen, which is what the transcript's own keys need: the story map
  *  and the other overlays cover the column and carry their own search, and so does either
  *  centered editor, which is why the two ids are read here and not only `activeOverlay`.
- *  Without them Ctrl+F opens find in a chat nobody can see and takes the caret with it. */
+ *  Without them Ctrl+F opens find in a chat nobody can see and takes the caret with it. The
+ *  opening scene's blank page counts too: the turns after it are hidden while it shows. */
 const chatOnScreen = () =>
 	Boolean(chatStore.activeChatId) &&
+	!openingComposer.active &&
 	!uiStore.activeOverlay &&
 	!uiStore.libraryEditorId &&
 	!uiStore.lorebookEditorId;

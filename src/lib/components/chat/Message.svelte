@@ -1,9 +1,6 @@
 <script module lang="ts">
-	/**
-	 * A swipe to a sibling spans two instances: the pressed turn unmounts and its sibling mounts in
-	 * its place. So the page leaving is handed over as a picture, and the sibling slides it out
-	 * while its own page slides in. Claimed once, by the turn that takes the same slot.
-	 */
+	// A swipe unmounts the pressed turn, so its page is handed to the sibling mounting in the same
+	// slot as a picture to slide out. Claimed once.
 	interface HandedPage {
 		slot: string;
 		fromId: string;
@@ -45,6 +42,7 @@
 	import { chatStore } from '$lib/stores/chat.svelte';
 	import { themeStore } from '$lib/stores/theme.svelte';
 	import { renderMarkdown } from '$lib/utils/markdown';
+	import { motionReduced } from '$lib/utils/motion';
 	import { renderedHtml } from '$lib/actions/renderedHtml';
 	import { hangUnder } from '$lib/actions/hangUnder';
 	import { copyText } from '$lib/utils/clipboard';
@@ -90,6 +88,8 @@
 		/** The composer is asking for a new opening, and this root turn stands in for the blank
 		 *  page it will land on: the next sibling, after every one already here. */
 		pendingOpening?: boolean;
+		/** Behind the blank opening page: kept mounted, so an open editor keeps its text. */
+		hidden?: boolean;
 	}
 
 	let {
@@ -104,7 +104,8 @@
 		archived = false,
 		streamTail = null,
 		streamTailThinking = null,
-		pendingOpening = false
+		pendingOpening = false,
+		hidden = false
 	}: Props = $props();
 
 	// Whether the story's page is coming back from the blank one, decided by state rather than by
@@ -124,13 +125,6 @@
 	});
 
 	const PAGE_TURN_MS = 240;
-
-	function stillMotion(): boolean {
-		return (
-			document.documentElement.dataset.motion === 'reduced' ||
-			matchMedia('(prefers-reduced-motion: reduce)').matches
-		);
-	}
 
 	function settlePage(page: HTMLElement, from: number, to: number) {
 		pageSettle?.cancel();
@@ -155,18 +149,28 @@
 		{ x = 0, y = 0, blank = false }: { x?: number; y?: number; blank?: boolean },
 		{ direction }: { direction: 'in' | 'out' | 'both' }
 	) {
-		const turning = blank || (direction === 'out' ? pendingOpening : leavingBlank);
-		const still = !turning || stillMotion();
-		if (!still && pageElement?.contains(node)) {
-			const el = node as HTMLElement;
-			// Out of the flow as it leaves, so the card measures only the page coming in.
-			if (direction === 'out') Object.assign(el.style, { position: 'absolute', top: '0', left: '0', right: '0' });
-			else if (pageHeightBefore !== null) {
-				settlePage(pageElement, pageHeightBefore, el.offsetHeight);
-				pageHeightBefore = null;
-			}
+		const el = node as HTMLElement;
+		const slide = (still: boolean) => fly(node, { x, y, duration: still ? 0 : PAGE_TURN_MS, easing: cubicOut });
+		if (direction === 'out') {
+			// Deferred, so it is asked again on every outro: Svelte keeps an outro's options for the
+			// element, and a page flipped back mid-slide leaves again later.
+			return () => {
+				const still = !(blank || pendingOpening) || motionReduced();
+				// Out of the flow as it leaves, so the card measures only the page coming in.
+				if (!still && pageElement?.contains(node)) {
+					Object.assign(el.style, { position: 'absolute', top: '0', left: '0', right: '0' });
+				}
+				return slide(still);
+			};
 		}
-		return fly(node, { x, y, duration: still ? 0 : PAGE_TURN_MS, easing: cubicOut });
+		// A page flipped back mid-slide is the same element, still out of the flow.
+		for (const side of ['position', 'top', 'left', 'right']) el.style.removeProperty(side);
+		const still = !(blank || leavingBlank) || motionReduced();
+		if (!still && pageElement?.contains(node) && pageHeightBefore !== null) {
+			settlePage(pageElement, pageHeightBefore, el.offsetHeight);
+			pageHeightBefore = null;
+		}
+		return slide(still);
 	}
 
 	/** The set the viewer pages: this turn's own pictures, and nothing wider. A chat is a
@@ -395,8 +399,14 @@
 	}
 
 	function handleBranchNavigate(direction: 'prev' | 'next') {
-		if (pageElement && !stillMotion()) {
+		const target = siblingIndex + (direction === 'next' ? 1 : -1);
+		// Only a swipe that will land: a picture left behind by a refused one would play for any
+		// turn mounting in this slot next (a delete re-homing to a sibling).
+		const lands = target >= 0 && target < siblingCount && !messageStore.busy;
+		if (lands && pageElement && !motionReduced()) {
 			const picture = pageElement.cloneNode(true) as HTMLElement;
+			// The page leaving a swipe still in flight: the clone would show it at full opacity.
+			picture.querySelectorAll(':scope > [inert]').forEach((el) => el.remove());
 			// A picture, not a second copy of the story: nothing in it can be pressed or found.
 			picture.querySelectorAll('[data-search-text]').forEach((el) => el.removeAttribute('data-search-text'));
 			picture.setAttribute('aria-hidden', 'true');
@@ -668,6 +678,7 @@
 	class="message-row group fade-in"
 	class:message-archived={archived}
 	class:message-row-cursor={cursored}
+	{hidden}
 	tabindex="-1"
 	data-hint
 	onfocus={handleRowFocus}
@@ -1065,7 +1076,7 @@
 												openingComposer.active ? openingComposer.close() : openingComposer.open(openingButton)}
 											disabled={messageStore.isStreaming}
 											aria-pressed={openingComposer.active}
-											aria-label={openingComposer.active ? 'Back to your message' : 'Write another opening scene'}
+											aria-label="Write another opening scene"
 											title={openingComposer.active ? 'Back to your message' : 'Write another opening scene'}
 										>
 											<Icon name="sparkles" class="w-3.5 h-3.5" strokeWidth={1.75} />

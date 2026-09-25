@@ -11,6 +11,7 @@
 	import { chatSelection, MAX_SELECTION_CHARS } from '$lib/stores/chatSelection.svelte';
 	import { findSiblings } from '$lib/utils/message-tree';
 	import { flashTarget } from '$lib/utils/flash-target';
+	import { motionReduced } from '$lib/utils/motion';
 	import { memoryStore } from '$lib/memory/store.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
@@ -123,9 +124,9 @@
 		lastScrollTop = listElement.scrollTop;
 	}
 
-	// A branch switch to a shorter sibling drops the rows under the viewport, and the browser
-	// clamps the view upward with them. The content is held down to the viewport's bottom
-	// instead, and the hold drains as the reader scrolls back up.
+	// A branch switch to a shorter sibling drops the rows under the view, and the browser clamps
+	// the view upward. The content is held down to the view's bottom instead, draining as the
+	// reader scrolls back up, and never so far that nothing real is left on screen.
 	let contentElement = $state<HTMLDivElement | undefined>(undefined);
 	let runway: number | null = null;
 
@@ -152,8 +153,19 @@
 			? last.getBoundingClientRect().bottom - contentElement.getBoundingClientRect().top +
 				parseFloat(getComputedStyle(contentElement).paddingBottom)
 			: 0;
-		if (bottom <= natural) releaseRunway();
+		if (bottom <= natural || bottom - natural >= listElement.clientHeight) releaseRunway();
 		else if (bottom < runway) holdRunway(bottom);
+	}
+
+	/** Checked through the swiped card's height easing too, since that can shrink the story off screen. */
+	function watchRunway() {
+		const until = performance.now() + PAGE_SETTLE_MS;
+		const frame = () => {
+			if (runway == null) return;
+			drainRunway();
+			if (performance.now() < until) requestAnimationFrame(frame);
+		};
+		requestAnimationFrame(frame);
 	}
 
 	function updateNearBottom() {
@@ -167,10 +179,10 @@
 		const dist = listElement.scrollHeight - st - listElement.clientHeight;
 		if (programmaticScroll) {
 			programmaticScroll = false;
-		} else if (st < lastScrollTop - 1 && !openingPage) {
+		} else if (st < lastScrollTop - 1 && dist > 1 && !openingPage) {
 			// Any deliberate upward scroll hands control to the user at once, even inside the
-			// pin band: a fast stream must never yank them back down mid-read. The blank opening
-			// page is exempt: its turns leaving clamp the view upward, and nobody scrolled.
+			// pin band: a fast stream must never yank them back down mid-read. A clamp is not one
+			// (it lands on the bottom), and neither is the opening page's own glide to the top.
 			nearBottom = false;
 		} else {
 			nearBottom = dist <= NEAR_BOTTOM_PX;
@@ -236,25 +248,18 @@
 	let openingPage = $derived(
 		openingComposer.active && windowStart === 0 && messages[0]?.parentId === null && messages[0]?.role === 'assistant'
 	);
-	// The turn is staged, because the blank page is short and the view would otherwise jump. In:
-	// glide to the top first, then turn, so the shrinking card never makes the browser clamp the
-	// scroll. Back: turn, let the card grow to full height, then bring the turns below back (out of
-	// sight by then) and glide to where the reader was. Not after a Generate: the scene then
-	// streams alone and the view follows it.
+	// Staged so the short blank page never makes the browser clamp the scroll: glide to the top,
+	// then turn; back, let the card grow, bring the turns below back, then glide to the reader.
 	let pageShown = $state(false);
 	let rowsHidden = $state(false);
+	// The chat the stage belongs to. Read synchronously, so a chat switch shows the new chat's rows
+	// in the same frame its scroll is placed, before the stage has been reset.
+	let stageChat = $state<string | null>(null);
+	let staged = $derived(stageChat !== null && stageChat === pathChatId);
 	let heldScroll = 0;
 	let stageRun = 0;
-	let rows = $derived(rowsHidden ? shown.slice(0, 1) : shown);
 
 	const PAGE_SETTLE_MS = 300;
-
-	function stillMotion(): boolean {
-		return (
-			document.documentElement.dataset.motion === 'reduced' ||
-			matchMedia('(prefers-reduced-motion: reduce)').matches
-		);
-	}
 
 	/** Resolves once the view is at the top, or after a ceiling in case it never gets there. */
 	function glideToTop(el: HTMLDivElement): Promise<void> {
@@ -276,12 +281,21 @@
 
 	$effect(() => {
 		const want = openingPage;
+		const chatId = pathChatId;
 		const run = ++stageRun;
 		untrack(async () => {
+			// A chat switch drops the stage outright: the next chat opens at its own end.
+			if (stageChat !== null && stageChat !== chatId) {
+				stageChat = null;
+				pageShown = rowsHidden = false;
+				return;
+			}
 			const el = listElement;
 			if (want) {
-				heldScroll = el?.scrollTop ?? 0;
-				if (el && !stillMotion()) await glideToTop(el);
+				stageChat = chatId;
+				// Reopened before the turns came back: the view is at the top, not where the reader was.
+				if (!rowsHidden) heldScroll = el?.scrollTop ?? 0;
+				if (el && !motionReduced()) await glideToTop(el);
 				else el?.scrollTo({ top: 0, behavior: 'instant' });
 				if (run !== stageRun) return;
 				pageShown = true;
@@ -293,12 +307,12 @@
 				rowsHidden = false;
 				return;
 			}
-			if (!stillMotion()) await new Promise((r) => setTimeout(r, PAGE_SETTLE_MS));
+			if (!motionReduced()) await new Promise((r) => setTimeout(r, PAGE_SETTLE_MS));
 			if (run !== stageRun) return;
 			rowsHidden = false;
 			await tick();
 			if (run !== stageRun || openingSceneStream) return;
-			listElement?.scrollTo({ top: heldScroll, behavior: stillMotion() ? 'instant' : 'smooth' });
+			listElement?.scrollTo({ top: heldScroll, behavior: motionReduced() ? 'instant' : 'smooth' });
 		});
 	});
 	let nextChunk = $derived(Math.min(pageSize, windowStart));
@@ -401,6 +415,8 @@
 		if (!listElement || !contentElement || pathChatId !== prevChatId) return;
 		if (lastMessageId === prevLastMessageId || prevLastMessageId == null) return;
 		if (messages.some((m) => m.id === prevLastMessageId)) return;
+		// A delete is not a swipe: the turn is gone, and a gap where it stood would read as a bug.
+		if (!allMessages.some((m) => m.id === prevLastMessageId)) return;
 		holdRunway(viewBottomInContent(listElement, contentElement));
 	});
 
@@ -438,16 +454,14 @@
 				nearBottom = true;
 				hasUnseen = false;
 			} else if (isNewMessage && !isExtension) {
-				// Branch switch: never scrolled, pinned or not. A sibling with more turns below it
-				// would otherwise throw the reader to that branch's end, and they lose the turn they
-				// were swiping on. The pin is re-baselined from real geometry instead, because the
-				// content under the viewport just changed wholesale and a stale pin from the previous
-				// branch must not let the next stream token yank the view down.
+				// Branch switch: never scrolled, or a longer sibling throws the reader to its end. The
+				// pin is re-read from geometry, since a stale one would let the next token yank the view.
+				if (runway != null) {
+					drainRunway();
+					watchRunway();
+				}
 				const dist = listElement.scrollHeight - listElement.scrollTop - listElement.clientHeight;
 				nearBottom = dist <= NEAR_BOTTOM_PX;
-				// Written as well: the swap can shrink the content and let the browser clamp
-				// `scrollTop` by itself, and a clamp measured against a stale value reads as the
-				// user scrolling up, which drops the pin a frame later.
 				lastScrollTop = listElement.scrollTop;
 				hasUnseen = false;
 			} else if ((isNewMessage || streamStarted || (isStreaming && followStream)) && nearBottom && !streamSettled) {
@@ -681,12 +695,12 @@
 					<span class="window-edge-line"></span>
 				</div>
 			{/if}
-			{#each rows as message, offset (message.id)}
+			{#each shown as message, offset (message.id)}
 				{@const index = windowStart + offset}
 				{@const siblings = findSiblings(allMessages, message.id)}
 				{@const siblingIndex = siblings.findIndex(m => m.id === message.id)}
 				{#if archivedPrefix > 0 && archivedPrefix < messages.length && index === archivedPrefix}
-						<div class="memory-boundary" aria-hidden="true">
+						<div class="memory-boundary" aria-hidden="true" hidden={rowsHidden && staged}>
 							<span class="memory-boundary-line"></span>
 							<span class="memory-boundary-label">
 								<Icon name="brain" class="w-3 h-3" />
@@ -707,7 +721,8 @@
 						onNavigateBranch={handleNavigateBranch}
 						streamTail={continuingMessageId === message.id ? streamingContent : null}
 						streamTailThinking={continuingMessageId === message.id ? streamingThinking : null}
-						pendingOpening={pageShown && offset === 0}
+						pendingOpening={pageShown && staged && offset === 0}
+						hidden={rowsHidden && staged && offset > 0}
 					/>
 			{/each}
 			{#if isStreaming && !continuingMessageId}

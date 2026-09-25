@@ -677,9 +677,8 @@
 
 	// ===== Opening scene =====
 
-	// The box's other question: what a new opening scene should be about (architecture/engines.md).
-	// The draft and its pictures wait untouched behind it, and the direction is never persisted:
-	// it is not a draft, and one typed and abandoned must not come back later as a request.
+	// Never persisted and never written to the draft (architecture/engines.md): a direction typed
+	// and abandoned must not come back later as a request.
 	let direction = $state('');
 	let openingMode = $derived(openingComposer.active);
 
@@ -687,7 +686,12 @@
 		openingComposer.attach({
 			box: textareaElement,
 			landing: sendSlot,
-			refusal: () => (transformOpen ? 'Close the rewrite above the box first.' : null)
+			refusal: () =>
+				isStreaming
+					? 'A reply is still generating. Wait for it, or stop it first.'
+					: transformOpen
+						? 'Close the rewrite above the box first.'
+						: null
 		})
 	);
 
@@ -710,6 +714,8 @@
 		const { clientX: x, clientY: y } = e;
 		openingComposer.close();
 		void tick().then(() => {
+			// A keyboard press (no pointer, so detail 0) removed the focused button: focus goes back to the box.
+			if (e.detail === 0) textareaElement?.focus();
 			const box = tokenAnchorEl?.getBoundingClientRect();
 			ringUnderPressingPointer = !!box && x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
 		});
@@ -842,15 +848,16 @@
 	let dragDepth = $state(0);
 
 	function handleDragEnter(e: DragEvent) {
-		if (!e.dataTransfer?.types.includes('Files')) return;
+		if (openingMode || !e.dataTransfer?.types.includes('Files')) return;
 		dragDepth += 1;
 	}
 
 	function handleDragOver(e: DragEvent) {
 		if (!e.dataTransfer?.types.includes('Files')) return;
-		// Without this the browser navigates away to the dropped file.
+		// Without this the browser navigates away to the dropped file. The opening question has
+		// no pictures, and taking one would hand it to the draft hidden behind it.
 		e.preventDefault();
-		e.dataTransfer.dropEffect = 'copy';
+		e.dataTransfer.dropEffect = openingMode ? 'none' : 'copy';
 	}
 
 	function handleDragLeave() {
@@ -862,6 +869,7 @@
 		dragDepth = 0;
 		if (!dropped.length) return;
 		e.preventDefault();
+		if (openingMode) return;
 		const images = dropped.filter(isImageFile);
 		for (const file of dropped.filter((f) => !isImageFile(f))) {
 			toastStore.error(`"${file.name}" is not a picture. Attach a file to the Chungus Assistant instead, which can read it.`);
