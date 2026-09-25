@@ -319,22 +319,30 @@ class LorebookStore {
 		this.updateEntries(bookId, [entryId], updates);
 	}
 
-	/** Patch a whole selection at once, for the reason `removeEntries` above is one call. */
+	/**
+	 * Patch a whole selection at once, for the reason `removeEntries` above is one call. A
+	 * function builds each entry's patch from what that entry holds, which is how a bulk edit
+	 * writes a setting the row writes per entry (lorebook/bulk.ts). Returns how many entries
+	 * were still there to take it.
+	 */
 	updateEntries(
 		bookId: string,
 		entryIds: Iterable<string>,
-		updates: Partial<Omit<LorebookEntry, 'id'>>
-	): void {
+		updates:
+			| Partial<Omit<LorebookEntry, 'id'>>
+			| ((entry: LorebookEntry) => Partial<Omit<LorebookEntry, 'id'>>)
+	): number {
 		const book = this.getBook(bookId);
-		if (!book) return;
+		if (!book) return 0;
 		const ids = new Set(entryIds);
-		let changed = false;
+		let changed = 0;
 		for (const entry of book.entries) {
 			if (!ids.has(entry.id)) continue;
-			Object.assign(entry, updates);
-			changed = true;
+			Object.assign(entry, typeof updates === 'function' ? updates(entry) : updates);
+			changed++;
 		}
-		if (changed) this.touch(book);
+		if (changed > 0) this.touch(book);
+		return changed;
 	}
 
 	/** Send the whole book now and cancel its pending write: this call carries every field,

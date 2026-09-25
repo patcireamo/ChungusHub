@@ -10,6 +10,7 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import Dialog from '$lib/components/ui/Dialog.svelte';
 	import { holdMsForBlast } from '$lib/components/ui/HoldToConfirmButton.svelte';
 	import BrowsePopover from '$lib/components/library/BrowsePopover.svelte';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
@@ -19,6 +20,7 @@
 	import LorebookActivationPanel from './LorebookActivationPanel.svelte';
 	import LorebookBindPicker from './LorebookBindPicker.svelte';
 	import LorebookTransferPicker from './LorebookTransferPicker.svelte';
+	import LorebookBulkEditor from './LorebookBulkEditor.svelte';
 	import LorebookScanTester from './LorebookScanTester.svelte';
 	import LorebookStatsBar from './LorebookStatsBar.svelte';
 	import { imageService, imageRejectionReason } from '$lib/services/imageService';
@@ -318,6 +320,23 @@
 		if (!selectedBook) return;
 		lorebookStore.updateEntries(selectedBook.id, selectedIds, patch);
 	}
+
+	/** Every setting of the selection at once (LorebookBulkEditor), staged until Apply. */
+	let bulkEditOpen = $state(false);
+	/** The editor is keyed on this, so every opening starts with nothing staged. Reopened inside
+	 *  the close's fade, the dialog reverses its outro and keeps the old instance standing. */
+	let bulkEditOpening = $state(0);
+
+	function openBulkEdit() {
+		bulkEditOpening++;
+		bulkEditOpen = true;
+	}
+
+	// The dialog edits a selection, so it cannot outlive one: leaving select mode, which a book
+	// switch also does, takes it down with the set it was opened over.
+	$effect(() => {
+		if (!selectMode) bulkEditOpen = false;
+	});
 
 	function bulkDelete() {
 		if (!selectedBook) return;
@@ -911,6 +930,15 @@
 							>
 								Disable
 							</button>
+							<button
+								type="button"
+								class="brw-bulk-btn"
+								disabled={selectedIds.size === 0}
+								onclick={openBulkEdit}
+								aria-haspopup="dialog"
+							>
+								Edit…
+							</button>
 
 							<!-- The verb is pressed here and the destination picked in the panel. Both
 							     wear their words at every width, as Enable and Disable do: two icons
@@ -1101,6 +1129,27 @@
 	onConfirm={deleteBook}
 	onCancel={() => (bookDeleteOpen = false)}
 />
+
+<!-- `fill`: which knobs are drawn follows the selection and the edit, and a box sized to them
+     would move Apply between one press and the next. -->
+<Dialog
+	open={bulkEditOpen && !!selectedBook}
+	onClose={() => (bulkEditOpen = false)}
+	title={`Edit ${selectedIds.size} ${selectedIds.size === 1 ? 'entry' : 'entries'}`}
+	size="lg"
+	bare
+	fill
+>
+	{#if selectedBook}
+		{#key bulkEditOpening}
+			<LorebookBulkEditor
+				bookId={selectedBook.id}
+				entryIds={selectedIds}
+				onClose={() => (bulkEditOpen = false)}
+			/>
+		{/key}
+	{/if}
+</Dialog>
 
 <ConfirmDialog
 	open={bulkDeleteOpen}

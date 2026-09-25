@@ -5,14 +5,18 @@
 		DEFAULT_GROUP_WEIGHT,
 		DEFAULT_LOREBOOK_DEPTH,
 		firesOnTrigger,
+		LOREBOOK_ENTRY_TIPS,
 		LOREBOOK_LOGICS,
+		LOREBOOK_PLACEMENTS,
 		LOREBOOK_POSITION_AT_DEPTH,
 		LOREBOOK_POSITION_BLOCK,
 		LOREBOOK_ROLES,
 		LOREBOOK_SCAN_FIELDS,
+		LOREBOOK_TIMED_FIELDS,
 		LOREBOOK_TRIGGERS,
 		delayValue,
 		lorebookWokenBy,
+		lorebookWokenByOptions,
 		pruneKeyRules,
 		resolveBookActivation,
 		natureOf,
@@ -23,6 +27,7 @@
 		type LorebookEntryNature,
 		type LorebookKeyRules,
 		type LorebookScanField,
+		type LorebookTimedField,
 		type LorebookTrigger,
 		type LorebookWokenBy,
 		type ResolvedRecursion
@@ -87,13 +92,6 @@
 		off: 'Dormant: never scanned, never injected.'
 	};
 
-	const logicGlyph: Record<number, string> = {
-		0: '＋ any of',
-		3: '＋ all of',
-		2: '－ none of',
-		1: '－ not all of'
-	};
-
 	function update(patch: Parameters<typeof lorebookStore.updateEntry>[2]) {
 		lorebookStore.updateEntry(lorebookId, entryId, patch);
 	}
@@ -134,28 +132,7 @@
 
 	let recursion = $derived(entry ? resolveEntryRecursion(entry) : null);
 	let wokenBy = $derived<LorebookWokenBy>(recursion ? lorebookWokenBy(recursion) : 'both');
-
-	/** What each reading is called. An always-active entry has no keys to place, so its own
-	 *  wording for the default says what being always active already means. */
-	const WOKEN_BY_LABELS: Record<LorebookWokenBy, string> = {
-		both: 'The chat and other entries',
-		chatOnly: 'The chat only',
-		entriesOnly: 'Other entries only',
-		never: 'Never (SillyTavern)'
-	};
-
-	let wokenByOptions = $derived.by(() => {
-		const offered: LorebookWokenBy[] = entry?.constant
-			? ['both', 'entriesOnly']
-			: ['both', 'chatOnly', 'entriesOnly'];
-		// A reading this entry's nature has no option for arrived with an import. Naming it beats
-		// showing an empty control, the same way a foreign placement is named rather than hidden.
-		if (!offered.includes(wokenBy)) offered.push(wokenBy);
-		return offered.map((id) => ({
-			id,
-			label: id === 'both' && entry?.constant ? 'Nothing, it is always in' : WOKEN_BY_LABELS[id]
-		}));
-	});
+	let wokenByOptions = $derived(lorebookWokenByOptions(!!entry?.constant, wokenBy));
 
 	/**
 	 * Writing one of the three settles all three onto the entry and clears the copies an import
@@ -238,17 +215,11 @@
 
 	// The three timed fields say nothing when empty, which is also how they are stored, so an
 	// emptied box is a real edit rather than a draft waiting to parse.
-	type TimedField = 'sticky' | 'cooldown' | 'delay';
-	const TIMED: { field: TimedField; label: string }[] = [
-		{ field: 'sticky', label: 'Sticky' },
-		{ field: 'cooldown', label: 'Cooldown' },
-		{ field: 'delay', label: 'Delay' }
-	];
-	function timedValue(field: TimedField): string {
+	function timedValue(field: LorebookTimedField): string {
 		const v = entry?.[field];
 		return v == null || v === 0 ? '' : String(v);
 	}
-	function commitTimed(field: TimedField, raw: string) {
+	function commitTimed(field: LorebookTimedField, raw: string) {
 		const trimmed = raw.trim();
 		if (trimmed === '') update({ [field]: null });
 		else if (/^\d+$/.test(trimmed)) update({ [field]: parseInt(trimmed, 10) });
@@ -305,7 +276,7 @@
 			const kinds = LOREBOOK_TRIGGERS.filter((t) => firesOnTrigger(entry!.triggers, t.id)).length;
 			if (kinds < LOREBOOK_TRIGGERS.length) parts.push(`fires on ${kinds} of ${LOREBOOK_TRIGGERS.length}`);
 		}
-		for (const { field, label } of TIMED) {
+		for (const { field, label } of LOREBOOK_TIMED_FIELDS) {
 			const v = entry[field];
 			if (v) parts.push(`${label.toLowerCase()} ${v}`);
 		}
@@ -521,7 +492,7 @@
 								aria-label="Secondary key logic"
 							>
 								{#each LOREBOOK_LOGICS as l (l.id)}
-									<option value={String(l.id)}>{logicGlyph[l.id]}</option>
+									<option value={String(l.id)}>{l.glyph}</option>
 								{/each}
 							</Select>
 						</div>
@@ -585,7 +556,7 @@
 								</button>
 							</div>
 						</div>
-						<p class="mt-1 text-xs font-ui text-text-muted">Lower is injected first.</p>
+						<p class="mt-1 text-xs font-ui text-text-muted">{LOREBOOK_ENTRY_TIPS.order}</p>
 					</div>
 					<div>
 						<label for="entry-prob-{entryId}" class="ed-label section-label">Trigger %</label>
@@ -598,7 +569,7 @@
 							onblur={() => (probabilityDraft = String(effectiveProbability))}
 							class="input-base w-full px-3 py-2 font-mono text-sm text-text-primary"
 						/>
-						<p class="mt-1 text-xs font-ui text-text-muted">Chance to fire · 100 = always.</p>
+						<p class="mt-1 text-xs font-ui text-text-muted">{LOREBOOK_ENTRY_TIPS.probability}</p>
 					</div>
 					<div>
 						<span class="ed-label section-label">Case-sensitive</span>
@@ -647,7 +618,7 @@
 							<div>
 								<div class="ed-adv-label">
 									<label for="entry-depth-{entryId}" class="ed-label section-label !mb-0">Scan depth</label>
-									<InfoTip text="Recent messages this entry searches · 0 = the whole chat." />
+									<InfoTip text={LOREBOOK_ENTRY_TIPS.scanDepth} />
 								</div>
 								<div class="ed-cascade">
 									<input
@@ -669,9 +640,7 @@
 							<div>
 								<div class="ed-adv-label">
 									<span class="ed-label section-label !mb-0">Also scan</span>
-									<InfoTip
-										text="Text searched besides the chat: the cards in play, and the steering standing over this reply. Nothing picked = the chat alone."
-									/>
+									<InfoTip text={LOREBOOK_ENTRY_TIPS.scanFields} />
 								</div>
 								<div class="ed-pills">
 									{#each LOREBOOK_SCAN_FIELDS as field (field.id)}
@@ -691,9 +660,7 @@
 							<div>
 								<div class="ed-adv-label">
 									<label for="entry-woken-{entryId}" class="ed-label section-label !mb-0">Woken by</label>
-									<InfoTip
-										text="What may wake this entry: the story text, or the content of entries that already fired. A level stages that: the next one opens only once the level below it wakes nothing new."
-									/>
+									<InfoTip text={LOREBOOK_ENTRY_TIPS.wokenBy} />
 								</div>
 								<div class="flex items-end gap-3 flex-wrap">
 									<Select
@@ -738,9 +705,7 @@
 							<div>
 								<div class="ed-adv-label">
 									<span class="ed-label section-label !mb-0">Wakes others</span>
-									<InfoTip
-										text="When off, this entry's own content is never re-read, so it cannot pull other entries in."
-									/>
+									<InfoTip text={LOREBOOK_ENTRY_TIPS.wakesOthers} />
 								</div>
 								<div class="ed-cascade">
 									<Toggle
@@ -754,7 +719,7 @@
 							<div>
 								<div class="ed-adv-label">
 									<span class="ed-label section-label !mb-0">Fires on</span>
-									<InfoTip text="Which generations this entry may join. Nothing picked = all of them." />
+									<InfoTip text={LOREBOOK_ENTRY_TIPS.triggers} />
 								</div>
 								<div class="ed-pills">
 									{#each LOREBOOK_TRIGGERS as t (t.id)}
@@ -774,12 +739,10 @@
 							<div>
 								<div class="ed-adv-label">
 									<span class="ed-label section-label !mb-0">Timing</span>
-									<InfoTip
-										text="After it fires it stays in for Sticky more replies, then sits out Cooldown of them. Delay holds it back until the chat has that many messages."
-									/>
+									<InfoTip text={LOREBOOK_ENTRY_TIPS.timing} />
 								</div>
 								<div class="flex items-start gap-3">
-									{#each TIMED as t (t.field)}
+									{#each LOREBOOK_TIMED_FIELDS as t (t.field)}
 										<label class="ed-timed">
 											<span class="ed-timed-name">{t.label}</span>
 											<input
@@ -798,9 +761,7 @@
 							<div>
 								<div class="ed-adv-label">
 									<label for="entry-group-{entryId}" class="ed-label section-label !mb-0">Inclusion group</label>
-									<InfoTip
-										text="Only one entry per label reaches a prompt, and several labels are comma-separated. A prioritized entry takes the slot first, Decide by matches narrows it to whichever matched most keys, and whatever is left goes to a weighted roll."
-									/>
+									<InfoTip text={LOREBOOK_ENTRY_TIPS.group} />
 								</div>
 								<input
 									id="entry-group-{entryId}"
@@ -850,9 +811,7 @@
 							<div>
 								<div class="ed-adv-label">
 									<label for="entry-place-{entryId}" class="ed-label section-label !mb-0">Placement</label>
-									<InfoTip
-										text="It joins the block the preset placed at {'{{lorebook}}'}, or rides inside the story as its own turn, that many turns back from the newest. Without {'{{chatHistory}}'} in the preset an at-depth entry falls back to the block."
-									/>
+									<InfoTip text={LOREBOOK_ENTRY_TIPS.placement} />
 								</div>
 								<div class="flex items-end gap-3 flex-wrap">
 									<Select
@@ -863,8 +822,9 @@
 										variant="compact"
 										class="!w-auto"
 									>
-										<option value={String(LOREBOOK_POSITION_BLOCK)}>In the lorebook block</option>
-										<option value={String(LOREBOOK_POSITION_AT_DEPTH)}>At a depth in the chat</option>
+										{#each LOREBOOK_PLACEMENTS as p (p.id)}
+											<option value={String(p.id)}>{p.label}</option>
+										{/each}
 										{#if foreignPosition}
 											<option value={String(entry.position)}>{foreignPosition}</option>
 										{/if}

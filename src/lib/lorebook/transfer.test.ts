@@ -9,9 +9,10 @@
  * the two is then a duplicate the reader can see and delete, rather than entries that left
  * one book without ever arriving in the other.
  *
- * The harness is the real store over an in-memory server, so two blocks at the foot ride it for
- * the rest of what a write owes: a book another device deleted takes no writes and says so, and
- * a book of this one's own is deleted with a keystroke still scheduled for it.
+ * The harness is the real store over an in-memory server, so three blocks at the foot ride it for
+ * the rest of what a write owes: a book another device deleted takes no writes and says so, a
+ * book of this one's own is deleted with a keystroke still scheduled for it, and a selection
+ * edited at once reaches the server entry by entry.
  *
  * Runes are compile-time macros and nothing compiles a store under `bun test`, so `$state` is
  * shimmed BEFORE the module loads, the way chat-setup-birth.test.ts does. `$state.snapshot`
@@ -81,6 +82,7 @@ mock.module('$lib/services/database', () => ({
 
 const { lorebookStore } = await import('./store.svelte');
 const { createEmptyLorebook, createEmptyLorebookEntry } = await import('./types');
+const { bulkEntryPatch } = await import('./bulk');
 
 function entry(comment: string, extra: Partial<LorebookEntry> = {}): LorebookEntry {
 	return { ...createEmptyLorebookEntry(), comment, ...extra };
@@ -315,5 +317,33 @@ describe('a book on the shelf', () => {
 
 		await lorebookStore.setGlobal(world.id, false);
 		expect(rows.get(world.id)!.global).toBeUndefined();
+	});
+});
+
+describe('editing a selection at once', () => {
+	// The bulk editor's one write: each entry takes the patch built from what IT holds, the
+	// entries left out of the selection are untouched, and the server gets every one of them.
+	test('each entry takes its own patch, and the count names the ones still there', async () => {
+		const notes = await book('Notes', [
+			entry('Alpha', { scanFields: ['scenario'] }),
+			entry('Beta'),
+			entry('Gamma', { order: 7 })
+		]);
+		const [alpha, beta] = ids(notes.id);
+		const edit = { order: 50, scanFields: { steering: true } };
+
+		const patched = lorebookStore.updateEntries(
+			notes.id,
+			[alpha, beta, crypto.randomUUID()],
+			(e) => bulkEntryPatch(e, edit)
+		);
+		await lorebookStore.flush();
+
+		expect(patched).toBe(2);
+		expect(rows.get(notes.id)!.entries.map((e) => [e.comment, e.order, e.scanFields ?? []])).toEqual([
+			['Alpha', 50, ['scenario', 'steering']],
+			['Beta', 50, ['steering']],
+			['Gamma', 7, []]
+		]);
 	});
 });
