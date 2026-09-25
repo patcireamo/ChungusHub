@@ -704,6 +704,17 @@
 		});
 	});
 
+	/** The row's close button stands where the context ring does, so the tool row swaps the ring
+	 *  in under the very pointer that pressed it. */
+	function closeOpeningFrom(e: MouseEvent) {
+		const { clientX: x, clientY: y } = e;
+		openingComposer.close();
+		void tick().then(() => {
+			const box = tokenAnchorEl?.getBoundingClientRect();
+			ringUnderPressingPointer = !!box && x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+		});
+	}
+
 	// Any generation, this scene's or one started elsewhere, answers the question or overtakes it.
 	$effect(() => {
 		if (isStreaming) untrack(() => openingComposer.close());
@@ -925,11 +936,18 @@
 	// Grace delay so the pointer can cross the gap between trigger and popup
 	// without the popup collapsing.
 	let tokenHoverTimer: ReturnType<typeof setTimeout> | undefined;
+	// Set when the opening scene row closed under a pointer now resting on the ring. That pointer did
+	// not come for the ring, so nothing it does inside counts as hovering until it has left once.
+	let ringUnderPressingPointer = false;
+
 	function tokenHoverIn() {
+		if (ringUnderPressingPointer) return;
 		clearTimeout(tokenHoverTimer);
 		tokenPopupHovered = true;
 	}
+
 	function tokenHoverOut() {
+		ringUnderPressingPointer = false;
 		clearTimeout(tokenHoverTimer);
 		tokenHoverTimer = setTimeout(() => (tokenPopupHovered = false), 140);
 	}
@@ -1181,7 +1199,7 @@
 					oninput={handleComposerInput}
 					onpaste={openingMode ? undefined : handlePaste}
 					aria-label={openingMode ? 'Direction for the opening scene' : undefined}
-				placeholder={openingMode ? 'Describe the scene…' : 'Type your message…'}
+				placeholder={openingMode ? 'An idea for the AI…' : 'Type your message…'}
 				disabled={draftLocked || transformOpen}
 					rows="1"
 					class="composer-textarea bg-transparent font-body text-text-primary resize-none
@@ -1244,7 +1262,7 @@
 					<button
 						type="button"
 						class="composer-icon-btn composer-opening-close"
-						onclick={() => openingComposer.close()}
+						onclick={closeOpeningFrom}
 						aria-label="Back to your message"
 						title="Back to your message"
 					>

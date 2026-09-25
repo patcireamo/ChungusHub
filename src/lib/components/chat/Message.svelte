@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { fly } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
 	import type { Message, EditAction, DeleteAction, RegenerateAction } from '$lib/types/chat';
 	import MessageActions from './MessageActions.svelte';
 	import MessageEditor from './MessageEditor.svelte';
@@ -59,6 +61,9 @@
 		 *  renders as part of the bubble; the stored row is only written when it completes. */
 		streamTail?: string | null;
 		streamTailThinking?: string | null;
+		/** The composer is asking for a new opening, and this root turn stands in for the blank
+		 *  page it will land on: the next sibling, after every one already here. */
+		pendingOpening?: boolean;
 	}
 
 	let {
@@ -72,8 +77,67 @@
 		onNavigateBranch,
 		archived = false,
 		streamTail = null,
-		streamTailThinking = null
+		streamTailThinking = null,
+		pendingOpening = false
 	}: Props = $props();
+
+	// Whether the story's page is coming back from the blank one, decided by state rather than by
+	// timing: a slow device starts a transition late, and a clock would quietly cancel it there.
+	let leavingBlank = false;
+	let lastPending: boolean | undefined;
+	// The card's body, and its height the moment before a page turns: a greeting runs long and the
+	// blank page does not, so the card eases between the two instead of snapping.
+	let pageElement: HTMLDivElement | undefined;
+	let pageHeightBefore: number | null = null;
+	let pageSettle: Animation | null = null;
+	$effect.pre(() => {
+		const now = pendingOpening;
+		if (lastPending !== undefined && lastPending !== now) pageHeightBefore = pageElement?.offsetHeight ?? null;
+		if (lastPending === true && !now) leavingBlank = true;
+		lastPending = now;
+	});
+
+	const PAGE_TURN_MS = 240;
+
+	function settlePage(page: HTMLElement, from: number, to: number) {
+		pageSettle?.cancel();
+		if (Math.abs(from - to) < 1) return;
+		// Clipped while it moves: the page sliding out is taller than the card it is leaving.
+		page.style.overflow = 'hidden';
+		pageSettle = page.animate([{ height: `${from}px` }, { height: `${to}px` }], {
+			duration: PAGE_TURN_MS,
+			easing: 'cubic-bezier(0.33, 1, 0.68, 1)'
+		});
+		const settle = pageSettle;
+		// A beat past the slides, so the page leaving is gone before the clip is.
+		setTimeout(() => {
+			if (pageSettle === settle) page.style.overflow = '';
+		}, PAGE_TURN_MS + 60);
+	}
+
+	/** A page sliding as the root turns into a blank one and back. The blank page always slides;
+	 *  the story's own page only on its way to or from it. */
+	function turnPage(
+		node: Element,
+		{ x = 0, y = 0, blank = false }: { x?: number; y?: number; blank?: boolean },
+		{ direction }: { direction: 'in' | 'out' | 'both' }
+	) {
+		const turning = blank || (direction === 'out' ? pendingOpening : leavingBlank);
+		const still =
+			!turning ||
+			document.documentElement.dataset.motion === 'reduced' ||
+			matchMedia('(prefers-reduced-motion: reduce)').matches;
+		if (!still && pageElement?.contains(node)) {
+			const el = node as HTMLElement;
+			// Out of the flow as it leaves, so the card measures only the page coming in.
+			if (direction === 'out') Object.assign(el.style, { position: 'absolute', top: '0', left: '0', right: '0' });
+			else if (pageHeightBefore !== null) {
+				settlePage(pageElement, pageHeightBefore, el.offsetHeight);
+				pageHeightBefore = null;
+			}
+		}
+		return fly(node, { x, y, duration: still ? 0 : PAGE_TURN_MS, easing: cubicOut });
+	}
 
 	/** The set the viewer pages: this turn's own pictures, and nothing wider. A chat is a
 	 *  tree, so "every image in this chat" would have to pick a branch to mean anything. */
@@ -84,6 +148,11 @@
 	// until Save, so cancelling a branch costs nothing. Cloning the row up front instead
 	// leaves a verbatim duplicate sibling behind every time you back out.
 	let isEditing = $state(false);
+	// An editor is the card's other body swap, and it never animated: it ends a page's return.
+	$effect.pre(() => {
+		void isEditing;
+		leavingBlank = false;
+	});
 	let editorMode = $state<EditAction>('save_only');
 	let showActions = $state(false);
 	let showDeleteMenu = $state(false);
@@ -327,6 +396,8 @@
 		// it, and a bare `E` opening an editor on a card wearing no ring would be a key landing
 		// where nothing on screen says it lands.
 		if (!cursored) return;
+		// A blank page stands in front of this turn: its keys would act on a greeting nobody can see.
+		if (pendingOpening) return;
 		// Only while the keyboard is on the CARD itself. Everything inside it owns its own keys
 		// (the editor, the menus, a link in the prose), and one of their events passing through
 		// here on the way up is not this turn being addressed.
@@ -577,21 +648,23 @@
 								</div>
 							{/if}
 							<div class="message-card-col">
+							<!-- A blank page has a speaker and nothing else yet: every other readout describes
+							     the greeting it stands in front of. -->
 							<MessageMeta
 								name={speakerName}
 								{isUser}
-								timestamp={showTimestamps ? message.createdAt : null}
-								model={showModelName ? message.model : null}
-								provider={showModelName ? message.provider : null}
-								edited={!!(message.editedAt || message.minorEditedAt)}
-								tokens={showTokenCount ? tokenLabel : null}
+								timestamp={showTimestamps && !pendingOpening ? message.createdAt : null}
+								model={showModelName && !pendingOpening ? message.model : null}
+								provider={showModelName && !pendingOpening ? message.provider : null}
+								edited={!pendingOpening && !!(message.editedAt || message.minorEditedAt)}
+								tokens={showTokenCount && !pendingOpening ? tokenLabel : null}
 								ordinal={avatarsHidden ? avatarOrdinal : null}
-								durationMs={avatarsHidden && showGenerationTime ? message.generationMs : null}
+								durationMs={avatarsHidden && showGenerationTime && !pendingOpening ? message.generationMs : null}
 								{archived}
-								lorebook={loreTrace}
+								lorebook={pendingOpening ? null : loreTrace}
 								onLorebook={() => (loreOpen = true)}
 							/>
-							{#if hasReasoning}
+							{#if hasReasoning && !pendingOpening}
 								<div class="message-thinking">
 									<MessageReasoning
 										thinking={liveThinking!}
@@ -600,6 +673,9 @@
 								</div>
 							{/if}
 
+							<!-- One cell for the card's body, so a page turning out and the one turning in
+							     overlap instead of stacking. -->
+							<div class="message-page" bind:this={pageElement}>
 							{#if isEditing}
 								<div class="message-content message-content-editing">
 									<MessageEditor
@@ -647,8 +723,13 @@
 										</div>
 									{/if}
 								</div>
+							{:else if pendingOpening}
+								<div class="message-content opening-page" in:turnPage={{ x: 36, blank: true }} out:turnPage={{ x: 36, blank: true }}>
+									<Icon name="sparkles" class="w-4 h-4 shrink-0" strokeWidth={1.75} />
+									<span>The AI writes your new opening here</span>
+								</div>
 							{:else}
-								<div class="message-content">
+								<div class="message-content" in:turnPage={{ x: -36 }} out:turnPage={{ x: -36 }}>
 									{#if imageAttachments.length}
 										<div class="message-attachments">
 											{#each imageAttachments as path, i (path)}
@@ -673,6 +754,7 @@
 								</div>
 							{/if}
 							</div>
+							</div>
 						</div>
 					</div>
 				</div>
@@ -685,9 +767,11 @@
 						bind:this={toolbarShellElement}
 					>
 						<div class="message-toolbar {isUser ? 'justify-end' : 'justify-start'}">
+							<!-- A blank page has nothing to edit, copy or delete yet. -->
 							<div
 								class="message-actions-slot"
 								class:message-actions-visible={showActions || cursored || showDeleteMenu || showRegenerateMenu}
+								hidden={pendingOpening}
 							>
 								<MessageActions
 									onEdit={handleEditClick}
@@ -893,20 +977,31 @@
 							{#if siblingCount > 1 || canWriteOpening}
 								<div
 									class="message-pager-slot"
-									class:message-actions-visible={showActions || cursored}
+									class:message-actions-visible={showActions || cursored || pendingOpening}
 								>
-									{#if siblingCount > 1}
-										<BranchNavigator current={siblingIndex} total={siblingCount} onNavigate={handleBranchNavigate} />
+									<!-- The blank page's own place in the row, with no arrows: nothing is there to
+									     walk to until it is written. -->
+									{#if pendingOpening}
+										<span class="opening-pending-count" in:turnPage={{ y: 8, blank: true }}>
+											{siblingCount + 1} / {siblingCount + 1}
+										</span>
+									{:else if siblingCount > 1}
+										<span class="message-pager-page" in:turnPage={{ y: -8 }}>
+											<BranchNavigator current={siblingIndex} total={siblingCount} onNavigate={handleBranchNavigate} />
+										</span>
 									{/if}
 									{#if canWriteOpening}
 										<button
 											bind:this={openingButton}
 											type="button"
 											class="opening-btn"
-											onclick={() => openingComposer.open(openingButton)}
+											class:opening-btn--active={pendingOpening}
+											onclick={() =>
+												openingComposer.active ? openingComposer.close() : openingComposer.open(openingButton)}
 											disabled={messageStore.isStreaming}
-											aria-label="Write another opening scene"
-											title="Write another opening scene"
+											aria-pressed={openingComposer.active}
+											aria-label={openingComposer.active ? 'Back to your message' : 'Write another opening scene'}
+											title={openingComposer.active ? 'Back to your message' : 'Write another opening scene'}
 										>
 											<Icon name="sparkles" class="w-3.5 h-3.5" strokeWidth={1.75} />
 										</button>
@@ -1309,6 +1404,90 @@
 	@media (pointer: coarse) {
 		.opening-btn {
 			width: 2.85rem;
+			height: 2.85rem;
+		}
+	}
+
+	.opening-btn--active {
+		color: var(--color-accent);
+		border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+	}
+
+	/* ===== The blank page a new opening will land on ===== */
+
+	/* `start`, not the default stretch: a page coming in has to measure its own height, not the
+	   height of the one still leaving beside it. */
+	.message-page {
+		position: relative;
+		display: grid;
+		align-items: start;
+	}
+
+	.message-page > .message-content {
+		grid-area: 1 / 1;
+		min-width: 0;
+	}
+
+	/* Bare inside the card: the card is already the page, and a frame in it reads as a box in a box. */
+	.opening-page {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		min-height: 4.5rem;
+		color: var(--color-accent);
+		font-family: var(--font-ui);
+		font-size: 0.82rem;
+	}
+
+	/* A slow shimmer through the line, the mark of text about to be generated: without it the page
+	   reads as one the reader fills in by hand. */
+	.opening-page span {
+		background: linear-gradient(
+				90deg,
+				var(--color-text-muted) 40%,
+				var(--color-accent) 50%,
+				var(--color-text-muted) 60%
+			)
+			0 0 / 250% 100%;
+		-webkit-background-clip: text;
+		background-clip: text;
+		color: transparent;
+		animation: opening-shimmer 2.6s ease-in-out infinite;
+	}
+
+	@keyframes opening-shimmer {
+		from {
+			background-position: 100% 0;
+		}
+		to {
+			background-position: 0% 0;
+		}
+	}
+
+	.message-pager-page {
+		display: inline-flex;
+	}
+
+	/* Sized like the sparkle beside it, which is the pager pill's own height, so the row does not
+	   move as the count swaps in. Accent and arrowless: this place is spoken for, not written. */
+	.opening-pending-count {
+		display: inline-flex;
+		align-items: center;
+		height: 2.05rem;
+		padding: 0 0.8rem;
+		border: 1px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+		border-radius: var(--radius-full);
+		background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+		color: var(--color-accent);
+		font-family: var(--font-ui);
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.01em;
+		white-space: nowrap;
+	}
+
+	@media (pointer: coarse) {
+		.opening-pending-count {
 			height: 2.85rem;
 		}
 	}

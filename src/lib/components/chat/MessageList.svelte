@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick, untrack } from 'svelte';
 	import type { Message } from '$lib/types/chat';
 	import MessageComponent from './Message.svelte';
 	import StreamingIndicator from './StreamingIndicator.svelte';
@@ -132,9 +133,10 @@
 		const dist = listElement.scrollHeight - st - listElement.clientHeight;
 		if (programmaticScroll) {
 			programmaticScroll = false;
-		} else if (st < lastScrollTop - 1) {
+		} else if (st < lastScrollTop - 1 && !openingPage) {
 			// Any deliberate upward scroll hands control to the user at once, even inside the
-			// pin band: a fast stream must never yank them back down mid-read.
+			// pin band: a fast stream must never yank them back down mid-read. The blank opening
+			// page is exempt: its turns leaving clamp the view upward, and nobody scrolled.
 			nearBottom = false;
 		} else {
 			nearBottom = dist <= NEAR_BOTTOM_PX;
@@ -193,6 +195,78 @@
 	 *  start of the branch, and a window that shifted them would renumber the story. */
 	let windowStart = $derived(anchorIndex >= 0 ? Math.min(anchorIndex, baseStart) : baseStart);
 	let shown = $derived(windowStart > 0 ? messages.slice(windowStart) : messages);
+
+	// While the composer asks for a new opening, the root turn stands in for the blank page it will
+	// land on (architecture/engines.md). The turns after it belong to the greeting on screen, not
+	// to the new one, which starts with nothing after it.
+	let openingPage = $derived(
+		openingComposer.active && windowStart === 0 && messages[0]?.parentId === null && messages[0]?.role === 'assistant'
+	);
+	// The turn is staged, because the blank page is short and the view would otherwise jump. In:
+	// glide to the top first, then turn, so the shrinking card never makes the browser clamp the
+	// scroll. Back: turn, let the card grow to full height, then bring the turns below back (out of
+	// sight by then) and glide to where the reader was. Not after a Generate: the scene then
+	// streams alone and the view follows it.
+	let pageShown = $state(false);
+	let rowsHidden = $state(false);
+	let heldScroll = 0;
+	let stageRun = 0;
+	let rows = $derived(rowsHidden ? shown.slice(0, 1) : shown);
+
+	const PAGE_SETTLE_MS = 300;
+
+	function stillMotion(): boolean {
+		return (
+			document.documentElement.dataset.motion === 'reduced' ||
+			matchMedia('(prefers-reduced-motion: reduce)').matches
+		);
+	}
+
+	/** Resolves once the view is at the top, or after a ceiling in case it never gets there. */
+	function glideToTop(el: HTMLDivElement): Promise<void> {
+		if (el.scrollTop <= 1) return Promise.resolve();
+		return new Promise((resolve) => {
+			const done = () => {
+				el.removeEventListener('scroll', check);
+				clearTimeout(ceiling);
+				resolve();
+			};
+			const check = () => {
+				if (el.scrollTop <= 1) done();
+			};
+			const ceiling = setTimeout(done, 900);
+			el.addEventListener('scroll', check);
+			el.scrollTo({ top: 0, behavior: 'smooth' });
+		});
+	}
+
+	$effect(() => {
+		const want = openingPage;
+		const run = ++stageRun;
+		untrack(async () => {
+			const el = listElement;
+			if (want) {
+				heldScroll = el?.scrollTop ?? 0;
+				if (el && !stillMotion()) await glideToTop(el);
+				else el?.scrollTo({ top: 0, behavior: 'instant' });
+				if (run !== stageRun) return;
+				pageShown = true;
+				rowsHidden = true;
+				return;
+			}
+			pageShown = false;
+			if (openingSceneStream || !rowsHidden) {
+				rowsHidden = false;
+				return;
+			}
+			if (!stillMotion()) await new Promise((r) => setTimeout(r, PAGE_SETTLE_MS));
+			if (run !== stageRun) return;
+			rowsHidden = false;
+			await tick();
+			if (run !== stageRun || openingSceneStream) return;
+			listElement?.scrollTo({ top: heldScroll, behavior: stillMotion() ? 'instant' : 'smooth' });
+		});
+	});
 	let nextChunk = $derived(Math.min(pageSize, windowStart));
 	// The count is the point of the marker: it is the only thing on screen saying how much
 	// story sits above, in either mode.
@@ -569,7 +643,7 @@
 					<span class="window-edge-line"></span>
 				</div>
 			{/if}
-			{#each shown as message, offset (message.id)}
+			{#each rows as message, offset (message.id)}
 				{@const index = windowStart + offset}
 				{@const siblings = findSiblings(allMessages, message.id)}
 				{@const siblingIndex = siblings.findIndex(m => m.id === message.id)}
@@ -595,6 +669,7 @@
 						onNavigateBranch={handleNavigateBranch}
 						streamTail={continuingMessageId === message.id ? streamingContent : null}
 						streamTailThinking={continuingMessageId === message.id ? streamingThinking : null}
+						pendingOpening={pageShown && offset === 0}
 					/>
 			{/each}
 			{#if isStreaming && !continuingMessageId}
