@@ -225,7 +225,7 @@ describe('rewriting a reply to a note', () => {
 		expect(failures()).toEqual([]);
 	});
 
-	test('Keep both lands the rewrite beside the reply and reads it', async () => {
+	test('Add lands the rewrite beside the reply and reads it', async () => {
 		await open('reply');
 		await messageStore.retryMessageResponse(idOf.get('reply')!, 'branch', 'Make it rain.');
 

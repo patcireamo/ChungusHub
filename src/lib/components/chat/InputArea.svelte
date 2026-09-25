@@ -743,7 +743,7 @@
 		if (isStreaming) untrack(() => composerQuestion.close());
 	});
 
-	/** Enter's answer. For a rewrite that is Keep both, the one that throws nothing away. */
+	/** Enter's answer. For a rewrite that is Add, the one that throws nothing away. */
 	function submitQuestion() {
 		if (openingMode) submitOpening();
 		else if (rewriteMode) submitRewrite('branch');
@@ -1298,7 +1298,7 @@
 							class="composer-question-go"
 							in:fade={{ duration: 180 }}
 						>
-							Keep both
+							Add
 						</button>
 					{:else if isStreaming}
 						<button
@@ -2107,8 +2107,8 @@
 		background: var(--color-accent-hover);
 	}
 
-	/* Replace stays quiet beside the accent Keep both: the default, the one Enter presses, is the
-	   one that throws nothing away. */
+	/* Replace stays quiet beside the accent Add: the default, the one Enter presses, is the one
+	   that throws nothing away. */
 	.composer-question-quiet {
 		border: 1px solid var(--color-border-raised);
 		background: transparent;
