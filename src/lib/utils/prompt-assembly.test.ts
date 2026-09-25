@@ -632,6 +632,18 @@ describe('assemblePrompt: continue-in-place', () => {
 		expect(a.breakdown.chat).toBeGreaterThan(0);
 	});
 
+	test('a preset whose items all resolve to nothing still hands back the join anchor', () => {
+		const a = assemblePrompt(
+			input(nudging([item('Rules.', { enabled: false })], 'Go on.'), {
+				resolvedPersona: { name: 'Mara', traits: {} } as any,
+				postProcessing: { mode: 'none' },
+				continuation: msg('a9', 'assistant', '{{user}} drew the blade and')
+			})
+		);
+		expect(a.messages[0]).toEqual({ role: 'system', content: DEFAULT_SYSTEM_PROMPT });
+		expect(a.continuationSent).toBe('Mara drew the blade and');
+	});
+
 	test('the budget trim prices the tail: history drops to make room for it', () => {
 		const p = nudging([item('{{chatHistory}}')], '');
 		const noTail = assemblePrompt(input(p, { chatMessages: CHAT }));

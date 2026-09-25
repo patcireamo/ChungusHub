@@ -486,6 +486,14 @@ function buildLoreSplices(ctx: MacroContext, model?: string): DepthSplice[] {
 	}));
 }
 
+interface ActionTail {
+	messages: LLMMessage[];
+	tokens: number;
+	/** Continue's join anchor (see PromptAssembly.continuationSent). It travels with the tail so
+	 *  no exit can hand back a tail and forget to say whose it is. */
+	anchor?: string;
+}
+
 /**
  * The tail a one-shot action closes the prompt with: the assistant turn it acts on, followed
  * by the instruction saying what to do with it. Continue and Corrections are the same shape
@@ -502,7 +510,7 @@ function buildLoreSplices(ctx: MacroContext, model?: string): DepthSplice[] {
  * model without changing storage, and rewriting the hidden-from version would delete what it
  * hid, for good. Empty when the input carries neither.
  */
-function actionTail(input: AssembleInput, ctx: MacroContext): { messages: LLMMessage[]; tokens: number } {
+function actionTail(input: AssembleInput, ctx: MacroContext): ActionTail {
 	if (input.correction) {
 		const messages: LLMMessage[] = [{ role: 'assistant', content: input.correction.message.content }];
 		const instruction = expandMacros(input.correction.instruction, ctx).trim();
@@ -514,7 +522,11 @@ function actionTail(input: AssembleInput, ctx: MacroContext): { messages: LLMMes
 	const messages = [toInjectedMessage(target, ctx)];
 	const nudge = expandMacros(input.preset?.continuePrompt ?? DEFAULT_CONTINUE_PROMPT, ctx).trim();
 	if (nudge) messages.push({ role: 'user', content: nudge });
-	return { messages, tokens: messages.reduce((sum, m) => sum + countTokens(m.content, input.model), 0) };
+	return {
+		messages,
+		tokens: messages.reduce((sum, m) => sum + countTokens(m.content, input.model), 0),
+		anchor: messages[0].content
+	};
 }
 
 /**
@@ -528,7 +540,7 @@ export function assemblePrompt(input: AssembleInput): PromptAssembly {
 	if (!preset || preset.items.length === 0) {
 		// The tail and steering must survive even without a preset: a continue/steering
 		// against the bare fallback prompt still has to carry what it carries.
-		let fallbackTail: { messages: LLMMessage[]; tokens: number } | undefined;
+		let fallbackTail: ActionTail | undefined;
 		let fallbackSteering: DepthSplice[] = [];
 		if (input.continuation || input.correction || input.steering) {
 			const fallbackCtx = buildMacroContext(input);
@@ -536,7 +548,7 @@ export function assemblePrompt(input: AssembleInput): PromptAssembly {
 				input.continuation || input.correction ? actionTail(input, fallbackCtx) : undefined;
 			fallbackSteering = buildSteeringMessages(input, fallbackCtx, input.model);
 		}
-		return systemFallback(mode, placeholder, fallbackTail, fallbackSteering, !!input.continuation);
+		return systemFallback(mode, placeholder, fallbackTail, fallbackSteering);
 	}
 
 	let ctx: SplicedContext = buildMacroContext(input);
@@ -647,9 +659,7 @@ export function assemblePrompt(input: AssembleInput): PromptAssembly {
 		trimmedExampleBlocks,
 		overBudget,
 		lorebook: ctx.lorebookTrace ?? EMPTY_LOREBOOK_TRACE,
-		// Continue's anchor only. A correction replaces its turn rather than joining onto it,
-		// so handing back an anchor would invite a join that must never happen.
-		continuationSent: input.continuation ? tail.messages[0]?.content : undefined
+		continuationSent: tail.anchor
 	};
 }
 
@@ -679,10 +689,8 @@ function resolveEnabled(
 function systemFallback(
 	mode: PromptPostProcessingMode = 'merge',
 	placeholder?: string,
-	tail?: { messages: LLMMessage[]; tokens: number },
-	splices: DepthSplice[] = [],
-	/** Whether `tail` is a continuation's, the only kind that yields a join anchor. */
-	isContinuation = false
+	tail?: ActionTail,
+	splices: DepthSplice[] = []
 ): PromptAssembly {
 	const preset = countTokens(DEFAULT_SYSTEM_PROMPT);
 	const steeringMessages = splices.map((b) => b.message);
@@ -708,7 +716,7 @@ function systemFallback(
 		// The fallback prompt is the default system message and nothing else: no item resolved,
 		// so no lore reached this prompt whatever the scan decided.
 		lorebook: EMPTY_LOREBOOK_TRACE,
-		continuationSent: isContinuation ? tailMessages[0]?.content : undefined
+		continuationSent: tail?.anchor
 	};
 }
 
