@@ -123,8 +123,42 @@
 		lastScrollTop = listElement.scrollTop;
 	}
 
+	// A branch switch to a shorter sibling drops the rows under the viewport, and the browser
+	// clamps the view upward with them. The content is held down to the viewport's bottom
+	// instead, and the hold drains as the reader scrolls back up.
+	let contentElement = $state<HTMLDivElement | undefined>(undefined);
+	let runway: number | null = null;
+
+	function holdRunway(height: number) {
+		if (!contentElement) return;
+		runway = height;
+		contentElement.style.minHeight = `${height}px`;
+	}
+
+	function releaseRunway() {
+		runway = null;
+		if (contentElement) contentElement.style.minHeight = '';
+	}
+
+	function viewBottomInContent(list: HTMLElement, content: HTMLElement): number {
+		return list.getBoundingClientRect().top + list.clientHeight - content.getBoundingClientRect().top;
+	}
+
+	function drainRunway() {
+		if (runway == null || !listElement || !contentElement) return releaseRunway();
+		const bottom = viewBottomInContent(listElement, contentElement);
+		const last = contentElement.lastElementChild;
+		const natural = last
+			? last.getBoundingClientRect().bottom - contentElement.getBoundingClientRect().top +
+				parseFloat(getComputedStyle(contentElement).paddingBottom)
+			: 0;
+		if (bottom <= natural) releaseRunway();
+		else if (bottom < runway) holdRunway(bottom);
+	}
+
 	function updateNearBottom() {
 		if (!listElement) return;
+		if (runway != null) drainRunway();
 		const st = listElement.scrollTop;
 		// Reading back through the top edge pulls the next stretch in before the reader hits
 		// the wall, so the story keeps flowing under a fast scroll. In button mode the
@@ -360,6 +394,16 @@
 		if (nearBottom) requestAnimationFrame(() => snapToBottom());
 	});
 
+	// Before the rows swap, not after: any layout read in between (the swipe measures its
+	// card) lets the browser clamp first. `prev*` still hold the old path here.
+	$effect.pre(() => {
+		const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
+		if (!listElement || !contentElement || pathChatId !== prevChatId) return;
+		if (lastMessageId === prevLastMessageId || prevLastMessageId == null) return;
+		if (messages.some((m) => m.id === prevLastMessageId)) return;
+		holdRunway(viewBottomInContent(listElement, contentElement));
+	});
+
 	$effect(() => {
 		// The path's own chat, not the store's active id: that id names the chat being opened
 		// a flush before its path arrives, so keyed to it this reads the swap as a chat change
@@ -386,6 +430,9 @@
 		const streamStarted = chatId === prevChatId && !prevIsStreaming && isStreaming;
 
 		if (listElement) {
+			if (runway != null && (chatId !== prevChatId || (isNewMessage && isExtension) || streamStarted)) {
+				releaseRunway();
+			}
 			if (chatId !== prevChatId) {
 				snapToBottom();
 				nearBottom = true;
@@ -616,7 +663,7 @@
 			</div>
 		</div>
 	{:else}
-		<div class="message-list-content">
+		<div class="message-list-content" bind:this={contentElement}>
 			{#if windowStart > 0}
 				<div class="window-edge">
 					<span class="window-edge-line"></span>
