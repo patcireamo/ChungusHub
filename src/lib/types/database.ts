@@ -234,4 +234,8 @@ export interface PromptPreset {
 	 *  AssembleInput.continuation). Absent = the shipped DEFAULT_CONTINUE_PROMPT; an empty
 	 *  string sends no instruction, leaving the reply as a native assistant prefill. */
 	continuePrompt?: string;
+	/** The instruction a rewrite sends after the reply it rewrites (see AssembleInput.rewrite).
+	 *  Absent = the shipped DEFAULT_REWRITE_PROMPT. It must carry {{note}}: without it a rewrite
+	 *  refuses to run rather than ignore the note. */
+	rewritePrompt?: string;
 }

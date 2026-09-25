@@ -13,11 +13,13 @@ import {
 	applyPostProcessing,
 	assemblePrompt,
 	DEFAULT_CONTINUE_PROMPT,
+	DEFAULT_REWRITE_PROMPT,
 	DEFAULT_SYSTEM_PROMPT,
 	type AssembleInput
 } from './prompt-assembly';
 import { countTokens } from '$lib/tokenizer/count';
 import type { LLMMessage } from '$lib/types/llm';
+import type { PromptControl } from '$lib/types/database';
 import {
 	createEmptyLorebook,
 	createEmptyLorebookEntry,
@@ -678,13 +680,16 @@ describe('assemblePrompt: continue-in-place', () => {
 	});
 });
 
-describe('assemblePrompt: corrections', () => {
+describe('assemblePrompt: rewrite', () => {
 	const SUBJECT = msg('a9', 'assistant', 'The knight drew his blade and waited.');
-	const DIRECTION = 'Make him hesitate instead.';
-	const correcting = (instruction = DIRECTION, message: any = SUBJECT) => ({ message, instruction });
+	const NOTE = 'Make him hesitate instead.';
+	const INSTRUCTION = 'Rewrite it: Make him hesitate instead.';
+	/** The instruction is preset text, so every case that is not about the template sets this one. */
+	const rewritable = (items: any[], template = 'Rewrite it: {{note}}') => preset(items, { rewritePrompt: template });
+	const rewriting = (note = NOTE, message: any = SUBJECT) => ({ message, note });
 
 	/** A prompt-scope rule that hides text from the model without touching storage: the exact
-	 *  shape a correction must not round-trip through, or the hidden half is deleted for good. */
+	 *  shape a rewrite must not round-trip through, or the hidden half is deleted for good. */
 	const STRIPPER: any = {
 		id: 'r1',
 		name: 'strip',
@@ -697,29 +702,29 @@ describe('assemblePrompt: corrections', () => {
 		scopes: ['prompt']
 	};
 
-	test('the reply and the direction close the prompt, in that order', () => {
+	test('the reply and the note close the prompt, in that order', () => {
 		const a = assemblePrompt(
-			input(preset([item('Rules.'), item('{{chatHistory}}'), item('Post-history.')]), {
+			input(rewritable([item('Rules.'), item('{{chatHistory}}'), item('Post-history.')]), {
 				chatMessages: CHAT,
 				postProcessing: { mode: 'none' },
-				correction: correcting()
+				rewrite: rewriting()
 			})
 		);
 		expect(a.messages[a.messages.length - 2]).toEqual({ role: 'assistant', content: SUBJECT.content });
-		expect(a.messages[a.messages.length - 1]).toEqual({ role: 'user', content: DIRECTION });
+		expect(a.messages[a.messages.length - 1]).toEqual({ role: 'user', content: INSTRUCTION });
 	});
 
 	test('the reply is sent as stored bytes: a prompt-scope rule never rewrites it', () => {
 		const hiding = msg('a9', 'assistant', 'He drew his blade.<hidden>ooc note</hidden>');
 		const a = assemblePrompt(
-			input(preset([item('Rules.')]), {
+			input(rewritable([item('Rules.')]), {
 				postProcessing: { mode: 'none' },
 				regexRules: [STRIPPER],
-				correction: correcting(DIRECTION, hiding)
+				rewrite: rewriting(NOTE, hiding)
 			})
 		);
-		// Sent whole, because the rewrite that comes back REPLACES this row: sending the
-		// stripped form would delete what the rule was only hiding.
+		// Sent whole, because what comes back is stored as the reply's new version: sending the
+		// stripped form would lose what the rule was only hiding.
 		expect(a.messages[a.messages.length - 2]).toEqual({ role: 'assistant', content: hiding.content });
 	});
 
@@ -740,42 +745,42 @@ describe('assemblePrompt: corrections', () => {
 
 	test('self-refs in the reply are left alone too, for the same reason', () => {
 		const a = assemblePrompt(
-			input(preset([item('Rules.')]), {
+			input(rewritable([item('Rules.')]), {
 				resolvedCharacters: [{ name: 'Kael', traits: {} } as any],
 				resolvedPersona: { name: 'Mara', traits: {} } as any,
 				postProcessing: { mode: 'none' },
-				correction: correcting(DIRECTION, msg('a9', 'assistant', '{{char}} looked at {{user}}.'))
+				rewrite: rewriting(NOTE, msg('a9', 'assistant', '{{char}} looked at {{user}}.'))
 			})
 		);
 		expect(a.messages[a.messages.length - 2].content).toBe('{{char}} looked at {{user}}.');
 	});
 
-	test('macros in the direction resolve against the same context as the prompt', () => {
+	test('macros in the template and in the note resolve against the same context as the prompt', () => {
 		const a = assemblePrompt(
-			input(preset([item('Rules.')]), {
+			input(rewritable([item('Rules.')], 'As {{char}}: {{note}}'), {
 				resolvedCharacters: [{ name: 'Kael', traits: {} } as any],
 				resolvedPersona: { name: 'Mara', traits: {} } as any,
 				postProcessing: { mode: 'none' },
-				correction: correcting('Rewrite as {{char}}, speaking to {{user}}.')
+				rewrite: rewriting('Speak to {{user}} instead.')
 			})
 		);
 		expect(a.messages[a.messages.length - 1]).toEqual({
 			role: 'user',
-			content: 'Rewrite as Kael, speaking to Mara.'
+			content: 'As Kael: Speak to Mara instead.'
 		});
 	});
 
-	test('a correction yields no join anchor: it replaces its turn rather than joining onto it', () => {
+	test('a rewrite yields no join anchor: its answer is a turn of its own, never joined onto this one', () => {
 		const a = assemblePrompt(
-			input(preset([item('Rules.')]), { postProcessing: { mode: 'none' }, correction: correcting() })
+			input(rewritable([item('Rules.')]), { postProcessing: { mode: 'none' }, rewrite: rewriting() })
 		);
 		expect(a.continuationSent).toBeUndefined();
 	});
 
 	test('tail tokens land in the Chat bucket and the buckets still sum', () => {
-		const withTail = assemblePrompt(input(preset([item('Rules.')]), { correction: correcting() }));
-		const without = assemblePrompt(input(preset([item('Rules.')])));
-		const expected = countTokens(SUBJECT.content, MODEL) + countTokens(DIRECTION, MODEL);
+		const withTail = assemblePrompt(input(rewritable([item('Rules.')]), { rewrite: rewriting() }));
+		const without = assemblePrompt(input(rewritable([item('Rules.')])));
+		const expected = countTokens(SUBJECT.content, MODEL) + countTokens(INSTRUCTION, MODEL);
 		expect(withTail.breakdown.chat - without.breakdown.chat).toBe(expected);
 		expect(withTail.breakdown.total).toBe(
 			withTail.breakdown.preset +
@@ -787,38 +792,109 @@ describe('assemblePrompt: corrections', () => {
 
 	test('the tail survives the empty-preset fallback', () => {
 		const a = assemblePrompt(
-			input(preset([]), { postProcessing: { mode: 'none' }, correction: correcting() })
+			input(rewritable([]), { postProcessing: { mode: 'none' }, rewrite: rewriting() })
 		);
 		expect(a.messages).toEqual([
 			{ role: 'system', content: DEFAULT_SYSTEM_PROMPT },
 			{ role: 'assistant', content: SUBJECT.content },
-			{ role: 'user', content: DIRECTION }
+			{ role: 'user', content: INSTRUCTION }
 		]);
 		expect(a.continuationSent).toBeUndefined();
 	});
 
 	test('the budget trim prices the tail: history drops rather than the reply being fixed', () => {
-		const p = preset([item('{{chatHistory}}')]);
+		const p = rewritable([item('{{chatHistory}}')]);
 		const noTail = assemblePrompt(input(p, { chatMessages: CHAT }));
 		// The budget fits the plain prompt exactly, so the tail alone forces the trim.
 		const budget = noTail.breakdown.total;
 		const withTail = assemblePrompt(
-			input(p, { chatMessages: CHAT, contextBudget: budget, correction: correcting() })
+			input(p, { chatMessages: CHAT, contextBudget: budget, rewrite: rewriting() })
 		);
 		expect(withTail.trimmedMessages).toBeGreaterThan(0);
 		expect(withTail.breakdown.total).toBeLessThanOrEqual(budget);
-		// The whole point: whatever else went, the reply being corrected is still in the prompt.
+		// The whole point: whatever else went, the reply being rewritten is still in the prompt.
 		expect(withTail.messages[withTail.messages.length - 2]).toEqual({
 			role: 'assistant',
 			content: SUBJECT.content
 		});
 	});
 
-	test('no correction input leaves the assembly byte-identical', () => {
-		const p = preset([item('Rules.'), item('{{chatHistory}}')]);
+	test('no rewrite input leaves the assembly byte-identical', () => {
+		const p = rewritable([item('Rules.'), item('{{chatHistory}}')]);
 		const a = assemblePrompt(input(p, { chatMessages: CHAT }));
-		const b = assemblePrompt(input(p, { chatMessages: CHAT, correction: undefined }));
+		const b = assemblePrompt(input(p, { chatMessages: CHAT, rewrite: undefined }));
 		expect(a).toEqual(b);
+	});
+
+	test('a preset with no rewritePrompt sends the shipped default, note and {{char}} filled in', () => {
+		const a = assemblePrompt(
+			input(preset([item('Rules.')]), {
+				resolvedCharacters: [{ name: 'Kael', traits: {} } as any],
+				postProcessing: { mode: 'none' },
+				rewrite: rewriting()
+			})
+		);
+		expect(a.messages[a.messages.length - 1]).toEqual({
+			role: 'user',
+			content: DEFAULT_REWRITE_PROMPT.replace('{{note}}', NOTE).replace('{{char}}', 'Kael')
+		});
+	});
+
+	test('a rewritePrompt without {{note}} throws rather than drop the note', () => {
+		expect(() =>
+			assemblePrompt(input(rewritable([item('Rules.')], 'Rewrite your last message.'), { rewrite: rewriting() }))
+		).toThrow("This preset's Rewrite prompt has no {{note}}");
+	});
+
+	test('an empty or blank rewritePrompt throws the same way', () => {
+		for (const template of ['', '   ']) {
+			expect(() =>
+				assemblePrompt(input(rewritable([item('Rules.')], template), { rewrite: rewriting() }))
+			).toThrow("This preset's Rewrite prompt has no {{note}}");
+		}
+	});
+
+	test('a note whose macros resolve to nothing throws', () => {
+		// No character is bound here, so {{char}} resolves to an empty string.
+		expect(() =>
+			assemblePrompt(input(rewritable([item('Rules.')]), { rewrite: rewriting(' {{char}} ') }))
+		).toThrow('The note is empty once its macros are filled in.');
+	});
+
+	test('a continuation and a rewrite together throw', () => {
+		expect(() =>
+			assemblePrompt(input(rewritable([item('Rules.')]), { continuation: SUBJECT, rewrite: rewriting() }))
+		).toThrow('A prompt carries a continuation or a rewrite, never both.');
+	});
+
+	test('a preset whose items all resolve to nothing still carries the tail, and no join anchor', () => {
+		const a = assemblePrompt(
+			input(rewritable([item('Rules.', { enabled: false })]), {
+				postProcessing: { mode: 'none' },
+				rewrite: rewriting()
+			})
+		);
+		expect(a.messages).toEqual([
+			{ role: 'system', content: DEFAULT_SYSTEM_PROMPT },
+			{ role: 'assistant', content: SUBJECT.content },
+			{ role: 'user', content: INSTRUCTION }
+		]);
+		expect(a.continuationSent).toBeUndefined();
+	});
+
+	test('the note wins over a preset control bound to the same macro name', () => {
+		const control: PromptControl = { id: 'c1', macro: 'note', label: 'Note', type: 'text' };
+		const a = assemblePrompt(
+			input(rewritable([item('Control: {{note}}')]), {
+				controls: [control],
+				customFields: { note: 'The control value.' },
+				postProcessing: { mode: 'none' },
+				rewrite: rewriting()
+			})
+		);
+		// The control resolves in this very prompt, and still loses inside the rewrite instruction.
+		expect(a.messages[0]).toEqual({ role: 'system', content: 'Control: The control value.' });
+		expect(a.messages[a.messages.length - 1]).toEqual({ role: 'user', content: INSTRUCTION });
 	});
 });
 

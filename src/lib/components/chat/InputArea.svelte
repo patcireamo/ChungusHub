@@ -2,7 +2,7 @@
 	import { tick, untrack } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { countTokens, tokenCalibration } from '$lib/tokenizer';
-	import Icon from '$lib/components/ui/Icon.svelte';
+	import Icon, { type IconName } from '$lib/components/ui/Icon.svelte';
 	import ChatSetupChip from './ChatSetupChip.svelte';
 	import ChatPersonaDialog from './ChatPersonaDialog.svelte';
 	import TransformPanel from './TransformPanel.svelte';
@@ -20,7 +20,7 @@
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { memoryStore } from '$lib/memory/store.svelte';
 	import { inputDraftStore } from '$lib/stores/inputDraft.svelte';
-	import { openingComposer } from '$lib/stores/openingComposer.svelte';
+	import { composerQuestion } from '$lib/stores/composerQuestion.svelte';
 	import { inputHistoryStore } from '$lib/stores/inputHistory.svelte';
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
 	import { viewport } from '$lib/stores/viewport.svelte';
@@ -37,7 +37,7 @@
 	import { llmService } from '$lib/services/llm/provider';
 	import { imageService, imageRejectionReason, isImageFile } from '$lib/services/imageService';
 	import { duplicateAsksAboutMemory } from '$lib/types/chat';
-	import type { Chat, ChatMemoryFootprint, Message, MessageAttachment } from '$lib/types/chat';
+	import type { Chat, ChatMemoryFootprint, Message, MessageAttachment, RegenerateAction } from '$lib/types/chat';
 	import SteeringPopover from '$lib/components/chat/SteeringPopover.svelte';
 	import CommandPalette from './CommandPalette.svelte';
 	import DuplicateChatDialog from '$lib/components/sidebar/DuplicateChatDialog.svelte';
@@ -62,9 +62,9 @@
 		onCancel?: () => void;
 		onInsertDummy?: (role: 'user' | 'assistant') => void;
 		onContinue?: () => void;
-		onRegenerateLast?: () => void;
+		onRegenerateLast?: (note?: string) => void;
 		/** Retry's non-destructive half, reached only by `/swipe`. */
-		onSwipeLast?: () => void;
+		onSwipeLast?: (note?: string) => void;
 		/** A generation is in flight anywhere in the app, which is the composer's whole busy
 		 *  state: Send becomes Stop, and every row that would start or rewrite a turn goes
 		 *  dead. */
@@ -338,8 +338,10 @@
 		steeringOpen = false;
 		transformKind = null;
 		commandArmed = false;
-		openingComposer.close();
+		composerQuestion.close();
 		direction = '';
+		note = '';
+		noteParentId = null;
 		if (!chatId) return;
 		void inputDraftStore.load(chatId).then(async (draft) => {
 			// The user may have switched again (or started typing) while the
@@ -567,8 +569,8 @@
 
 	const commandHost: CommandHost = {
 		continueMessage: () => onContinue?.(),
-		regenerateLast: () => onRegenerateLast?.(),
-		swipeLast: () => onSwipeLast?.(),
+		regenerateLast: (note) => onRegenerateLast?.(note),
+		swipeLast: (note) => onSwipeLast?.(note),
 		requestDuplicate: () => void startDuplicate()
 	};
 
@@ -675,30 +677,45 @@
 		void executeCommand(picked, parsed.arg);
 	}
 
-	// ===== Opening scene =====
+	// ===== Questions (an opening scene's direction, a rewrite's note) =====
 
-	// Never persisted and never written to the draft (architecture/engines.md): a direction typed
-	// and abandoned must not come back later as a request.
+	// Neither answer is persisted or written to the draft (architecture/engines.md): a direction or
+	// a note typed and abandoned must not come back later as a request.
 	let direction = $state('');
-	let openingMode = $derived(openingComposer.active);
+	let note = $state('');
+	/** The turn `note` was written for. Asked about another one, the box starts empty. */
+	let noteParentId: string | null = null;
+	let question = $derived(composerQuestion.question);
+	let openingMode = $derived(question?.kind === 'opening');
+	let rewriteMode = $derived(question?.kind === 'rewrite');
+	let asking = $derived(question !== null);
+
+	$effect.pre(() => {
+		const q = question;
+		if (q?.kind !== 'rewrite' || q.parentId === noteParentId) return;
+		noteParentId = q.parentId;
+		note = '';
+	});
 
 	$effect(() =>
-		openingComposer.attach({
+		composerQuestion.attach({
 			box: textareaElement,
 			landing: sendSlot,
 			refusal: () =>
 				isStreaming
 					? 'A reply is still generating. Wait for it, or stop it first.'
-					: transformOpen
-						? 'Close the rewrite above the box first.'
+					: transformKind
+						? `Close ${transformKind === 'spellcheck' ? 'Spellcheck' : 'Impersonate'} above the box first.`
 						: null
 		})
 	);
 
+	// Keyed on the question itself, not on whether one stands: one replacing another puts
+	// different text in the box, which has to be fitted again.
 	$effect(() => {
-		void openingMode;
+		void question;
 		untrack(() => {
-			if (openingMode) {
+			if (asking) {
 				commandArmed = false;
 				menuOpen = false;
 				attachOpen = false;
@@ -710,9 +727,9 @@
 
 	/** The row's close button stands where the context ring does, so the tool row swaps the ring
 	 *  in under the very pointer that pressed it. */
-	function closeOpeningFrom(e: MouseEvent) {
+	function closeQuestionFrom(e: MouseEvent) {
 		const { clientX: x, clientY: y } = e;
-		openingComposer.close();
+		composerQuestion.close();
 		void tick().then(() => {
 			// A keyboard press (no pointer, so detail 0) removed the focused button: focus goes back to the box.
 			if (e.detail === 0) textareaElement?.focus();
@@ -721,20 +738,51 @@
 		});
 	}
 
-	// Any generation, this scene's or one started elsewhere, answers the question or overtakes it.
+	// Any generation, the one a question asked for or one started elsewhere, answers it or overtakes it.
 	$effect(() => {
-		if (isStreaming) untrack(() => openingComposer.close());
+		if (isStreaming) untrack(() => composerQuestion.close());
 	});
+
+	/** Enter's answer. For a rewrite that is Keep both, the one that throws nothing away. */
+	function submitQuestion() {
+		if (openingMode) submitOpening();
+		else if (rewriteMode) submitRewrite('branch');
+	}
 
 	function submitOpening() {
 		if (messageStore.warnIfBusy()) return;
-		openingComposer.close();
+		composerQuestion.close();
 		// On a phone the keyboard would otherwise sit over the scene as it streams in.
 		if (viewport.isTouch) textareaElement?.blur();
 		// Kept, not cleared: rolling the same idea again is then one press.
 		void messageStore.generateOpeningScene(direction).catch((error) => {
 			toastStore.failed('generate the opening scene', error);
 		});
+	}
+
+	/** The reply a rewrite is written from: the newest turn, while it is still a version of the one
+	 *  asked about. Resolved at the press and never stored, so a swipe between versions retargets it. */
+	function rewriteTarget(): Message | null {
+		const q = question;
+		const last = lastTurn;
+		if (q?.kind !== 'rewrite' || last?.role !== 'assistant' || last.parentId !== q.parentId) return null;
+		return last;
+	}
+
+	// With no version of that reply left at the end of the path, the question has nothing to rewrite.
+	$effect(() => {
+		if (rewriteMode && !rewriteTarget()) untrack(() => composerQuestion.close());
+	});
+
+	function submitRewrite(action: RegenerateAction) {
+		const target = rewriteTarget();
+		if (!target || messageStore.warnIfBusy()) return;
+		composerQuestion.close();
+		// On a phone the keyboard would otherwise sit over the reply as it streams in.
+		if (viewport.isTouch) textareaElement?.blur();
+		// Kept, not cleared: a second attempt at the same turn starts from the note that missed. No
+		// catch: the store toasts its own failures, and a second one would double every error.
+		void messageStore.retryMessageResponse(target.id, action, note);
 	}
 
 	// ===== Duplicate this chat =====
@@ -848,16 +896,16 @@
 	let dragDepth = $state(0);
 
 	function handleDragEnter(e: DragEvent) {
-		if (openingMode || !e.dataTransfer?.types.includes('Files')) return;
+		if (asking || !e.dataTransfer?.types.includes('Files')) return;
 		dragDepth += 1;
 	}
 
 	function handleDragOver(e: DragEvent) {
 		if (!e.dataTransfer?.types.includes('Files')) return;
-		// Without this the browser navigates away to the dropped file. The opening question has
-		// no pictures, and taking one would hand it to the draft hidden behind it.
+		// Without this the browser navigates away to the dropped file. A question takes no
+		// pictures, and taking one would hand it to the draft hidden behind it.
 		e.preventDefault();
-		e.dataTransfer.dropEffect = openingMode ? 'none' : 'copy';
+		e.dataTransfer.dropEffect = asking ? 'none' : 'copy';
 	}
 
 	function handleDragLeave() {
@@ -869,7 +917,7 @@
 		dragDepth = 0;
 		if (!dropped.length) return;
 		e.preventDefault();
-		if (openingMode) return;
+		if (asking) return;
 		const images = dropped.filter(isImageFile);
 		for (const file of dropped.filter((f) => !isImageFile(f))) {
 			toastStore.error(`"${file.name}" is not a picture. Attach a file to the Chungus Assistant instead, which can read it.`);
@@ -885,8 +933,8 @@
 	}
 
 	function handleSubmit() {
-		if (openingMode) {
-			submitOpening();
+		if (asking) {
+			submitQuestion();
 			return;
 		}
 		// The Send button is the palette's other door, which is what makes command mode work
@@ -944,7 +992,7 @@
 	// Grace delay so the pointer can cross the gap between trigger and popup
 	// without the popup collapsing.
 	let tokenHoverTimer: ReturnType<typeof setTimeout> | undefined;
-	// Set when the opening scene row closed under a pointer now resting on the ring. That pointer did
+	// Set when a question's row closed under a pointer now resting on the ring. That pointer did
 	// not come for the ring, so nothing it does inside counts as hovering until it has left once.
 	let ringUnderPressingPointer = false;
 
@@ -1020,14 +1068,14 @@
 		if (transformOpen) return;
 		// The question owns every key: none of the draft's (recall, commands, regenerate) reach
 		// past it. Escape is consumed per the shell Esc contract.
-		if (openingMode) {
+		if (asking) {
 			if (e.key === 'Escape') {
 				e.preventDefault();
 				e.stopPropagation();
-				openingComposer.close();
+				composerQuestion.close();
 			} else if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !viewport.isTouch) {
 				e.preventDefault();
-				submitOpening();
+				submitQuestion();
 			}
 			return;
 		}
@@ -1103,7 +1151,7 @@
 	// history mode, and keep the persisted draft in step.
 	function handleComposerInput() {
 		handleInput();
-		if (openingMode) return;
+		if (asking) return;
 		historyPos = null;
 		// A lone "/" in an otherwise empty composer arms command mode; anything that stops
 		// being a command line (a newline, a deleted slash) drops it. Typing always returns
@@ -1154,7 +1202,7 @@
 			class="composer-shell input-base"
 			class:composer-shell--frozen={transformOpen}
 			class:composer-shell--command={commandOpen}
-			class:composer-shell--opening={openingMode}
+			class:composer-shell--question={asking}
 			style="box-shadow: var(--shadow-sm);"
 			ondragenter={handleDragEnter}
 			ondragover={handleDragOver}
@@ -1176,7 +1224,7 @@
 					onPick={pickCommand}
 				/>
 			{/if}
-			{#if !openingMode && (pendingImages.length || uploadingImages > 0)}
+			{#if !asking && (pendingImages.length || uploadingImages > 0)}
 				<div class="attach-strip">
 					{#each pendingImages as img (img.path)}
 						<div class="attach-thumb">
@@ -1202,12 +1250,19 @@
 			<div class="composer-main">
 				<textarea
 					bind:this={textareaElement}
-					bind:value={() => (openingMode ? direction : content), (v) => (openingMode ? (direction = v) : (content = v))}
+					bind:value={
+						() => (openingMode ? direction : rewriteMode ? note : content),
+						(v) => (openingMode ? (direction = v) : rewriteMode ? (note = v) : (content = v))
+					}
 					onkeydown={handleKeydown}
 					oninput={handleComposerInput}
-					onpaste={openingMode ? undefined : handlePaste}
-					aria-label={openingMode ? 'Direction for the opening scene' : undefined}
-				placeholder={openingMode ? 'An idea for the AI…' : 'Type your message…'}
+					onpaste={asking ? undefined : handlePaste}
+					aria-label={openingMode
+						? 'Direction for the opening scene'
+						: rewriteMode
+							? 'What to change in this reply'
+							: undefined}
+				placeholder={openingMode ? 'An idea for the AI…' : rewriteMode ? 'What should change?' : 'Type your message…'}
 				disabled={draftLocked || transformOpen}
 					rows="1"
 					class="composer-textarea bg-transparent font-body text-text-primary resize-none
@@ -1222,11 +1277,28 @@
 						<button
 							type="button"
 							onclick={submitOpening}
-							class="composer-opening-go"
+							class="composer-question-go"
 							in:fade={{ duration: 180 }}
 						>
 							<Icon name="sparkles" class="w-4 h-4" strokeWidth={1.9} />
 							{direction.trim() ? 'Generate' : 'Surprise me'}
+						</button>
+					{:else if rewriteMode}
+						<button
+							type="button"
+							onclick={() => submitRewrite('replace')}
+							class="composer-question-quiet"
+							in:fade={{ duration: 180 }}
+						>
+							Replace
+						</button>
+						<button
+							type="button"
+							onclick={() => submitRewrite('branch')}
+							class="composer-question-go"
+							in:fade={{ duration: 180 }}
+						>
+							Keep both
 						</button>
 					{:else if isStreaming}
 						<button
@@ -1260,25 +1332,32 @@
 				</div>
 			</div>
 
-			<!-- The tool row and the opening scene's row share one cell and cross-fade, so the box never
+			<!-- The tool row and a question's row share one cell and cross-fade, so the box never
 			     changes height as it turns: stacked, the shell's gap would drop out under the reader. -->
 			<div class="composer-foot">
-			{#if openingMode}
-				<div class="composer-opening-foot" transition:fade={{ duration: 180 }}>
-					<Icon name="sparkles" class="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
-					<span class="composer-opening-title">Opening Scene</span>
+			<!-- One branch per kind, so a closing row fades out under its own name. Rewrite wears
+			     Retry's glyph, the button it is asked from. -->
+			{#snippet questionRow(icon: IconName, title: string)}
+				<div class="composer-question-foot" transition:fade={{ duration: 180 }}>
+					<Icon name={icon} class="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
+					<span class="composer-question-title">{title}</span>
 					<button
 						type="button"
-						class="composer-icon-btn composer-opening-close"
-						onclick={closeOpeningFrom}
+						class="composer-icon-btn composer-question-close"
+						onclick={closeQuestionFrom}
 						aria-label="Back to your message"
 						title="Back to your message"
 					>
 						<Icon name="x" class="w-4 h-4" />
 					</button>
 				</div>
+			{/snippet}
+			{#if openingMode}
+				{@render questionRow('sparkles', 'Opening Scene')}
+			{:else if rewriteMode}
+				{@render questionRow('refresh', 'Rewrite')}
 			{/if}
-			{#if !openingMode}
+			{#if !asking}
 			<div class="composer-meta" transition:fade={{ duration: 180 }}>
 				<div class="composer-feature-group">
 					<div class="composer-menu-wrap relative">
@@ -1710,7 +1789,7 @@
 		gap: 0.45rem;
 		border-radius: var(--radius-xl);
 		position: relative;
-		/* Transparent until the opening scene mode tints it, so the halo fades rather than pops. */
+		/* Transparent until a question tints it, so the halo fades rather than pops. */
 		outline: 3px solid transparent;
 		transition:
 			border-color 140ms ease,
@@ -1936,15 +2015,15 @@
 		border-color: var(--color-accent);
 	}
 
-	/* ===== Opening scene mode ===== */
+	/* ===== Question modes (an opening scene, a rewrite) ===== */
 
-	.composer-shell--opening {
+	.composer-shell--question {
 		border-color: var(--color-accent);
 		outline-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
 	}
 
 	/* One sweep of light across the box as it turns: the moment the star lands. */
-	.composer-shell--opening::after {
+	.composer-shell--question::after {
 		content: '';
 		position: absolute;
 		inset: 0;
@@ -1959,10 +2038,10 @@
 			no-repeat;
 		background-size: 300% 100%;
 		background-position: 100% 0;
-		animation: composer-opening-sweep 700ms ease-out forwards;
+		animation: composer-question-sweep 700ms ease-out forwards;
 	}
 
-	@keyframes composer-opening-sweep {
+	@keyframes composer-question-sweep {
 		to {
 			background-position: 0 0;
 		}
@@ -1973,13 +2052,13 @@
 	}
 
 	.composer-foot > .composer-meta,
-	.composer-foot > .composer-opening-foot {
+	.composer-foot > .composer-question-foot {
 		grid-area: 1 / 1;
 	}
 
 	/* The tool row's rule and spacing, and a button of its recipe, so the two rows stand the same
 	   height and the cross-fade moves nothing. */
-	.composer-opening-foot {
+	.composer-question-foot {
 		display: flex;
 		align-items: center;
 		gap: 0.4rem;
@@ -1989,39 +2068,56 @@
 		min-width: 0;
 	}
 
-	.composer-opening-title {
+	.composer-question-title {
 		font-family: var(--font-ui);
 		font-size: 0.78rem;
 		font-weight: 600;
 		white-space: nowrap;
 	}
 
-	.composer-opening-close {
+	.composer-question-close {
 		margin-left: auto;
 	}
 
 	/* The Send button's height at every size: a taller one would grow the box as it turns. */
-	.composer-opening-go {
+	.composer-question-go,
+	.composer-question-quiet {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.4rem;
 		height: 2.25rem;
 		padding: 0 0.95rem;
-		border: none;
 		border-radius: var(--radius-full);
-		background: var(--color-accent);
-		color: var(--color-on-accent);
 		font-family: var(--font-ui);
 		font-size: 0.8rem;
 		font-weight: 600;
 		white-space: nowrap;
 		cursor: pointer;
+	}
+
+	.composer-question-go {
+		border: none;
+		background: var(--color-accent);
+		color: var(--color-on-accent);
 		box-shadow: var(--shadow-sm);
 		transition: background-color 150ms ease;
 	}
 
-	.composer-opening-go:hover {
+	.composer-question-go:hover {
 		background: var(--color-accent-hover);
+	}
+
+	/* Replace stays quiet beside the accent Keep both: the default, the one Enter presses, is the
+	   one that throws nothing away. */
+	.composer-question-quiet {
+		border: 1px solid var(--color-border-raised);
+		background: transparent;
+		color: var(--color-text-secondary);
+		transition: color 150ms ease;
+	}
+
+	.composer-question-quiet:hover {
+		color: var(--color-text-primary);
 	}
 
 	/* ===== Steering trigger (the panel's own styles live in SteeringPopover) ===== */
@@ -2250,6 +2346,12 @@
 
 		.composer-main {
 			gap: 0.32rem;
+		}
+
+		/* A rewrite's pair shares a phone's row with the box, which still needs room to type in. */
+		.composer-question-quiet,
+		.composer-question-quiet + .composer-question-go {
+			padding-inline: 0.7rem;
 		}
 
 		.token-popup {

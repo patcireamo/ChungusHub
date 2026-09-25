@@ -42,6 +42,7 @@
 		buildMacroContext,
 		resolveItem,
 		DEFAULT_CONTINUE_PROMPT,
+		DEFAULT_REWRITE_PROMPT,
 		type AssembleInput
 	} from '$lib/utils/prompt-assembly';
 	import { memoryStore } from '$lib/memory/store.svelte';
@@ -395,6 +396,24 @@
 	async function resetContinuePrompt(): Promise<void> {
 		if (!currentPreset) return;
 		currentPreset.continuePrompt = undefined;
+		await persistDraft();
+	}
+
+	// Same override contract as the continue prompt. A text without {{note}} still saves (an
+	// author mid-edit passes through one), and the lint under the field says a rewrite refuses it.
+	let rewritePromptText = $derived(currentPreset?.rewritePrompt ?? DEFAULT_REWRITE_PROMPT);
+	let rewritePromptModified = $derived(currentPreset?.rewritePrompt !== undefined);
+	let rewritePromptLacksNote = $derived(!extractMacroNames(rewritePromptText).includes('note'));
+
+	async function setRewritePrompt(value: string): Promise<void> {
+		if (!currentPreset) return;
+		currentPreset.rewritePrompt = value === DEFAULT_REWRITE_PROMPT ? undefined : value;
+		await persistDraft();
+	}
+
+	async function resetRewritePrompt(): Promise<void> {
+		if (!currentPreset) return;
+		currentPreset.rewritePrompt = undefined;
 		await persistDraft();
 	}
 
@@ -1123,6 +1142,38 @@
 					and providers that support assistant prefill continue the reply natively.
 				</p>
 			</div>
+
+			<!-- The instruction a rewrite sends after the reply it rewrites, per-preset for the same
+			     reason as the continue prompt. Unlike that one, blank is not a choice: a template
+			     without {{note}} makes every rewrite refuse to run. -->
+			<div class="pb-opt">
+				<div class="pb-opt-head">
+					<label for="rewrite-prompt" class="pb-prune-title">Rewrite prompt</label>
+					{#if rewritePromptModified}
+						<button type="button" class="pb-opt-reset" onclick={resetRewritePrompt}>Reset</button>
+					{/if}
+				</div>
+				<textarea
+					id="rewrite-prompt"
+					value={rewritePromptText}
+					oninput={(e) => setRewritePrompt((e.target as HTMLTextAreaElement).value)}
+					use:autoResize={{ maxHeight: 260, value: rewritePromptText }}
+					placeholder="Write the instruction, with {'{{note}}'} where the note goes."
+					class="input-base w-full px-3 py-2 text-text-primary font-ui text-sm resize-none"
+				></textarea>
+				{#if rewritePromptLacksNote}
+					<div class="pb-lint">
+						<Icon name="warning" class="w-3.5 h-3.5 flex-shrink-0 mt-0.5" strokeWidth={1.5} />
+						<span>
+							Without {'{{note}}'}, the note you type never reaches the model, so a rewrite refuses to run. Put it back, or Reset.
+						</span>
+					</div>
+				{/if}
+				<p class="pb-sep-hint pb-opt-hint">
+					Sent as the final turn, right after the reply being rewritten. {'{{note}}'} is the note you
+					typed in the composer.
+				</p>
+			</div>
 		</section>
 	{/if}
 
@@ -1302,7 +1353,7 @@
 		color: var(--color-text-muted);
 	}
 
-	/* The one option whose value is prose, so it gets a stacked block instead of a row. */
+	/* The options whose value is prose get a stacked block instead of a row. */
 	.pb-opt {
 		display: flex;
 		flex-direction: column;

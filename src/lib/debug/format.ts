@@ -9,20 +9,20 @@ import type { PromptLogEntry, PromptLogMessage, PromptLogStatus } from './types'
 /**
  * A stable color per query kind, so the eye can scan the list. Keyed by the engine ids
  * (an engine's registry id IS its debug source label, per architecture/engines.md coupling
- * #1) plus the three callers that are not engines (an ordinary chat send, the assistant, and
- * a continue, which rides the primary connection like a send but is worth telling apart in
- * the log), so a new engine without a color is a compile error instead of an unexplained
- * gray row.
+ * #1) plus the four callers that are not engines (an ordinary chat send, the assistant, a
+ * continue and a rewrite, the last two riding the primary connection like a send but worth
+ * telling apart in the log), so a new engine without a color is a compile error instead of an
+ * unexplained gray row.
  */
-const SOURCE_COLORS: Record<EngineId | 'chat' | 'assistant' | 'continue', string> = {
+const SOURCE_COLORS: Record<EngineId | 'chat' | 'assistant' | 'continue' | 'rewrite', string> = {
 	chat: '#22c55e',
 	'opening-scene': '#14b8a6',
 	continue: '#f97316',
+	rewrite: '#d946ef',
 	memory: '#a855f7',
 	assistant: '#3b82f6',
 	steering: '#6366f1',
 	spellcheck: '#06b6d4',
-	corrections: '#d946ef',
 	impersonate: '#f43f5e',
 	sprites: '#eab308'
 };

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { parsePresetJson, serializePresetJson } from './preset-io';
 import { DEFAULT_EXAMPLE_SEPARATOR } from '$lib/macros';
-import { DEFAULT_CONTINUE_PROMPT } from '$lib/utils/prompt-assembly';
+import { DEFAULT_CONTINUE_PROMPT, DEFAULT_REWRITE_PROMPT } from '$lib/utils/prompt-assembly';
 
 const bare = (over: Record<string, unknown> = {}) => ({
 	id: 'p',
@@ -44,29 +44,40 @@ describe('preset JSON interchange', () => {
 		// preset does not own, and nobody could learn they exist from the JSON.
 		const parsed = JSON.parse(serializePresetJson(bare()));
 		expect(parsed.continuePrompt).toBe(DEFAULT_CONTINUE_PROMPT);
+		expect(parsed.rewritePrompt).toBe(DEFAULT_REWRITE_PROMPT);
 		expect(parsed.exampleSeparator).toBe(DEFAULT_EXAMPLE_SEPARATOR);
 		expect(parsed.pruneEmptyBlocks).toBe(false);
 	});
 
 	test('overridden values export verbatim, empty string included', () => {
-		const parsed = JSON.parse(serializePresetJson(bare({ continuePrompt: '', exampleSeparator: '' })));
+		const parsed = JSON.parse(
+			serializePresetJson(bare({ continuePrompt: '', rewritePrompt: '', exampleSeparator: '' }))
+		);
 		expect(parsed.continuePrompt).toBe('');
+		expect(parsed.rewritePrompt).toBe('');
 		expect(parsed.exampleSeparator).toBe('');
 		// Empty is a real choice (no instruction / no header line), so it must survive import.
+		// A rewrite prompt emptied out refuses to run, and the import keeps it that way rather
+		// than quietly swapping in a default the author never shipped.
 		const imported = parsePresetJson(JSON.stringify(parsed));
 		expect(imported.continuePrompt).toBe('');
+		expect(imported.rewritePrompt).toBe('');
 		expect(imported.exampleSeparator).toBe('');
 	});
 
 	test('importing a shipped default stores no override, so the preset keeps tracking it', () => {
 		const imported = parsePresetJson(serializePresetJson(bare()));
 		expect(imported.continuePrompt).toBeUndefined();
+		expect(imported.rewritePrompt).toBeUndefined();
 		expect(imported.exampleSeparator).toBeUndefined();
 	});
 
-	test('a real continue override survives the round trip', () => {
-		const imported = parsePresetJson(serializePresetJson(bare({ continuePrompt: 'Keep going, {{char}}.' })));
+	test('real continue and rewrite overrides survive the round trip', () => {
+		const imported = parsePresetJson(
+			serializePresetJson(bare({ continuePrompt: 'Keep going, {{char}}.', rewritePrompt: 'Redo it: {{note}}' }))
+		);
 		expect(imported.continuePrompt).toBe('Keep going, {{char}}.');
+		expect(imported.rewritePrompt).toBe('Redo it: {{note}}');
 	});
 
 	test('rejects unknown roles instead of silently changing prompt semantics', () => {

@@ -49,7 +49,6 @@
 			| 'sparkles'
 			| 'feather'
 			| 'checkCircle'
-			| 'pencil'
 			| 'mask'
 			| 'compass'
 			| 'image';

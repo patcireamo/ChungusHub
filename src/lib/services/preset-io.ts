@@ -10,7 +10,7 @@ import type {
 	PromptSection
 } from '$lib/types/database';
 import { DEFAULT_EXAMPLE_SEPARATOR } from '$lib/macros';
-import { DEFAULT_CONTINUE_PROMPT } from '$lib/utils/prompt-assembly';
+import { DEFAULT_CONTINUE_PROMPT, DEFAULT_REWRITE_PROMPT } from '$lib/utils/prompt-assembly';
 import { normalizeCarriedRules } from '$lib/utils/regex-rules';
 import type { RegexRule } from '$lib/utils/regex-rules';
 
@@ -25,6 +25,7 @@ export interface ImportedPreset {
 	pruneEmptyBlocks: boolean;
 	exampleSeparator?: string;
 	continuePrompt?: string;
+	rewritePrompt?: string;
 }
 
 const CONTROL_TYPES = new Set<PromptControlType>([
@@ -125,7 +126,8 @@ export function parsePresetJson(text: string): ImportedPreset {
 		regexRules: normalizeCarriedRules(raw.regexRules),
 		pruneEmptyBlocks: raw.pruneEmptyBlocks === true,
 		exampleSeparator: asOverride(raw.exampleSeparator, DEFAULT_EXAMPLE_SEPARATOR),
-		continuePrompt: asOverride(raw.continuePrompt, DEFAULT_CONTINUE_PROMPT)
+		continuePrompt: asOverride(raw.continuePrompt, DEFAULT_CONTINUE_PROMPT),
+		rewritePrompt: asOverride(raw.rewritePrompt, DEFAULT_REWRITE_PROMPT)
 	};
 }
 
@@ -200,7 +202,7 @@ function asOverride(value: unknown, shippedDefault: string): string | undefined 
  * defaults can still improve under an existing preset, but an export is a document a human
  * reads and another install imports: a field that silently vanishes from it reads as a
  * field the preset doesn't own, and there is no way to discover it by looking at the JSON.
- * `pruneEmptyBlocks` was always materialized this way; the two string fields now match it.
+ * `pruneEmptyBlocks` was always materialized this way; the string fields now match it.
  */
 export function serializePresetJson(preset: PromptPreset): string {
 	return `${JSON.stringify(presetDocument(preset), null, 2)}\n`;
@@ -232,6 +234,7 @@ export function presetDocument(preset: PromptPreset): Record<string, unknown> {
 		})),
 		pruneEmptyBlocks: preset.pruneEmptyBlocks === true,
 		exampleSeparator: preset.exampleSeparator ?? DEFAULT_EXAMPLE_SEPARATOR,
-		continuePrompt: preset.continuePrompt ?? DEFAULT_CONTINUE_PROMPT
+		continuePrompt: preset.continuePrompt ?? DEFAULT_CONTINUE_PROMPT,
+		rewritePrompt: preset.rewritePrompt ?? DEFAULT_REWRITE_PROMPT
 	};
 }

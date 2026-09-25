@@ -56,8 +56,8 @@ export const COMMAND_GROUPS: { id: CommandGroup; label: string }[] = [
  */
 export interface CommandHost {
 	continueMessage(): void;
-	regenerateLast(): void;
-	swipeLast(): void;
+	regenerateLast(note?: string): void;
+	swipeLast(note?: string): void;
 	requestDuplicate(): void;
 }
 
@@ -134,9 +134,11 @@ export const COMMANDS: CommandDef[] = [
 		aliases: ['regenerate'],
 		group: 'story',
 		icon: 'refresh',
-		describe: 'Generate the newest turn again',
+		describe: 'Generate the newest turn again, or rewrite it to a note',
+		// Optional for the reason the composer's rewrite box is: empty is a plain re-roll.
+		arg: { label: 'note', required: false },
 		unavailable: (ctx) => (ctx.canRegenerateLast ? null : ctx.regenerateLastHint),
-		run: (_arg, ctx) => ctx.host.regenerateLast()
+		run: (note, ctx) => ctx.host.regenerateLast(note)
 	},
 	{
 		// Retry's non-destructive half, so it wears Retry's own glyph: the two are the rows
@@ -144,10 +146,11 @@ export const COMMANDS: CommandDef[] = [
 		name: 'swipe',
 		group: 'story',
 		icon: 'refresh',
-		describe: 'Add an alternate reply to swipe between',
+		describe: 'Add an alternate reply to swipe between, or a rewrite to a note',
+		arg: { label: 'note', required: false },
 		unavailable: (ctx) =>
 			ctx.canSwipeLast ? null : 'The newest turn must be a reply, or a turn of yours',
-		run: (_arg, ctx) => ctx.host.swipeLast()
+		run: (note, ctx) => ctx.host.swipeLast(note)
 	},
 	{
 		name: 'opening',

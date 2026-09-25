@@ -1,7 +1,7 @@
 /**
  * Feature prompts, the editable prompt templates for the app's built-in AI
  * features: the opening-scene generator, Steering, Spellcheck, Impersonate,
- * Corrections, and the memory extract/promote pipeline, plus each engine's app-wide on/off
+ * and the memory extract/promote pipeline, plus each engine's app-wide on/off
  * switch.
  *
  * Each feature is a prompt holder bolted onto bespoke UI (the memory panel, the
@@ -23,8 +23,7 @@ export type FeaturePromptKey =
 	| 'steeringWrapper'
 	| 'spellcheck'
 	| 'impersonate'
-	| 'sprites'
-	| 'corrections';
+	| 'sprites';
 
 const DEFAULT_OPENING_SCENE_PROMPT = `((OOC: Generate the opening scene. {{idea}}
 
@@ -56,19 +55,6 @@ Reply with only this JSON and nothing else: {"sprite": "<label>"}
 
 {{chatHistoryLast3}}`;
 
-// Sent as the FINAL user turn, directly after the assistant turn being rewritten (which the
-// prompt carries verbatim, so this template deliberately does not restate it). {{instruction}}
-// is the reader's own direction, substituted at the call site like the opening scene's
-// {{idea}}, and it sits alone in its own paragraph because it is the reason the call is being
-// made: everything around it is scaffolding to stop the model drifting off the rest.
-const DEFAULT_CORRECTIONS_PROMPT = `((OOC: Stop and rewrite your last message above. Apply this correction, and treat it as the highest-priority instruction in this prompt:
-
-{{instruction}}
-
-Leave everything the correction does not ask about intact: the same scene and continuity, {{char}}'s established voice, the same formatting, and roughly the same length. Do not carry the story past where the message ended, and do not comment on what you changed.
-
-Reply with only the rewritten message.))`;
-
 /** Shipped default template per feature: the fallback when the user hasn't overridden it. */
 export const FEATURE_PROMPT_DEFAULTS: Record<FeaturePromptKey, string> = {
 	openingScene: DEFAULT_OPENING_SCENE_PROMPT,
@@ -77,8 +63,7 @@ export const FEATURE_PROMPT_DEFAULTS: Record<FeaturePromptKey, string> = {
 	steeringWrapper: DEFAULT_STEERING_WRAPPER_PROMPT,
 	spellcheck: DEFAULT_SPELLCHECK_PROMPT,
 	impersonate: DEFAULT_IMPERSONATE_PROMPT,
-	sprites: DEFAULT_SPRITES_PROMPT,
-	corrections: DEFAULT_CORRECTIONS_PROMPT
+	sprites: DEFAULT_SPRITES_PROMPT
 };
 
 interface FeaturePromptsState {
@@ -95,7 +80,6 @@ interface FeaturePromptsState {
 	steeringEnabled: boolean;
 	spellcheckEnabled: boolean;
 	impersonateEnabled: boolean;
-	correctionsEnabled: boolean;
 	/** The one engine that ships OFF. It spends a call on every reply for as long as it is on,
 	 *  and unlike Memory that call buys presentation rather than the story's own continuity,
 	 *  so it is a cost the reader opts into, not one they discover. The Sprites section in the
@@ -136,7 +120,6 @@ function normalize(raw: Partial<FeaturePromptsState> | null): FeaturePromptsStat
 		steeringEnabled: raw?.steeringEnabled ?? true,
 		spellcheckEnabled: raw?.spellcheckEnabled ?? true,
 		impersonateEnabled: raw?.impersonateEnabled ?? true,
-		correctionsEnabled: raw?.correctionsEnabled ?? true,
 		spritesEnabled: raw?.spritesEnabled ?? false,
 		spritesRereadOnEdit: raw?.spritesRereadOnEdit ?? false,
 		spritesRereadOnContinue: raw?.spritesRereadOnContinue ?? false,
@@ -156,7 +139,6 @@ class FeaturePromptsStore {
 		steeringEnabled: true,
 		spellcheckEnabled: true,
 		impersonateEnabled: true,
-		correctionsEnabled: true,
 		spritesEnabled: false,
 		spritesRereadOnEdit: false,
 		spritesRereadOnContinue: false,
@@ -210,10 +192,6 @@ class FeaturePromptsStore {
 
 	get impersonateEnabled(): boolean {
 		return this.state.impersonateEnabled;
-	}
-
-	get correctionsEnabled(): boolean {
-		return this.state.correctionsEnabled;
 	}
 
 	get spritesEnabled(): boolean {
@@ -296,11 +274,6 @@ class FeaturePromptsStore {
 
 	setImpersonateEnabled(value: boolean): void {
 		this.state = { ...this.state, impersonateEnabled: value };
-		this.persist();
-	}
-
-	setCorrectionsEnabled(value: boolean): void {
-		this.state = { ...this.state, correctionsEnabled: value };
 		this.persist();
 	}
 

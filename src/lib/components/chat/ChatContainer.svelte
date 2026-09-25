@@ -53,20 +53,21 @@
 		messageStore.insertDummyMessage(role);
 	}
 
-	// ⌘/Ctrl+Enter and `/retry`, both landing on the last reply's own Retry → "Replace current".
-	// No try/catch here on purpose: unlike continueMessage, retryMessageResponse already toasts
-	// its own failures, so wrapping it would double every error message.
-	function handleRegenerateLast() {
+	// ⌘/Ctrl+Enter and `/retry`, both landing on the last reply's own Retry → "Replace current",
+	// or on a rewrite to the note `/retry` was given. No try/catch here on purpose: unlike
+	// continueMessage, retryMessageResponse already toasts its own failures, so wrapping it would
+	// double every error message.
+	function handleRegenerateLast(note?: string) {
 		if (!chatState) return;
-		messageStore.regenerateLastResponse('replace');
+		messageStore.regenerateLastResponse('replace', note);
 	}
 
 	// The same call with the non-destructive action: keep what is there and add a sibling to
 	// swipe between. Reached only by `/swipe`, since the transcript's own Retry button already
 	// offers both rows on the turn itself.
-	function handleSwipeLast() {
+	function handleSwipeLast(note?: string) {
 		if (!chatState) return;
-		messageStore.regenerateLastResponse('branch');
+		messageStore.regenerateLastResponse('branch', note);
 	}
 
 	// Same shape as the opening-scene call site: the store's guard errors (engine off,

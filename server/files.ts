@@ -369,6 +369,7 @@ export interface PresetFileData {
 	pruneEmptyBlocks?: boolean;
 	exampleSeparator?: string;
 	continuePrompt?: string;
+	rewritePrompt?: string;
 }
 
 function optionalArray(value: unknown): unknown[] | undefined {
@@ -395,7 +396,8 @@ function presetFileShape(data: Record<string, unknown>): Omit<PresetFileData, 'n
 		regexRules: optionalArray(data.regexRules),
 		pruneEmptyBlocks: data.pruneEmptyBlocks === true,
 		exampleSeparator: optionalString(data.exampleSeparator),
-		continuePrompt: optionalString(data.continuePrompt)
+		continuePrompt: optionalString(data.continuePrompt),
+		rewritePrompt: optionalString(data.rewritePrompt)
 	};
 }
 

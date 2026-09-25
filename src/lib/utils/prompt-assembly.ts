@@ -26,6 +26,7 @@ import { resolveLorebooks } from '$lib/lorebook/engine';
 import {
 	expandMacros,
 	expandSelfRefs,
+	extractMacroNames,
 	historyTurns,
 	pruneEmptyTagBlocks,
 	resolveMacroValues,
@@ -45,6 +46,16 @@ export const DEFAULT_SYSTEM_PROMPT =
  *  `continuePrompt` of its own. A preset that sets it to an empty string sends nothing. */
 export const DEFAULT_CONTINUE_PROMPT =
 	'((OOC: Continue your previous message. Your reply will be appended to the end of that message exactly as you send it, so write only the new text: no repetition, no rephrasing, no lead-in, and do not acknowledge this instruction. If the message broke off mid-sentence, finish that sentence first. If it already ends cleanly, continue the scene from that exact moment with what happens next. Keep the same tense, point of view, and voice.))';
+
+/** The instruction a rewrite sends after the reply it rewrites, when the preset carries no
+ *  `rewritePrompt` of its own. */
+export const DEFAULT_REWRITE_PROMPT = `((OOC: Stop and rewrite your last message above. Apply this correction, and treat it as the highest-priority instruction in this prompt:
+
+{{note}}
+
+Leave everything the correction does not ask about intact: the same scene and continuity, {{char}}'s established voice, the same formatting, and roughly the same length. Do not carry the story past where the message ended, and do not comment on what you changed.
+
+Reply with only the rewritten message.))`;
 
 /** Resolved chat-memory recall: the {{memory}} text plus the ids it folded away. */
 export interface PromptRecall {
@@ -88,20 +99,16 @@ export interface AssembleInput {
 	 *  continue it natively.
 	 *  `chatMessages` must NOT include the turn; pass the path up to its parent. */
 	continuation?: Message;
-	/** Corrections: the assistant turn being rewritten, and the filled instruction that says
-	 *  how. Same tail shape as `continuation` (see {@link actionTail}) and mutually exclusive
-	 *  with it, but the turn is sent as its STORED bytes rather than as an injected history
-	 *  turn: a correction's output replaces the row, so anything a prompt-scope regex rule or
-	 *  a macro expansion rewrote on the way out would be silently baked into storage on the
-	 *  way back. What is sent is exactly what will be overwritten.
-	 *  `instruction` arrives already filled (the engine substitutes {{instruction}} into the
-	 *  authored template, the same call-site substitution as the opening scene's {{idea}});
-	 *  the global macros in it are expanded here like any other instruction. It must not be
-	 *  blank: an empty instruction leaves the assistant turn closing the prompt as a prefill,
-	 *  and the model would continue the message instead of rewriting it. The engine refuses
-	 *  that before assembly is ever reached.
+	/** Rewrite: the assistant turn being rewritten, and the reader's note saying how. The same
+	 *  tail slot as `continuation` (see {@link actionTail}), and never together with it. The turn
+	 *  is sent as its STORED bytes: the answer is stored as the version the story goes on from,
+	 *  so anything prompt regex or a self-ref expansion changed on the way out would be baked
+	 *  into it on the way back.
+	 *  The instruction is the preset's `rewritePrompt` (absent = {@link DEFAULT_REWRITE_PROMPT})
+	 *  with the note layered in as the call-site key {{note}}, expanded here against the same
+	 *  context as everything else in the prompt.
 	 *  `chatMessages` must NOT include the turn; pass the path up to its parent. */
-	correction?: { message: Message; instruction: string };
+	rewrite?: { message: Message; note: string };
 	/** Steering: guidance injected into the prompt without ever becoming a chat row. The
 	 *  caller passes the notes that already resolved as active for this chat, with their
 	 *  inherited placement filled in (`resolveSteeringForPrompt`, types/steering.ts).
@@ -496,25 +503,28 @@ interface ActionTail {
 
 /**
  * The tail a one-shot action closes the prompt with: the assistant turn it acts on, followed
- * by the instruction saying what to do with it. Continue and Corrections are the same shape
- * and differ only in how that turn is rendered and which instruction follows, so they share
- * one builder -- and therefore share the pricing below, which is the half neither can afford
- * to get wrong. The tail is fixed cost (see `fixedExtra` in assemblePrompt): history yields
- * room for it and it is never itself trimmed, because a correction whose target was trimmed
- * away is a correction of nothing.
+ * by the instruction saying what to do with it. Continue and Rewrite are the same shape and
+ * differ only in how that turn is rendered and which instruction follows, so they share one
+ * builder, and therefore share the pricing below, which is the half neither can afford to get
+ * wrong. The tail is fixed cost (see `fixedExtra` in assemblePrompt): history yields room for
+ * it and it is never itself trimmed, because a rewrite whose target was trimmed away is a
+ * rewrite of nothing.
  *
  * The two render their turn differently on purpose. Continue APPENDS to the stored row, so it
  * sends the turn as an injected history turn (prompt regex applied, self-refs expanded) and
- * `continuationSent` anchors the join against exactly what the model saw. Corrections REPLACES
- * the row, so it sends the stored bytes untouched: a prompt-scope rule hides text from the
- * model without changing storage, and rewriting the hidden-from version would delete what it
- * hid, for good. Empty when the input carries neither.
+ * `continuationSent` anchors the join against exactly what the model saw. Rewrite writes a new
+ * version of the row, so it sends the stored bytes untouched: a prompt-scope rule hides text
+ * from the model without changing storage, and a rewrite of the hidden-from version would come
+ * back without what it hid, gone for good once Replace deletes the original. Empty when the
+ * input carries neither.
  */
 function actionTail(input: AssembleInput, ctx: MacroContext): ActionTail {
-	if (input.correction) {
-		const messages: LLMMessage[] = [{ role: 'assistant', content: input.correction.message.content }];
-		const instruction = expandMacros(input.correction.instruction, ctx).trim();
-		if (instruction) messages.push({ role: 'user', content: instruction });
+	if (input.rewrite) {
+		const template = input.preset?.rewritePrompt ?? DEFAULT_REWRITE_PROMPT;
+		const messages: LLMMessage[] = [
+			{ role: 'assistant', content: input.rewrite.message.content },
+			{ role: 'user', content: rewriteInstruction(template, input.rewrite.note, ctx) }
+		];
 		return { messages, tokens: messages.reduce((sum, m) => sum + countTokens(m.content, input.model), 0) };
 	}
 	if (!input.continuation) return { messages: [], tokens: 0 };
@@ -529,11 +539,27 @@ function actionTail(input: AssembleInput, ctx: MacroContext): ActionTail {
 	};
 }
 
+/** The note rides in as the call-site key {{note}}, layered over the template's own macro values
+ *  so it wins a name collision; it is expanded first because `substitute` never re-scans a value. */
+function rewriteInstruction(template: string, note: string, ctx: MacroContext): string {
+	if (!extractMacroNames(template).includes('note')) {
+		throw new Error(
+			"This preset's Rewrite prompt has no {{note}}, so your note would never reach the model. Put {{note}} back in Prompt Builder → Preset options, or reset the field."
+		);
+	}
+	const expandedNote = expandMacros(note, ctx);
+	if (!expandedNote.trim()) throw new Error('The note is empty once its macros are filled in.');
+	return substitute(template, { ...resolveMacroValues(template, ctx), note: expandedNote }).trim();
+}
+
 /**
  * Pure assembly: resolved inputs → final messages + aggregate token breakdown.
  * No db, no async. The live meters can therefore call it on every reactive change.
  */
 export function assemblePrompt(input: AssembleInput): PromptAssembly {
+	if (input.continuation && input.rewrite) {
+		throw new Error('A prompt carries a continuation or a rewrite, never both.');
+	}
 	const mode = input.postProcessing?.mode ?? 'merge';
 	const placeholder = input.postProcessing?.placeholder;
 	const { preset } = input;
@@ -542,10 +568,10 @@ export function assemblePrompt(input: AssembleInput): PromptAssembly {
 		// against the bare fallback prompt still has to carry what it carries.
 		let fallbackTail: ActionTail | undefined;
 		let fallbackSteering: DepthSplice[] = [];
-		if (input.continuation || input.correction || input.steering) {
+		if (input.continuation || input.rewrite || input.steering) {
 			const fallbackCtx = buildMacroContext(input);
 			fallbackTail =
-				input.continuation || input.correction ? actionTail(input, fallbackCtx) : undefined;
+				input.continuation || input.rewrite ? actionTail(input, fallbackCtx) : undefined;
 			fallbackSteering = buildSteeringMessages(input, fallbackCtx, input.model);
 		}
 		return systemFallback(mode, placeholder, fallbackTail, fallbackSteering);

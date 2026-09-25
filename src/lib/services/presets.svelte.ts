@@ -63,7 +63,8 @@ function clonePresetBody(preset: Omit<StoredPreset, 'id' | 'items'>) {
 		regexRules: cloneRules(preset.regexRules),
 		pruneEmptyBlocks: preset.pruneEmptyBlocks === true,
 		exampleSeparator: preset.exampleSeparator,
-		continuePrompt: preset.continuePrompt
+		continuePrompt: preset.continuePrompt,
+		rewritePrompt: preset.rewritePrompt
 	};
 }
 

@@ -15,7 +15,7 @@
 	import { memoryStore } from '$lib/memory/store.svelte';
 	import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 	import { generalSettingsStore } from '$lib/stores/general-settings.svelte';
-	import { openingComposer } from '$lib/stores/openingComposer.svelte';
+	import { composerQuestion } from '$lib/stores/composerQuestion.svelte';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 
@@ -246,7 +246,7 @@
 	// land on (architecture/engines.md). The turns after it belong to the greeting on screen, not
 	// to the new one, which starts with nothing after it.
 	let openingPage = $derived(
-		openingComposer.active && windowStart === 0 && messages[0]?.parentId === null && messages[0]?.role === 'assistant'
+		composerQuestion.asking('opening') && windowStart === 0 && messages[0]?.parentId === null && messages[0]?.role === 'assistant'
 	);
 	// Staged so the short blank page never makes the browser clamp the scroll: glide to the top,
 	// then turn; back, let the card grow, bring the turns below back, then glide to the reader.
@@ -667,7 +667,7 @@
 					     elsewhere would run two generations over one abort controller. -->
 					<Button
 						variant="secondary"
-						onclick={(e) => openingComposer.open(e.currentTarget)}
+						onclick={(e) => composerQuestion.open({ kind: 'opening' }, e.currentTarget)}
 						disabled={messageStore.isStreaming}
 					>
 						<Icon name="bookOpen" class="w-4 h-4" />
