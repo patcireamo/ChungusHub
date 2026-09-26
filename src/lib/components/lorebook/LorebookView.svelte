@@ -301,6 +301,7 @@
 	let selectMode = $state(false);
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleteOpen = $state(false);
+	let bulkBarHeight = $state(0);
 
 	// Entering/leaving select mode resets the set; entering also folds every open row so
 	// the list reads as a flat checklist.
@@ -614,8 +615,12 @@
 			</div>
 		</header>
 		<!-- One scroll, two columns once the panel can hold them: what the book IS on the left,
-		     what it HOLDS on the right, the split the character editor's identity pane uses. -->
-		<div class="lb-page panel-scroll">
+		     what it HOLDS on the right, the split the character editor's identity pane uses. The
+		     padding keeps a row the keyboard moves to out from under the pinned selection bar. -->
+		<div
+			class="lb-page panel-scroll"
+			style:scroll-padding-top={selectMode ? `${bulkBarHeight + 8}px` : undefined}
+		>
 			<div class="lb-rail">
 				<!-- The cover, in the slot the other two editors open a portrait in: press to
 				     pick one, the two corner actions to drop it or aim it. -->
@@ -899,7 +904,7 @@
 					</div>
 
 					{#if selectMode}
-						<div class="brw-bulk lb-bulk">
+						<div class="brw-bulk lb-bulk" bind:offsetHeight={bulkBarHeight}>
 							<button
 								type="button"
 								class="brw-bulk-x"
@@ -1614,10 +1619,33 @@
 		opacity: 0.4;
 	}
 
+	/* Pinned while the list scrolls under it, the way the Library's bar stays put: the count and
+	   the actions are the point of the mode, and a long list carried them off screen. */
 	.lb-bulk {
+		position: sticky;
+		top: 0;
+		z-index: 3;
 		margin: 0 0 0.5rem;
-		border: 1px solid color-mix(in srgb, var(--color-accent) 26%, transparent);
+		border: 1px solid transparent;
 		border-radius: var(--radius-md);
+		background: none;
+	}
+
+	/* Rows pass beneath it, so it wears the float tier the app gives a surface over live
+	   content. On a layer behind the bar and not the bar itself: a backdrop filter makes its
+	   element the backdrop for all it holds, and the Move to… and Copy to… panels hanging out
+	   of the bar would frost nothing but the bar. The layer draws the edge too, since it paints
+	   over the bar's own. */
+	.lb-bulk::before {
+		content: '';
+		position: absolute;
+		inset: -1px;
+		z-index: -1;
+		border: 1px solid color-mix(in srgb, var(--color-accent) 26%, transparent);
+		border-radius: inherit;
+		background: color-mix(in srgb, var(--color-accent) 9%, var(--color-float-bg));
+		backdrop-filter: var(--backdrop-blur) saturate(140%);
+		-webkit-backdrop-filter: var(--backdrop-blur) saturate(140%);
 	}
 
 	/* Move to… and Copy to… open the same list, so the one that is open holds the accent while
