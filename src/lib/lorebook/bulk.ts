@@ -150,7 +150,8 @@ export function withoutKnob(edit: LorebookBulkEdit, knob: LorebookBulkKnob): Lor
 
 /** What the editor offers for this selection under this edit. */
 export interface LorebookBulkOffers {
-	/** Filter logic is read only beside secondary keys. */
+	/** Filter logic is read only beside secondary keys, and never by an always-active entry,
+	 *  which fires without reading its keys at all. */
 	filter: boolean;
 	/** A level is part of waiting, so writing one to an entry that does not wait would make it
 	 *  wait: it is offered only while every entry does. */
@@ -184,7 +185,7 @@ export function bulkOffers(
 ): LorebookBulkOffers {
 	const any = entries.length > 0;
 	return {
-		filter: entries.some((e) => e.keysecondary.length > 0),
+		filter: entries.some((e) => !constantAfter(e, edit) && e.keysecondary.length > 0),
 		level: any && entries.every((e) => wokenByAfter(e, edit) === 'entriesOnly'),
 		groupRules: entries.some((e) => (edit.group ?? e.group ?? '').trim() !== ''),
 		depthRules: entries.some(

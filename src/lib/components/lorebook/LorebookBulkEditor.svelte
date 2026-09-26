@@ -357,7 +357,8 @@
 			)}
 		</div>
 
-		<!-- Read only beside secondary keys, so it is drawn only while one of these has some. -->
+		<!-- Read only beside secondary keys, and never by an always-active entry, so it is drawn
+		     only while a keyword entry here has some (bulkOffers). -->
 		{#if offers.filter}
 			<div>
 				{@render head('filter', 'Filter', undefined)}
