@@ -21,6 +21,7 @@
 	import LorebookBindPicker from './LorebookBindPicker.svelte';
 	import LorebookTransferPicker from './LorebookTransferPicker.svelte';
 	import LorebookBulkEditor from './LorebookBulkEditor.svelte';
+	import LorebookSelectBy from './LorebookSelectBy.svelte';
 	import LorebookScanTester from './LorebookScanTester.svelte';
 	import LorebookStatsBar from './LorebookStatsBar.svelte';
 	import { imageService, imageRejectionReason } from '$lib/services/imageService';
@@ -329,6 +330,21 @@
 		selectedIds = new Set([...selectedIds, ...entries.map((e) => e.id)]);
 	}
 
+	/** Picking by the settings entries hold (LorebookSelectBy), keyed like Edit… so every opening
+	 *  starts with nothing picked. */
+	let selectByOpen = $state(false);
+	let selectByOpening = $state(0);
+
+	function openSelectBy() {
+		selectByOpening++;
+		selectByOpen = true;
+	}
+
+	function pickBy(ids: string[], replace: boolean) {
+		selectedIds = new Set(replace ? ids : [...selectedIds, ...ids]);
+		selectByOpen = false;
+	}
+
 	function bulkSet(patch: { disable: boolean }) {
 		if (!selectedBook) return;
 		lorebookStore.updateEntries(selectedBook.id, selectedIds, patch);
@@ -348,10 +364,12 @@
 		bulkEditOpen = true;
 	}
 
-	// The dialog edits a selection, so it cannot outlive one: leaving select mode, which a book
-	// switch also does, takes it down with the set it was opened over.
+	// Both dialogs work on a selection, so neither can outlive one: leaving select mode, which a
+	// book switch also does, takes them down with the set they were opened over.
 	$effect(() => {
-		if (!selectMode) bulkEditOpen = false;
+		if (selectMode) return;
+		bulkEditOpen = false;
+		selectByOpen = false;
 	});
 
 	function bulkDelete() {
@@ -943,6 +961,16 @@
 							>
 								None
 							</button>
+							<!-- A single row is All's job. -->
+							<button
+								type="button"
+								class="brw-bulk-link"
+								onclick={openSelectBy}
+								disabled={entries.length < 2}
+								aria-haspopup="dialog"
+							>
+								Select by…
+							</button>
 							<span class="brw-bulk-spacer"></span>
 							<button
 								type="button"
@@ -1178,6 +1206,29 @@
 				entryIds={selectedIds}
 				onClose={() => (bulkEditOpen = false)}
 				bind:held={bulkEditHeld}
+			/>
+		{/key}
+	{/if}
+</Dialog>
+
+<!-- `fill`, as Edit… is: the knobs drawn follow the rows on screen, and the pair should read as
+     one shape. -->
+<Dialog
+	open={selectByOpen && !!selectedBook}
+	onClose={() => (selectByOpen = false)}
+	title="Select by setting"
+	size="lg"
+	bare
+	fill
+>
+	{#if selectedBook}
+		{#key selectByOpening}
+			<LorebookSelectBy
+				bookId={selectedBook.id}
+				{entries}
+				narrowed={!!q || hidden.length > 0}
+				{selectedIds}
+				onPick={pickBy}
 			/>
 		{/key}
 	{/if}

@@ -45,6 +45,7 @@
 		type LorebookWokenBy
 	} from '$lib/lorebook/types';
 	import {
+		LOREBOOK_KNOB_NAMES,
 		MIXED,
 		bulkEntryPatch,
 		bulkOffers,
@@ -107,6 +108,8 @@
 		delete next[key];
 		edit = next;
 	}
+
+	const TIPS: Partial<Record<LorebookBulkKnob, string>> = LOREBOOK_ENTRY_TIPS;
 
 	const ON_OFF = [
 		{ value: 'on', label: 'On' },
@@ -354,10 +357,12 @@
 	}
 </script>
 
-{#snippet head(knob: LorebookBulkKnob, label: string, tip: string | undefined)}
+{#snippet head(knob: LorebookBulkKnob)}
 	<div class="bk-head">
-		<span class="section-label bk-name" class:is-changed={changed.has(knob)}>{label}</span>
-		{#if tip}<InfoTip text={tip} />{/if}
+		<span class="section-label bk-name" class:is-changed={changed.has(knob)}>
+			{LOREBOOK_KNOB_NAMES[knob]}
+		</span>
+		{#if TIPS[knob]}<InfoTip text={TIPS[knob]} />{/if}
 		{#if changed.has(knob)}
 			<button type="button" class="bk-keep" onclick={() => (edit = withoutKnob(edit, knob))}>
 				Leave as is
@@ -423,7 +428,7 @@
 		onfocusin={() => (asking = false)}
 	>
 		<div>
-			{@render head('nature', 'Behavior', undefined)}
+			{@render head('nature')}
 			{@render pills(
 				LOREBOOK_ENTRY_NATURE_OPTIONS.map((o) => ({ value: o.id, label: o.label })),
 				natureShown,
@@ -436,7 +441,7 @@
 		     only while a keyword entry here has some (bulkOffers). -->
 		{#if offers.filter}
 			<div>
-				{@render head('filter', 'Filter', undefined)}
+				{@render head('filter')}
 				<Select
 					value={logicShown === MIXED ? '' : String(logicShown)}
 					onchange={(e) => {
@@ -460,18 +465,18 @@
 
 		<div class="bk-pair">
 			<div>
-				{@render head('order', 'Order', LOREBOOK_ENTRY_TIPS.order)}
+				{@render head('order')}
 				{@render numberField('order', 'Order', true)}
 			</div>
 			<div>
-				{@render head('probability', 'Trigger %', LOREBOOK_ENTRY_TIPS.probability)}
+				{@render head('probability')}
 				{@render numberField('probability', 'Trigger percent', true)}
 			</div>
 		</div>
 
 		<div class="bk-pair">
 			<div>
-				{@render head('caseSensitive', 'Case-sensitive', undefined)}
+				{@render head('caseSensitive')}
 				<div class="bk-row">
 					{@render pills(
 						ON_OFF,
@@ -489,7 +494,7 @@
 				</div>
 			</div>
 			<div>
-				{@render head('matchWholeWords', 'Whole words', undefined)}
+				{@render head('matchWholeWords')}
 				<div class="bk-row">
 					{@render pills(
 						ON_OFF,
@@ -514,7 +519,7 @@
 		</div>
 
 		<div>
-			{@render head('scanDepth', 'Scan depth', LOREBOOK_ENTRY_TIPS.scanDepth)}
+			{@render head('scanDepth')}
 			<div class="bk-row">
 				{@render numberField('scanDepth', 'Scan depth', false)}
 				<OverrideMark
@@ -526,7 +531,7 @@
 		</div>
 
 		<div>
-			{@render head('scanFields', 'Also scan', LOREBOOK_ENTRY_TIPS.scanFields)}
+			{@render head('scanFields')}
 			<div class="bk-members">
 				{#each LOREBOOK_SCAN_FIELDS as field (field.id)}
 					{@render member('scanFields', field.id, field.label, sourceCount(field.id))}
@@ -535,7 +540,7 @@
 		</div>
 
 		<div>
-			{@render head('wokenBy', 'Woken by', LOREBOOK_ENTRY_TIPS.wokenBy)}
+			{@render head('wokenBy')}
 			<div class="bk-row">
 				<Select
 					value={wokenShown === MIXED ? '' : wokenShown}
@@ -563,7 +568,7 @@
 		</div>
 
 		<div>
-			{@render head('wakesOthers', 'Wakes others', LOREBOOK_ENTRY_TIPS.wakesOthers)}
+			{@render head('wakesOthers')}
 			{@render pills(
 				ON_OFF,
 				onOff(wakesShown),
@@ -573,7 +578,7 @@
 		</div>
 
 		<div>
-			{@render head('triggers', 'Fires on', LOREBOOK_ENTRY_TIPS.triggers)}
+			{@render head('triggers')}
 			<div class="bk-members">
 				{#each LOREBOOK_TRIGGERS as t (t.id)}
 					{@render member('triggers', t.id, t.label, kindCount(t.id))}
@@ -582,7 +587,7 @@
 		</div>
 
 		<div>
-			{@render head('timing', 'Timing', LOREBOOK_ENTRY_TIPS.timing)}
+			{@render head('timing')}
 			<div class="bk-row">
 				{#each LOREBOOK_TIMED_FIELDS as t (t.field)}
 					<label class="bk-sub">
@@ -594,7 +599,7 @@
 		</div>
 
 		<div>
-			{@render head('group', 'Inclusion group', LOREBOOK_ENTRY_TIPS.group)}
+			{@render head('group')}
 			<div class="bk-group">
 				<input
 					type="text"
@@ -651,7 +656,7 @@
 		</div>
 
 		<div>
-			{@render head('placement', 'Placement', LOREBOOK_ENTRY_TIPS.placement)}
+			{@render head('placement')}
 			<div class="bk-row">
 				<Select
 					value={positionShown === MIXED ? '' : String(positionShown)}
