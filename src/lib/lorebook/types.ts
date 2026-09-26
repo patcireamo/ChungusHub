@@ -33,24 +33,28 @@ export const LOREBOOK_LOGICS: { id: number; label: string; glyph: string; hint: 
 
 /**
  * The one line explaining each entry knob. The entry row and the bulk editor both read these,
- * so a knob is never explained two ways.
+ * so a knob is never explained two ways. Where SillyTavern calls a setting something else, its
+ * name follows as an aka, right after the words it translates: that is the name a reader
+ * arriving from there is hunting for.
  */
 export const LOREBOOK_ENTRY_TIPS = {
 	order: 'Lower is injected first.',
 	probability: 'Chance to fire · 100 = always.',
 	scanDepth: 'Recent messages this entry searches · 0 = the whole chat.',
 	scanFields:
-		'Text searched besides the chat: the cards in play, and the steering standing over this reply. Nothing picked = the chat alone.',
+		'Text searched besides the chat: the cards in play, and the steering standing over this reply. Nothing picked = the chat alone. (aka: Additional Matching Sources)',
 	wokenBy:
-		'What may wake this entry: the story text, or the content of entries that already fired. A level stages that: the next one opens only once the level below it wakes nothing new.',
-	wakesOthers: "When off, this entry's own content is never re-read, so it cannot pull other entries in.",
-	triggers: 'Which generations this entry may join. Nothing picked = all of them.',
+		'What may wake this entry: the story text, or the content of entries that already fired. A level stages that: the next one opens only once the level below it wakes nothing new. (aka: Non-recursable, Delay until recursion, Recursion Level)',
+	wakesOthers:
+		"When off (aka: Prevent further recursion), this entry's own content is never re-read, so it cannot pull other entries in.",
+	triggers:
+		'Which generations this entry may join. Nothing picked = all of them. (aka: Filter to Generation Triggers)',
 	timing:
 		'After it fires it stays in for Sticky more replies, then sits out Cooldown of them. Delay holds it back until the chat has that many messages.',
 	group:
-		'Only one entry per label reaches a prompt, and several labels are comma-separated. A prioritized entry takes the slot first, Decide by matches narrows it to whichever matched most keys, and whatever is left goes to a weighted roll.',
+		'Only one entry per label reaches a prompt, and several labels are comma-separated. A prioritized entry takes the slot first, Decide by matches (aka: Group Scoring) narrows it to whichever matched most keys, and whatever is left goes to a weighted roll.',
 	placement:
-		'It joins the block the preset placed at {{lorebook}}, or rides inside the story as its own turn, that many turns back from the newest. Without {{chatHistory}} in the preset an at-depth entry falls back to the block.'
+		'It joins the block the preset placed at {{lorebook}}, or rides inside the story as its own turn, that many turns back from the newest. Without {{chatHistory}} in the preset an at-depth entry falls back to the block. (aka: Position)'
 } as const;
 
 // ===== how one key is matched =====
