@@ -26,6 +26,10 @@
 		 *  nothing, which is the one thing a control is never allowed to be. Use it
 		 *  only where closing would leave the app in a state it cannot work in. */
 		dismissible?: boolean;
+		/** Holds work a stray dismissal would throw away: the backdrop and Escape stop closing
+		 *  it and the close X still does, since nobody presses the X by accident. Escape is then
+		 *  the content's own key, so it can ask before anything goes. */
+		held?: boolean;
 		/** Hands the whole panel to the child: no padding of its own and no scroller of its
 		 *  own, so a surface that needs a head and a foot standing still around a scrolling
 		 *  middle can build one. The child then owns every edge, scrolling included. */
@@ -44,15 +48,16 @@
 		title,
 		size = 'md',
 		dismissible = true,
+		held = false,
 		bare = false,
 		fill = false,
 		children
 	}: Props = $props();
 
-	/** The single door: every dismissal route runs through here, so `dismissible`
+	/** The single door: every dismissal route runs through here, so `dismissible` and `held`
 	 *  cannot be honoured by one of them and forgotten by another. */
 	function requestClose(): void {
-		if (dismissible) onClose();
+		if (dismissible && !held) onClose();
 	}
 
 	const titleId = `dialog-title-${crypto.randomUUID()}`;
