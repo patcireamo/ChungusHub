@@ -8,7 +8,8 @@
  *  - versions.ts: character version roster reads + lifecycle mutations
  *  - navigate.ts: deep-linking the user into the app
  *  - chat-reads.ts: chat list/search, windowed message reads, chat context, chat memory
- *  - lorebook-entries.ts: full-content entry reads + entry create/edit/delete
+ *  - lorebook-entries.ts: paged entry reads and search + entry create/edit/delete + links
+ *  - lorebook-settings.ts: the settings map + the defaults', books' and entries' settings
  *  - files.ts: reading the files the user attached to the tab as reference material
  *  - ask.ts: putting a question to the user and waiting for the answer
  *
@@ -23,6 +24,7 @@ import { readCharacterVersions, manageCharacterVersions } from './versions';
 import { navigate } from './navigate';
 import { listChats, searchChats, readChatMessages, readChatContext, readMemoryState, editMemoryEpisode } from './chat-reads';
 import { readLorebookEntries, createLorebookEntry, editLorebookEntry, deleteLorebookEntry, manageEntryLorebooks } from './lorebook-entries';
+import { readLorebookSettings, configureLorebooks, configureLorebookEntries } from './lorebook-settings';
 import { setActivePersona, renameChat, createChat, addSteering, readConnectionState } from './workspace';
 import { manageGreetings } from './greetings';
 import { readPromptLog, readPromptEntry } from './prompt-trace';
@@ -53,9 +55,12 @@ export const CAPABILITIES: Capability[] = [
 	searchFileTool,
 	readMemoryState,
 	editMemoryEpisode,
+	readLorebookSettings,
 	readLorebookEntries,
 	createLorebookEntry,
 	editLorebookEntry,
+	configureLorebookEntries,
+	configureLorebooks,
 	deleteLorebookEntry,
 	manageEntryLorebooks,
 	manageGreetings,

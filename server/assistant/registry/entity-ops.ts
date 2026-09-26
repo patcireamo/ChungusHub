@@ -29,6 +29,7 @@ import {
 
 /** Coerce + validate a raw argument into a field's stored value. */
 function coerceFieldValue(field: FieldDef, value: unknown): FieldValue {
+	if (field.type === 'number') throw new ToolError(`Field "${field.key}" is a count and cannot be written.`);
 	if (field.type === 'boolean') {
 		if (typeof value === 'boolean') return value;
 		if (value === 'true') return true;

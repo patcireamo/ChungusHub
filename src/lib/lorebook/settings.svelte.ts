@@ -7,10 +7,9 @@ import { db } from '$lib/services/database';
 import { registerSettingsReload } from '$lib/services/syncedSetting';
 import {
 	DEFAULT_LOREBOOK_GLOBAL_SETTINGS,
+	LOREBOOK_SETTINGS_KEY as SETTINGS_KEY,
 	type LorebookGlobalSettings
 } from './types';
-
-const SETTINGS_KEY = 'lorebookGlobalSettings';
 
 class LorebookSettingsStore {
 	private _settings = $state<LorebookGlobalSettings>({ ...DEFAULT_LOREBOOK_GLOBAL_SETTINGS });

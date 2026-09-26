@@ -1,5 +1,6 @@
 /** Domain types for the character/persona library. Lorebooks live in `$lib/lorebook`. */
-import type { PortraitFocus } from '$lib/utils/portrait-focus';
+// Relative, not `$lib`: the server reaches this file through the lorebook core (architecture/lorebook.md).
+import type { PortraitFocus } from '../utils/portrait-focus';
 
 /** Type discriminator for library entries */
 export type LibraryEntryType = 'character' | 'persona';

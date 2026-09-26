@@ -13,6 +13,7 @@
  * whose row parameters are `Record<string, unknown>`. As interfaces they did not satisfy
  * that constraint, which nothing noticed while server/ went unchecked.
  */
+import type { LorebookEntry } from '../../src/lib/lorebook/types';
 
 /** library_entries row (mapLibraryEntry: id/type + spread data_json + flags). */
 export type RawLibraryEntry = {
@@ -84,23 +85,9 @@ export type RawMessage = {
 	attachments?: unknown;
 }
 
-/** One lorebook entry: SillyTavern's native field names verbatim (src/lib/lorebook/types.ts). */
-export type RawLorebookEntry = {
-	id: string;
-	comment: string;
-	key: string[];
-	keysecondary: string[];
-	selectiveLogic: number;
-	content: string;
-	constant: boolean;
-	disable: boolean;
-	order: number;
-	probability: number;
-	useProbability: boolean;
-	caseSensitive: boolean | null;
-	matchWholeWords: boolean | null;
-	rest: Record<string, unknown>;
-}
+/** One lorebook entry, stored as the editor writes it: the client's own type, so a field the
+ *  editor gains is one the assistant's reads and writes see the same day. */
+export type RawLorebookEntry = LorebookEntry;
 
 /** lorebooks row (mapLorebook). All activation knobs at null = inherit the global settings. */
 export type RawLorebookBook = {

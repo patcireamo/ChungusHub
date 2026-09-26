@@ -89,9 +89,19 @@ export const CAPABILITY_GROUPS: CapabilityGroup[] = [
 	{
 		id: 'lorebook',
 		label: 'Lorebook',
-		whenToReach: 'the world facts a chat injects: reading any book in full, writing its entries, and linking a book to a character or persona so it fires at all.',
-		describe: 'Reading and writing lorebook entries, and linking a book to a character so it actually injects.',
-		tools: ['read_lorebook_entries', 'create_lorebook_entry', 'edit_lorebook_entry', 'delete_lorebook_entry', 'manage_entry_lorebooks']
+		whenToReach:
+			'the world facts a chat injects and how they fire: reading and searching books, writing entries, every setting from the defaults down to one entry, and linking a book to a character or persona.',
+		describe: 'Reading and writing lorebook entries and every lorebook setting, and linking a book to a character so it actually injects.',
+		tools: [
+			'read_lorebook_settings',
+			'read_lorebook_entries',
+			'create_lorebook_entry',
+			'edit_lorebook_entry',
+			'configure_lorebook_entries',
+			'configure_lorebooks',
+			'delete_lorebook_entry',
+			'manage_entry_lorebooks'
+		]
 	},
 	{
 		id: 'memory',

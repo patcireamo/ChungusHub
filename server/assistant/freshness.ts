@@ -20,6 +20,8 @@
 import { serverDb } from '../db';
 import type { Episode } from '../../src/lib/memory/types';
 import type { RawChat, RawCharacterVersion, RawLibraryEntry, RawLorebookBook, RawMessage } from './rows';
+import { lorebookRevisionView, lorebookTextView, parseLorebookDefaults } from './lorebook-core';
+import { LOREBOOK_SETTINGS_KEY } from '../../src/lib/lorebook/types';
 import {
 	claimKey,
 	collectStateClaims,
@@ -66,22 +68,35 @@ function messageState(id: string): CurrentState | null {
 	};
 }
 
-function lorebookState(id: string): CurrentState | null {
+function loadBook(id: string): RawLorebookBook | null {
 	const raw = serverDb.getLorebook(id) as RawLorebookBook | null;
-	if (!raw) return null;
-	// Name and the entry projection read_lorebook_entries hands out.
-	// Activation knobs and ST baggage (rest, order, probability) stay out because no
-	// tool surfaces them: their motion means nothing to what the model read.
-	const entries = (Array.isArray(raw.entries) ? raw.entries : []).map((e) => [
-		e.id,
-		e.comment,
-		e.key,
-		e.keysecondary,
-		e.constant,
-		e.disable,
-		e.content
-	]);
-	return { rev: revHash({ name: raw.name, entries }), label: `lorebook "${raw.name}"` };
+	return raw ? { ...raw, entries: Array.isArray(raw.entries) ? raw.entries : [] } : null;
+}
+
+/** A book as its light reads and its map show it (lorebook-core.ts). SillyTavern baggage in
+ *  `rest`, the cover and the extensions stay out: no tool surfaces them. */
+function lorebookState(id: string): CurrentState | null {
+	const book = loadBook(id);
+	return book ? { rev: revHash(lorebookRevisionView(book)), label: `lorebook "${book.name}"` } : null;
+}
+
+/** Its entries' text, claimed apart: only a read or a write that hands text over vouches for it. */
+function lorebookTextState(id: string): CurrentState | null {
+	const book = loadBook(id);
+	return book ? { rev: revHash(lorebookTextView(book)), label: `the entry text in lorebook "${book.name}"` } : null;
+}
+
+/** The one row every book falls back to. A row that will not parse hashes as it stands, so
+ *  repairing it still reads as a change. */
+function lorebookDefaultsState(): CurrentState {
+	const raw = serverDb.getSetting(LOREBOOK_SETTINGS_KEY);
+	let rev: string;
+	try {
+		rev = revHash(parseLorebookDefaults(raw));
+	} catch {
+		rev = revHash({ unreadable: raw });
+	}
+	return { rev, label: 'the lorebook defaults' };
 }
 
 function chatState(id: string): CurrentState | null {
@@ -153,6 +168,9 @@ const RESOLVERS: Record<string, (id: string) => CurrentState | null> = {
 	persona: (id) => libraryState('persona', id),
 	message: messageState,
 	lorebook: lorebookState,
+	lorebook_text: lorebookTextState,
+	// One row, so one id: `lorebook_defaults:global`.
+	lorebook_defaults: () => lorebookDefaultsState(),
 	chat: chatState,
 	memory: memoryStateOf
 };

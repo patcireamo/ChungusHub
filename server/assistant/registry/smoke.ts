@@ -20,6 +20,7 @@ import { stalenessNote, stampState } from '../freshness';
 import { collectStateClaims, WORKSPACE_NOTE_PREFIX } from '../freshness-core';
 import { recordRequest } from '../../promptLog';
 import { listSkills, listDefaultSkills, saveSkills, describeSkillIndex } from './skills';
+import { DEFAULT_LOREBOOK_GLOBAL_SETTINGS, LOREBOOK_SETTINGS_KEY } from '../../../src/lib/lorebook/types';
 import type { ApprovalMode, AskQuestion, AssistantContext, AssistantPermissions, QuestionOutcome } from '../types';
 
 const ALL_GROUPS = CAPABILITY_GROUPS.map((g) => g.id);
@@ -99,7 +100,7 @@ async function main() {
 	seed();
 	console.log('===== schema + data model =====');
 	const tools = buildTools(groupsOf(...DEFAULT_ENABLED_GROUPS));
-	check('buildTools count == 32 (the image look tool, navigate and delete_entity are off by default)', tools.length === 32, `got ${tools.length}`);
+	check('buildTools count == 35 (the image look tool, navigate and delete_entity are off by default)', tools.length === 35, `got ${tools.length}`);
 	const names = new Set(tools.map((t) => t.function.name));
 	for (const n of ['read_entity', 'find_entities', 'create_entity', 'edit_entity', 'set_entity', 'update_entities', 'read_chat_context', 'read_lorebook_entries', 'create_lorebook_entry']) {
 		check(`tool present: ${n}`, names.has(n));
@@ -411,7 +412,7 @@ async function main() {
 	r = await call('create_lorebook_entry', { content: 'orphan' });
 	check('lorebook entry without book fails', r.msg.ok === false);
 	// The book is NOT linked to the chat yet: read_lorebook_entries must still see it.
-	r = await call('read_lorebook_entries', { lorebookId: BOOK });
+	r = await call('read_lorebook_entries', { lorebookId: BOOK, content: true });
 	check('read entries of an unlinked book', r.msg.entries?.length === 1 && r.msg.entries[0].content === 'An ancient arcane spire.');
 	r = await call('read_lorebook_entries', { lorebookId: BOOK, query: 'nomatch' });
 	check('read entries query filters', r.msg.matched === 0 && r.msg.total === 1);
@@ -425,9 +426,11 @@ async function main() {
 	check('linked lorebook visible in context', r.msg.lorebooks?.some((b: any) => b.id === BOOK && b.entries.some((e: any) => e.id === LORE && e.comment === 'The Tower')));
 	const ctxEntry = r.msg.lorebooks?.find((b: any) => b.id === BOOK)?.entries.find((e: any) => e.id === LORE);
 	check('chat context entries are an index (preview, no content dump)', typeof ctxEntry?.preview === 'string' && !('content' in (ctxEntry ?? {})));
-	r = await call('edit_lorebook_entry', { lorebookId: BOOK, id: LORE, enabled: false });
-	check('edit lorebook entry ok', r.msg.ok === true);
-	check('entry disable persisted', (await call('read_chat_context', { chatId: CHAT })).msg.lorebooks?.find((b: any) => b.id === BOOK)?.entries.find((e: any) => e.id === LORE)?.enabled === false);
+	r = await call('configure_lorebook_entries', { lorebookId: BOOK, ids: [LORE], set: { behavior: 'off' } });
+	check('switch an entry off', r.msg.ok === true && r.msg.changed === 1, r.msg.error);
+	check('entry disable persisted', (await call('read_chat_context', { chatId: CHAT })).msg.lorebooks?.find((b: any) => b.id === BOOK)?.entries.find((e: any) => e.id === LORE)?.behavior === 'off');
+	r = await call('edit_lorebook_entry', { lorebookId: BOOK, id: LORE, enabled: true });
+	check('edit_lorebook_entry leaves how an entry fires to the settings tool', r.msg.ok === false && /configure_lorebook_entries/.test(r.msg.error ?? ''));
 	r = await call('delete_lorebook_entry', { lorebookId: BOOK, id: LORE });
 	check('delete lorebook entry ok', r.msg.ok === true);
 	check('entry gone', !(await call('read_chat_context', { chatId: CHAT })).msg.lorebooks?.find((b: any) => b.id === BOOK)?.entries.some((e: any) => e.id === LORE));
@@ -560,7 +563,7 @@ async function main() {
 	serverDb.setSetting('assistantCapabilities', JSON.stringify(ALL_GROUPS));
 	const gatedTools = new Set(buildTools(groupsOf(...ALL_GROUPS)).map((t) => t.function.name));
 	check('the image look tool is present once the family is on', gatedTools.has('view_character_images'));
-	check('buildTools count == 35 with every family on', buildTools(groupsOf(...ALL_GROUPS)).length === 35, `got ${buildTools(groupsOf(...ALL_GROUPS)).length}`);
+	check('buildTools count == 38 with every family on', buildTools(groupsOf(...ALL_GROUPS)).length === 38, `got ${buildTools(groupsOf(...ALL_GROUPS)).length}`);
 	// view: vision gate first, then selection resolution.
 	const noVision = await dispatch('view_character_images', { id: ARIA }, { permissions: perms(), broadcast: () => {}, sendImages: false });
 	check('view refused without a vision model', JSON.parse(noVision.toolMessage).ok === false && /vision/i.test(JSON.parse(noVision.toolMessage).error ?? ''));
@@ -584,7 +587,7 @@ async function main() {
 	outcome = await dispatch('read_chat_context', { chatId: CHAT }, visionCtx());
 	check('read_chat_context attaches the cast portraits', outcome.injectImages?.length === 1 && outcome.injectImages[0] === ARIA_PORTRAIT);
 	serverDb.setSetting('assistantCapabilities', JSON.stringify(DEFAULT_ENABLED_GROUPS));
-	check('the family re-closes', buildTools(groupsOf(...DEFAULT_ENABLED_GROUPS)).length === 32, `got ${buildTools(groupsOf(...DEFAULT_ENABLED_GROUPS)).length}`);
+	check('the family re-closes', buildTools(groupsOf(...DEFAULT_ENABLED_GROUPS)).length === 35, `got ${buildTools(groupsOf(...DEFAULT_ENABLED_GROUPS)).length}`);
 	// Images is off by default, and entry-art editing must survive that: it sends no picture
 	// anywhere, it only rearranges ones the user already owns. Filing it with the reads would
 	// take "make a character from this picture" away from every default install.
@@ -597,7 +600,7 @@ async function main() {
 	// names them, so the loop can tell the model exactly what stopped working.
 	const offered = groupsOf(...ALL_GROUPS);
 	const effective = groupsOf(...DEFAULT_ENABLED_GROUPS);
-	check('a withdrawn family keeps the tool list intact', buildTools(offered).length === 35);
+	check('a withdrawn family keeps the tool list intact', buildTools(offered).length === 38);
 	check('a withdrawn family is refused by dispatch', JSON.parse((await dispatch('view_character_images', { id: ARIA }, { permissions: effective, broadcast: () => {}, sendImages: true })).toolMessage).ok === false);
 	check(
 		'the withdrawn tools are named for the model',
@@ -674,7 +677,7 @@ async function main() {
 		standardTools.has('view_character_images') && !standardTools.has('navigate') && !standardTools.has('delete_entity') && !standardTools.has('read_prompt_log')
 	);
 	check('navigation is Full-only among the presets', CAPABILITY_PRESETS[2].groups.includes('navigation'));
-	check('Full is every tool except the experimental families', buildTools(groupsOf(...CAPABILITY_PRESETS[2].groups)).length === 34);
+	check('Full is every tool except the experimental families', buildTools(groupsOf(...CAPABILITY_PRESETS[2].groups)).length === 37);
 	// Experimental (Deleting) and opt-in (Images, Navigation) families are enabled by a person,
 	// never by a default and (for experimental) never by a preset either.
 	const experimentalIds = CAPABILITY_GROUPS.filter((g) => g.experimental).map((g) => g.id);
@@ -987,9 +990,11 @@ async function main() {
 	check('edit_lorebook_entry refuses garbage keys', r.msg.ok === false);
 	r = await call('edit_lorebook_entry', { lorebookId: UNDO_BOOK, id: UNDO_ENTRY });
 	check('edit_lorebook_entry refuses an empty edit', r.msg.ok === false && /nothing to change/i.test(r.msg.error ?? ''));
-	r = await call('create_lorebook_entry', { lorebookId: UNDO_BOOK, content: 'x', constant: 'true' });
-	check('create_lorebook_entry takes "true" as boolean', r.msg.ok === true);
+	r = await call('create_lorebook_entry', { lorebookId: UNDO_BOOK, content: 'x', behavior: 'always' });
+	check('create_lorebook_entry makes an always entry', r.msg.ok === true && (serverDb.getLorebook(UNDO_BOOK) as any).entries.find((e: any) => e.id === r.msg.id)?.constant === true);
 	await call('delete_lorebook_entry', { lorebookId: UNDO_BOOK, id: r.msg.id });
+	r = await call('create_lorebook_entry', { lorebookId: UNDO_BOOK, content: 'x', constant: true });
+	check('create_lorebook_entry refuses the flag it no longer takes rather than making a keyword entry', r.msg.ok === false && /behavior/.test(r.msg.error ?? '') && (serverDb.getLorebook(UNDO_BOOK) as any).entries.length === 1);
 
 	await call('delete_lorebook_entry', { lorebookId: UNDO_BOOK, id: UNDO_ENTRY });
 	await call('delete_entity', { kind: 'lorebook', id: UNDO_BOOK, confirm: 'Undo Book' });
@@ -1637,6 +1642,264 @@ async function main() {
 	g = await ledgerCall('manage_greetings', { characterId: GUARD, action: 'set', index: 1, text: 'Rewritten from the current text.' });
 	check('the greeting redo lands after the re-read', g.ok === true, g.error);
 	serverDb.deleteLibraryEntry(GUARD);
+
+	console.log('===== lorebook settings (the map, the defaults, books, entries, big books) =====');
+	const sent: string[] = [];
+	const loreCtx = (extra: Partial<AssistantContext> = {}): AssistantContext => ({ permissions: perms(), broadcast: (scope) => sent.push(scope), ...extra });
+	const lcall = async (name: string, args: Record<string, unknown>, extra: Partial<AssistantContext> = {}) =>
+		JSON.parse((await dispatch(name, args, loreCtx(extra))).toolMessage) as Record<string, any>;
+	const rawBook = (id: string) => serverDb.getLorebook(id) as any;
+	const entryOf = (bookId: string, id: string) => rawBook(bookId).entries.find((e: any) => e.id === id);
+
+	let L = await lcall('read_lorebook_settings', {});
+	check('the defaults read as the stock settings while no row holds them', JSON.stringify(L.defaults) === JSON.stringify(DEFAULT_LOREBOOK_GLOBAL_SETTINGS) && typeof L.stateRevs?.['lorebook_defaults:global'] === 'string', L.error);
+	const SBOOK = (await lcall('create_entity', { kind: 'lorebook', fields: { name: 'Settings Lore' } })).id as string;
+	const S1 = (await lcall('create_lorebook_entry', { lorebookId: SBOOK, comment: 'Red dragon', content: 'The red dragon sleeps.', keys: 'dragon, red' })).id as string;
+	const S2 = (await lcall('create_lorebook_entry', { lorebookId: SBOOK, comment: 'Blue dragon', content: 'The blue dragon hunts.', keys: 'dragon, blue', secondaryKeys: 'cave' })).id as string;
+	const S3 = (await lcall('create_lorebook_entry', { lorebookId: SBOOK, comment: 'Harbor', content: 'Ships crowd the harbor.', keys: 'port' })).id as string;
+	const S4 = (await lcall('create_lorebook_entry', { lorebookId: SBOOK, comment: 'Premise', content: 'The world is ending.', behavior: 'always' })).id as string;
+
+	L = await lcall('read_lorebook_settings', { lorebookId: SBOOK });
+	check(
+		'a book map: what it sets itself, the defaults it follows, its entries by behavior',
+		L.ok === true && L.entries === 4 && Object.keys(L.own).length === 0 && L.defaults.scanDepth === DEFAULT_LOREBOOK_GLOBAL_SETTINGS.scanDepth && L.entrySettings.behavior.keyword === 3 && L.entrySettings.behavior.always === 1 && !('linkedBy' in L),
+		L.error
+	);
+	check('a book nothing carries says it reaches no prompt', /reaches no prompt/.test(L.note ?? ''));
+	// A chat pinned to a parked variant plays with that variant's links, so a variant linking
+	// the book is something carrying it.
+	const PARKED = crypto.randomUUID();
+	serverDb.insertCharacterVersion({ id: PARKED, entryId: ARIA, name: 'Pirate', data: { traits: {}, lorebookIds: [SBOOK] }, createdAt: Date.now(), updatedAt: Date.now() });
+	L = await lcall('read_lorebook_settings', { lorebookId: SBOOK });
+	check('a parked variant linking the book counts as carrying it', L.linkedBy?.some((l: any) => l.id === ARIA && l.variant === 'Pirate') && !/reaches no prompt/.test(L.note ?? ''), JSON.stringify(L.linkedBy));
+	serverDb.deleteCharacterVersion(PARKED);
+	check('the map claims the book and the defaults', typeof L.stateRevs?.[`lorebook:${SBOOK}`] === 'string' && typeof L.stateRevs?.['lorebook_defaults:global'] === 'string');
+	r = await call('find_entities', { kind: 'lorebook', query: 'settings lore', where: { everyChat: false } });
+	check('the book list states size and reach', r.msg.results?.[0]?.entryCount === 4 && r.msg.results?.[0]?.everyChat === false);
+	r = await call('set_entity', { kind: 'lorebook', id: SBOOK, field: 'entryCount', value: '9' });
+	check('a count is read-only', r.msg.ok === false);
+
+	// The defaults.
+	sent.length = 0;
+	let lpv = previewCall(0, 'configure_lorebooks', { scope: 'defaults', set: { scanDepth: 10, crossBookRecursion: true } }, loreCtx());
+	check(
+		'a defaults card names the shelf page, each change, who follows it, and warns on crossing books',
+		lpv.risk === 'write' && lpv.label === 'Global Settings' && lpv.act === 'Change lorebook settings' && lpv.notes.some((n) => /^Scan depth: 25 → 10, followed by \d+ of \d+ books?$/.test(n.text)) && lpv.notes.some((n) => n.warn === true && /other book/.test(n.text)),
+		JSON.stringify(lpv)
+	);
+	L = await lcall('configure_lorebooks', { scope: 'defaults', set: { scanDepth: 10 } });
+	const storedDefaults = JSON.parse(serverDb.getSetting(LOREBOOK_SETTINGS_KEY) ?? '{}');
+	check('a defaults write stores the whole row and tells every device', L.ok === true && storedDefaults.scanDepth === 10 && storedDefaults.budgetPercent === 0 && sent.includes('settings'), L.error);
+	check('a defaults write re-claims them', L.stateRevs?.['lorebook_defaults:global'] === revOf('lorebook_defaults', 'global'));
+	L = await lcall('configure_lorebooks', { scope: 'defaults', set: { scanDepth: 10 } });
+	check('a default it already holds writes nothing', L.ok === true && L.changed.length === 0);
+	L = await lcall('configure_lorebooks', { scope: 'defaults', set: { everyChat: true } });
+	check('everyChat is refused on the defaults', L.ok === false && /scope books/.test(L.error ?? ''));
+	L = await lcall('configure_lorebooks', { scope: 'defaults', set: { scanDepth: null } });
+	check('the defaults have nothing to hand a setting back to', L.ok === false);
+	L = await lcall('configure_lorebooks', { scope: 'defaults', set: { budgetPercent: 150 } });
+	check('an out-of-range budget fails loud instead of being clamped', L.ok === false && /0 to 100/.test(L.error ?? ''));
+	L = await lcall('configure_lorebooks', { scope: 'defaults', set: { scanDeph: 4 } });
+	check('an unknown setting fails loud with the list', L.ok === false && /scanDepth/.test(L.error ?? ''));
+
+	// Whole books.
+	sent.length = 0;
+	L = await lcall('configure_lorebooks', { scope: 'books', lorebookIds: [SBOOK], set: { caseSensitive: true, everyChat: true } });
+	check('a book write sets its own value and its reach', L.ok === true && rawBook(SBOOK).caseSensitive === true && rawBook(SBOOK).global === true && sent.includes('lorebooks'), L.error);
+	L = await lcall('read_lorebook_settings', { lorebookId: SBOOK });
+	check('the map then names what the book sets itself', JSON.stringify(L.own) === JSON.stringify({ caseSensitive: true }) && L.everyChat === true && !/reaches no prompt/.test(L.note ?? ''));
+	lpv = previewCall(0, 'configure_lorebooks', { scope: 'books', lorebookIds: [SBOOK], set: { caseSensitive: null, everyChat: false } }, loreCtx());
+	check('a book card reads each change against the layer below it', lpv.target?.id === SBOOK && lpv.notes.some((n) => n.text === 'Case-sensitive: on → follows the defaults (off)'), JSON.stringify(lpv.notes));
+	L = await lcall('configure_lorebooks', { scope: 'books', lorebookIds: [SBOOK], set: { caseSensitive: null, everyChat: false } });
+	check('a setting handed back and every chat switched off store as nothing', L.ok === true && rawBook(SBOOK).caseSensitive === null && !('global' in rawBook(SBOOK)), L.error);
+	L = await lcall('configure_lorebooks', { scope: 'books', lorebookIds: [SBOOK], set: { budgetPercent: 10 } });
+	check('a scan-wide setting is refused on a book', L.ok === false && /scope defaults/.test(L.error ?? ''));
+	L = await lcall('configure_lorebooks', { scope: 'books', set: { scanDepth: 4 } });
+	check('scope books needs its books', L.ok === false);
+
+	// Entries.
+	sent.length = 0;
+	lpv = previewCall(0, 'configure_lorebook_entries', { lorebookId: SBOOK, query: 'dragon', set: { probability: 30, sticky: 2 } }, loreCtx());
+	check(
+		"an entries card states the change in the editor's words and the size it approves",
+		lpv.rows === 2 && lpv.label === '2 entries' && lpv.within === 'Settings Lore' && lpv.notes[0]?.text === 'Trigger %: 30 · Sticky: 2' && lpv.notes.some((n) => n.text === 'Red dragon, Blue dragon'),
+		JSON.stringify(lpv)
+	);
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, query: 'dragon', set: { probability: 30, sticky: 2 } });
+	check(
+		'a query picks the entries, and each takes what its row would write',
+		L.ok === true && L.changed === 2 && entryOf(SBOOK, S1).probability === 30 && entryOf(SBOOK, S1).useProbability === true && entryOf(SBOOK, S2).sticky === 2 && entryOf(SBOOK, S3).sticky == null && sent.includes('lorebooks'),
+		L.error
+	);
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, query: 'dragon', set: { probability: 30 } });
+	check('entries already holding a setting are left alone', L.ok === true && L.changed === 0);
+	r = await call('read_lorebook_entries', { lorebookId: SBOOK, where: { probability: 30 } });
+	check('where reads the census vocabulary, and a row says what its entry sets', r.msg.matched === 2 && r.msg.entries.every((e: any) => e.sets?.probability === 30 && e.sets?.sticky === 2 && !('content' in e)));
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, where: { behavior: 'always' }, set: { logic: 'andAll' } });
+	check('a setting no picked entry reads is refused, saying why', L.ok === false && /secondaryKeys/.test(L.error ?? '') && entryOf(SBOOK, S4).selectiveLogic === 0);
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, ids: [S2], set: { logic: 'notAny' } });
+	check('logic lands where secondary keys exist', L.ok === true && entryOf(SBOOK, S2).selectiveLogic === 2);
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, ids: [S3], set: { groupWeight: 5 } });
+	check('a group rule outside any group is refused', L.ok === false && /group/.test(L.error ?? ''));
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, ids: [S1, S2], set: { group: 'dragons', groupWeight: 5, groupPriority: true } });
+	check('a group and its rules land together', L.ok === true && entryOf(SBOOK, S1).group === 'dragons' && entryOf(SBOOK, S1).groupWeight === 5 && entryOf(SBOOK, S2).groupOverride === true);
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, ids: [S3], set: { wokenBy: 'entriesOnly', recursionLevel: 2 } });
+	check('waiting for a wave writes the recursion trio', L.ok === true && entryOf(SBOOK, S3).delayUntilRecursion === 2 && entryOf(SBOOK, S3).excludeRecursion === false);
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, ids: [S1], set: { recursionLevel: 3 } });
+	check('a level for an entry that does not wait is refused', L.ok === false && /entriesOnly/.test(L.error ?? ''));
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, ids: [S2], set: { keyRules: { '*': { mode: 'start' }, cave: { caseSensitive: true } } } });
+	check(
+		'key rules reach every key, a named one on top',
+		L.ok === true && JSON.stringify(entryOf(SBOOK, S2).keyRules) === JSON.stringify({ dragon: { mode: 'start' }, blue: { mode: 'start' }, cave: { mode: 'start', caseSensitive: true } }),
+		JSON.stringify(entryOf(SBOOK, S2).keyRules)
+	);
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, ids: [S2], set: { keyRules: { lindwurm: { mode: 'word' } } } });
+	check('a rule for a key no picked entry holds is refused', L.ok === false && /lindwurm/.test(L.error ?? ''));
+	r = await call('edit_lorebook_entry', { lorebookId: SBOOK, id: S2, keys: 'dragon', secondaryKeys: '' });
+	check('a key edit takes the rules of the keys it removed with it', r.msg.ok === true && JSON.stringify(entryOf(SBOOK, S2).keyRules) === JSON.stringify({ dragon: { mode: 'start' } }));
+	await lcall('configure_lorebook_entries', { lorebookId: SBOOK, ids: [S1], set: { scanDepth: 4, caseSensitive: true } });
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, ids: [S1], set: { scanDepth: null } });
+	check('null hands a setting back to the book and touches nothing else', L.ok === true && entryOf(SBOOK, S1).scanDepth === null && entryOf(SBOOK, S1).caseSensitive === true);
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, ids: [S1], set: { sticky: null } });
+	check('only the settings a book also holds take null', L.ok === false && /caseSensitive, matchWholeWords, scanDepth/.test(L.error ?? ''));
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, set: { order: 5 } });
+	check('a write naming no entries is refused', L.ok === false && /all:true/.test(L.error ?? ''));
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, all: true, ids: [S1], set: { order: 5 } });
+	check('all goes alone', L.ok === false);
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, ids: ['nope'], set: { order: 5 } });
+	check('an id not in the book is named', L.ok === false && /nope/.test(L.error ?? ''));
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, all: true, set: { order: 5, scanFields: { scenario: true }, triggers: { normal: true }, placement: 'depth', depth: 2, role: 'user' } });
+	check(
+		'all reaches every entry',
+		L.ok === true && L.changed === 4 && rawBook(SBOOK).entries.every((e: any) => e.order === 5 && e.position === 4 && e.depth === 2 && e.role === 1 && e.scanFields?.includes('scenario') && e.triggers?.includes('normal')),
+		L.error
+	);
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, where: { placement: 'depth' }, set: { triggers: { normal: false } } });
+	check('removing the one kind listed leaves an entry that fires on every kind', L.ok === true && rawBook(SBOOK).entries.every((e: any) => Array.isArray(e.triggers) && e.triggers.length === 0));
+	lpv = previewCall(0, 'configure_lorebook_entries', { lorebookId: SBOOK, all: true, set: { triggers: { impersonate: false } } }, loreCtx());
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, all: true, set: { triggers: { impersonate: false } } });
+	check(
+		'taking a kind out of "every kind" is said to change nothing, with the way that does',
+		L.ok === true && L.changed === 0 && /add the others/.test(L.warning ?? '') && lpv.notes.some((n) => n.warn === true && /pick the kinds/.test(n.text)),
+		JSON.stringify(L)
+	);
+	await lcall('configure_lorebooks', { scope: 'books', lorebookIds: [SBOOK], set: { recursiveScanning: false } });
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, ids: [S1], set: { wokenBy: 'entriesOnly' } });
+	check('waiting for other entries in a book that does not recurse lands with a warning', L.ok === true && L.changed === 1 && /does not recurse/.test(L.warning ?? ''), JSON.stringify(L));
+	L = await lcall('read_lorebook_settings', { lorebookId: SBOOK });
+	check('the map says which entries wait for good', /2 entries wait for other entries, but this book does not recurse/.test(L.note ?? ''), L.note);
+	await lcall('configure_lorebooks', { scope: 'books', lorebookIds: [SBOOK], set: { recursiveScanning: null } });
+	check(
+		'the settings writes wait for approval in Manual and the map does not',
+		needsApproval('manual', 'configure_lorebook_entries') && needsApproval('manual', 'configure_lorebooks') && !needsApproval('manual', 'read_lorebook_settings')
+	);
+
+	// Freshness.
+	const bookRev = revOf('lorebook', SBOOK);
+	const elsewhere = rawBook(SBOOK);
+	elsewhere.entries[0].cooldown = 4;
+	serverDb.updateLorebook(elsewhere);
+	check('a setting changed elsewhere moves the book revision', revOf('lorebook', SBOOK) !== bookRev);
+	L = await lcall('configure_lorebook_entries', { lorebookId: SBOOK, ids: [S1], set: { cooldown: 1 } });
+	check('a settings write re-claims the book at its new revision', L.stateRevs?.[`lorebook:${SBOOK}`] === revOf('lorebook', SBOOK) && L.stateRevs?.[`lorebook_text:${SBOOK}`] === undefined);
+	// Text the assistant read must stay announced when it moves, whatever light read comes after:
+	// a read that hands no text over cannot vouch for it.
+	const textRead = await lcall('read_lorebook_entries', { lorebookId: SBOOK, content: true });
+	const byHand = rawBook(SBOOK);
+	byHand.entries[1].content = 'Rewritten by hand.';
+	serverDb.updateLorebook(byHand);
+	const lightRead = await lcall('read_lorebook_entries', { lorebookId: SBOOK });
+	const mapRead = await lcall('read_lorebook_settings', { lorebookId: SBOOK });
+	const textNote = stalenessNote([textRead, lightRead, mapRead].map((m) => ({ role: 'tool', content: JSON.stringify(m) })));
+	check(
+		'a text change is announced even after reads that handed no text over',
+		typeof textRead.stateRevs?.[`lorebook_text:${SBOOK}`] === 'string' && lightRead.stateRevs?.[`lorebook_text:${SBOOK}`] === undefined && /the entry text in lorebook "Settings Lore" changed/.test(textNote),
+		textNote
+	);
+	const defaultsClaim = { role: 'tool', content: JSON.stringify({ ok: true, stateRevs: { 'lorebook_defaults:global': revOf('lorebook_defaults', 'global') } }) };
+	serverDb.setSetting(LOREBOOK_SETTINGS_KEY, JSON.stringify({ ...storedDefaults, budgetPercent: 20 }));
+	const defaultsNote = stalenessNote([defaultsClaim]);
+	check('the defaults changing elsewhere is announced', /the lorebook defaults changed \[lorebook_defaults:global rev:/.test(defaultsNote), defaultsNote);
+	check('…exactly once', stalenessNote([defaultsClaim, { role: 'system', content: defaultsNote }]) === '');
+	serverDb.setSetting(LOREBOOK_SETTINGS_KEY, '{"scanDepth":');
+	L = await lcall('read_lorebook_settings', {});
+	check('an unreadable defaults row is reported', L.ok === false && /cannot be read/.test(L.error ?? ''));
+	L = await lcall('configure_lorebooks', { scope: 'defaults', set: { scanDepth: 5 } });
+	check('…and never overwritten by a write', L.ok === false && serverDb.getSetting(LOREBOOK_SETTINGS_KEY) === '{"scanDepth":');
+	// A book write never reads the defaults, so its card and its run agree without them.
+	lpv = previewCall(0, 'configure_lorebooks', { scope: 'books', lorebookIds: [SBOOK], set: { scanDepth: 7 } }, loreCtx());
+	L = await lcall('configure_lorebooks', { scope: 'books', lorebookIds: [SBOOK], set: { scanDepth: 7 } });
+	check(
+		'with the defaults unreadable, a book card still speaks and its write still lands',
+		lpv.notes.some((n) => /cannot be read/.test(n.text)) && !lpv.notes.some((n) => /Could not preview/.test(n.text)) && L.ok === true && rawBook(SBOOK).scanDepth === 7,
+		JSON.stringify(lpv.notes)
+	);
+	r = await call('read_lorebook_entries', { lorebookId: SBOOK });
+	const filteredWhileBroken = await lcall('read_lorebook_entries', { lorebookId: SBOOK, where: { behavior: 'always' } });
+	check('…and only a filtered read, which needs them, is refused', r.msg.ok === true && filteredWhileBroken.ok === false);
+	await lcall('configure_lorebooks', { scope: 'books', lorebookIds: [SBOOK], set: { scanDepth: null } });
+	serverDb.setSetting(LOREBOOK_SETTINGS_KEY, JSON.stringify(DEFAULT_LOREBOOK_GLOBAL_SETTINGS));
+	// A book's own pass cap means nothing while books recurse together, and both surfaces say so.
+	await lcall('configure_lorebooks', { scope: 'defaults', set: { crossBookRecursion: true } });
+	lpv = previewCall(0, 'configure_lorebooks', { scope: 'books', lorebookIds: [SBOOK], set: { maxRecursionSteps: 3 } }, loreCtx());
+	L = await lcall('configure_lorebooks', { scope: 'books', lorebookIds: [SBOOK], set: { maxRecursionSteps: 3 } });
+	check('an inert pass cap is flagged on the card and in the result', lpv.notes.some((n) => n.warn === true && /does nothing/.test(n.text)) && /shared loop/.test(L.warning ?? ''), JSON.stringify(lpv.notes));
+	await lcall('configure_lorebooks', { scope: 'books', lorebookIds: [SBOOK], set: { maxRecursionSteps: null } });
+	await lcall('configure_lorebooks', { scope: 'defaults', set: { crossBookRecursion: false } });
+	r = await call('read_lorebook_entries', { lorebookId: SBOOK, ids: ['no-such-entry'] });
+	check('ids that match nothing read as no match, not as an empty book', r.msg.note === 'No entry matches.' && r.msg.total === 4);
+
+	// A book of 120 long entries: every read pages it, none dumps it.
+	const ARCHIVE = crypto.randomUUID();
+	const longText = 'The archive remembers every name. '.repeat(60);
+	serverDb.insertLorebook({
+		id: ARCHIVE,
+		name: 'Big Archive',
+		scanDepth: null,
+		recursiveScanning: null,
+		maxRecursionSteps: null,
+		caseSensitive: null,
+		matchWholeWords: null,
+		extensions: {},
+		createdAt: Date.now(),
+		updatedAt: Date.now(),
+		entries: Array.from({ length: 120 }, (_, i) => ({ id: `big-${i}`, comment: `Record ${i}`, key: [`record${i}`], keysecondary: [], selectiveLogic: 0, content: longText, constant: false, disable: false, order: i, probability: 100, useProbability: true, caseSensitive: null, matchWholeWords: null, rest: {} }))
+	});
+	r = await call('read_lorebook_entries', { lorebookId: ARCHIVE });
+	check('an unasked page is 30 light rows and the way on', r.msg.returned === 30 && r.msg.matched === 120 && /^90 more matches: offset:30 continues\.$/.test(r.msg.note ?? '') && !('content' in r.msg.entries[0]), r.msg.note);
+	r = await call('read_lorebook_entries', { lorebookId: ARCHIVE, content: true });
+	check('a page of text ends early inside what may land unasked and never cuts an entry', r.msg.ok === true && r.msg.returned > 0 && r.msg.returned < 30 && r.msg.entries.every((e: any) => e.content === longText) && /ended early at what a read may take unasked/.test(r.msg.note ?? ''), `${r.msg.returned} ${r.msg.note}`);
+	L = await lcall('read_lorebook_entries', { lorebookId: ARCHIVE, content: true, limit: 30 }, { roomTokens: () => 3000 });
+	check('a page the room cuts short says the room did', L.ok === true && L.returned < 30 && /stay inside the room this conversation has left/.test(L.note ?? ''), L.note);
+	L = await lcall('read_lorebook_entries', { lorebookId: ARCHIVE, content: true, limit: 5 }, { roomTokens: () => 300 });
+	check('an entry bigger than the room left is refused with its size', L.ok === false && /room left/.test(L.error ?? ''), L.error);
+	r = await call('read_lorebook_entries', { lorebookId: ARCHIVE, offset: 115 });
+	check('the last page says nothing more is there', r.msg.returned === 5 && r.msg.note === undefined);
+	r = await call('read_lorebook_entries', { query: 'record7' });
+	check('a search of every book groups its matches by book and claims nothing', r.msg.ok === true && r.msg.results?.[0]?.lorebookId === ARCHIVE && r.msg.matched === 11 && r.msg.stateRevs === undefined, JSON.stringify(r.msg).slice(0, 300));
+	r = await call('read_lorebook_entries', {});
+	check('a search of every book needs something to search for', r.msg.ok === false);
+	L = await lcall('read_lorebook_settings', { lorebookId: ARCHIVE });
+	check('the map of a big book stays small', L.ok === true && L.entries === 120 && JSON.stringify(L).length < 1500, `${JSON.stringify(L).length} chars`);
+
+	// The chat context indexes what fits and names the rest.
+	const ariaNow = serverDb.getLibraryEntry(ARIA) as any;
+	const ariaLinks = ariaNow.data.lorebookIds;
+	ariaNow.data.lorebookIds = [SBOOK, ARCHIVE];
+	serverDb.updateLibraryEntry(ariaNow);
+	r = await call('read_chat_context', { chatId: CHAT });
+	const bigInScene = r.msg.lorebooks?.find((b: any) => b.id === ARCHIVE);
+	const smallInScene = r.msg.lorebooks?.find((b: any) => b.id === SBOOK);
+	check(
+		'a scene book too big to index is named with its size, a small one is still indexed',
+		bigInScene?.entryCount === 120 && !('entries' in bigInScene) && smallInScene?.entries?.length === 4 && /Too big to index here: Big Archive \(120 entries\)/.test(r.msg.note ?? ''),
+		r.msg.note
+	);
+	if (ariaLinks === undefined) delete ariaNow.data.lorebookIds;
+	else ariaNow.data.lorebookIds = ariaLinks;
+	serverDb.updateLibraryEntry(ariaNow);
+	serverDb.deleteLorebook(ARCHIVE);
+	serverDb.deleteLorebook(SBOOK);
 
 	console.log('===== misc =====');
 	r = await call('read_entity', { kind: 'spaceship', id: 'x' });
