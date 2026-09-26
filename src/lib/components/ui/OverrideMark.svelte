@@ -18,6 +18,10 @@
 	 * button: a second interactive thing inside one hit target is a mis-tap that silently
 	 * changes a setting, and a row whose whole job is to open a list already carries the way
 	 * back as the first item in it.
+	 *
+	 * **With `revertLabel` the way back is spelled out beside the star**, a press a thumb can
+	 * find: a 12px glyph whose meaning lives in a hover tip is a control a touch reader never
+	 * learns exists, and then reaches the default by pinning the value it happens to show.
 	 */
 	interface Props {
 		/** The value in force differs from the one this row would inherit. */
@@ -27,15 +31,21 @@
 		onRevert?: () => void;
 		/** What the star means here, when "the default" is not the phrase for it. */
 		label?: string;
+		/** The way back in words, naming what it goes back to: "Follow the book (Off)". */
+		revertLabel?: string;
 	}
 
-	let { overridden, onRevert, label }: Props = $props();
+	let { overridden, onRevert, label, revertLabel }: Props = $props();
 
 	let text = $derived(label ?? 'Changed from the default');
 </script>
 
 {#if overridden}
-	{#if onRevert}
+	{#if onRevert && revertLabel}
+		<button type="button" class="ovr-spelled" onclick={onRevert}>
+			<span class="ovr-spelled-star" aria-hidden="true">*</span>{revertLabel}
+		</button>
+	{:else if onRevert}
 		<button
 			type="button"
 			class="ovr"
@@ -73,5 +83,43 @@
 
 	.ovr--static {
 		cursor: inherit;
+	}
+
+	/* Shorter than the pills and fields it sits beside, so appearing on a press never grows the
+	   row under the finger; a touch screen gets its reach back through a negative margin. */
+	.ovr-spelled {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		align-self: center;
+		flex: none;
+		padding: 0.3rem 0.4rem;
+		border-radius: var(--radius-sm);
+		font-family: var(--font-ui);
+		font-size: 0.72rem;
+		font-weight: 600;
+		line-height: 1rem;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		transition: color 130ms ease, background-color 130ms ease;
+	}
+
+	.ovr-spelled:hover {
+		color: var(--color-text-primary);
+		background: color-mix(in srgb, var(--color-bg-tertiary) 80%, transparent);
+	}
+
+	.ovr-spelled-star {
+		font-size: 1rem;
+		line-height: 1;
+		color: var(--color-accent);
+		transform: translateY(0.2em);
+	}
+
+	@media (pointer: coarse) {
+		.ovr-spelled {
+			margin-block: -0.25rem;
+			padding: 0.55rem 0.5rem;
+		}
 	}
 </style>

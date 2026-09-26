@@ -117,6 +117,11 @@
 		return value === MIXED ? MIXED : value ? 'on' : 'off';
 	}
 
+	/** A star's way back in words, naming the value the book hands back. */
+	function followLabel(bookValue: string): string {
+		return `Follow the book (${bookValue})`;
+	}
+
 	// ===== what the selection holds, and what each knob shows =====
 
 	let natureNow = $derived(shared(natureOf));
@@ -159,14 +164,26 @@
 
 	// ===== the two membership lists =====
 
-	function sourceNow(id: LorebookScanField): Shared<boolean> {
-		return shared((e) => (e.scanFields ?? []).includes(id));
+	/** How many entries hold a member. A partial one says so on its pill, since the dashed
+	 *  outline alone is a state only a hover explains. */
+	function holding(has: (e: LorebookEntry) => boolean): number {
+		return entries.filter(has).length;
+	}
+
+	function sourceCount(id: LorebookScanField): number {
+		return holding((e) => (e.scanFields ?? []).includes(id));
 	}
 
 	/** Reads the aliases too, as the row's pill does, so an imported `regenerate` lights
 	 *  Regenerate exactly as it fires the engine. */
-	function kindNow(id: LorebookTrigger): Shared<boolean> {
-		return shared((e) => (e.triggers ?? []).some((t) => TRIGGER_ALIASES[id].includes(t)));
+	function kindCount(id: LorebookTrigger): number {
+		return holding((e) => (e.triggers ?? []).some((t) => TRIGGER_ALIASES[id].includes(t)));
+	}
+
+	/** What a member's count reads as across the selection. */
+	function memberNow(count: number): Shared<boolean> {
+		if (entries.length === 0 || (count > 0 && count < entries.length)) return MIXED;
+		return count > 0;
 	}
 
 	function memberShown(
@@ -380,12 +397,8 @@
 	/>
 {/snippet}
 
-{#snippet member(
-	key: 'scanFields' | 'triggers',
-	id: string,
-	label: string,
-	now: Shared<boolean>
-)}
+{#snippet member(key: 'scanFields' | 'triggers', id: string, label: string, count: number)}
+	{@const now = memberNow(count)}
 	{@const lit = memberShown(key, id, now)}
 	<button
 		type="button"
@@ -393,10 +406,9 @@
 		class:is-on={lit === true}
 		class:is-mixed={lit === MIXED}
 		aria-pressed={lit === MIXED ? 'mixed' : lit}
-		title={lit === MIXED ? 'On for some of the selection' : undefined}
 		onclick={() => toggleMember(key, id, now)}
 	>
-		{label}
+		{label}{#if lit === MIXED}{' '}<span class="bk-count">{count}/{entries.length}</span>{/if}
 	</button>
 {/snippet}
 
@@ -472,6 +484,7 @@
 					<OverrideMark
 						overridden={caseShown !== caseDefault}
 						onRevert={() => stage('caseSensitive', null, caseNow === caseDefault)}
+						revertLabel={followLabel(caseDefault ? 'On' : 'Off')}
 					/>
 				</div>
 			</div>
@@ -487,6 +500,7 @@
 					<OverrideMark
 						overridden={wholeShown !== wholeDefault}
 						onRevert={() => stage('matchWholeWords', null, wholeNow === wholeDefault)}
+						revertLabel={followLabel(wholeDefault ? 'On' : 'Off')}
 					/>
 				</div>
 			</div>
@@ -506,6 +520,7 @@
 				<OverrideMark
 					overridden={numberShown('scanDepth') !== depthDefault}
 					onRevert={() => stage('scanDepth', null, scanNow === depthDefault)}
+					revertLabel={followLabel(String(depthDefault))}
 				/>
 			</div>
 		</div>
@@ -514,7 +529,7 @@
 			{@render head('scanFields', 'Also scan', LOREBOOK_ENTRY_TIPS.scanFields)}
 			<div class="bk-members">
 				{#each LOREBOOK_SCAN_FIELDS as field (field.id)}
-					{@render member('scanFields', field.id, field.label, sourceNow(field.id))}
+					{@render member('scanFields', field.id, field.label, sourceCount(field.id))}
 				{/each}
 			</div>
 		</div>
@@ -561,7 +576,7 @@
 			{@render head('triggers', 'Fires on', LOREBOOK_ENTRY_TIPS.triggers)}
 			<div class="bk-members">
 				{#each LOREBOOK_TRIGGERS as t (t.id)}
-					{@render member('triggers', t.id, t.label, kindNow(t.id))}
+					{@render member('triggers', t.id, t.label, kindCount(t.id))}
 				{/each}
 			</div>
 		</div>
@@ -946,6 +961,12 @@
 		color: var(--color-text-primary);
 		border-style: dashed;
 		border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+	}
+
+	.bk-count {
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-text-muted);
 	}
 
 	@media (max-width: 480px) {
