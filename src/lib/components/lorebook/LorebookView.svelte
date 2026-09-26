@@ -1261,6 +1261,8 @@
 	/* ===== one scroll, one or two columns ===== */
 
 	.lb-page {
+		/* The pinned selection bar reads this to stick flush with the top edge. */
+		--lb-page-pad: 0.75rem;
 		flex: 1;
 		min-height: 0;
 		overscroll-behavior: contain;
@@ -1268,16 +1270,16 @@
 		grid-template-columns: minmax(0, 1fr);
 		align-content: start;
 		gap: 0.75rem;
-		padding: 0.75rem 0.75rem 3rem;
+		padding: var(--lb-page-pad) var(--lb-page-pad) 3rem;
 	}
 
 	/* A container query and not a viewport one: this panel is as wide as the chat column, so
 	   a wide window with both docks open must not be told it has room for two columns. */
 	@container browse (min-width: 860px) {
 		.lb-page {
+			--lb-page-pad: 1.5rem;
 			grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
 			gap: 1.5rem;
-			padding: 1.5rem 1.5rem 3rem;
 		}
 
 		.lb-rail {
@@ -1702,10 +1704,12 @@
 	}
 
 	/* Pinned while the list scrolls under it, the way the Library's bar stays put: the count and
-	   the actions are the point of the mode, and a long list carried them off screen. */
+	   the actions are the point of the mode, and a long list carried them off screen. A sticky
+	   box stops short at the scroller's padding, and rows passing through that strip would read
+	   as text leaking over the bar, so the offset hands the padding back. */
 	.lb-bulk {
 		position: sticky;
-		top: 0;
+		top: calc(-1 * var(--lb-page-pad));
 		z-index: 3;
 		margin: 0 0 0.5rem;
 		border: 1px solid transparent;
