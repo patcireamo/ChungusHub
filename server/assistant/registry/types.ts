@@ -25,7 +25,8 @@ export type { SyncScope };
  */
 export type EntityContext = Pick<AssistantContext, 'broadcast'>;
 
-export type FieldType = 'string' | 'text' | 'enum' | 'boolean';
+/** `number` is for read-only fields (a count): no write path coerces one, and entity-ops refuses to try. */
+export type FieldType = 'string' | 'text' | 'enum' | 'boolean' | 'number';
 
 /** One field on an entity: described once, consumed everywhere. */
 export interface FieldDef {
@@ -43,7 +44,7 @@ export interface FieldDef {
 	searchable?: boolean;
 }
 
-export type FieldValue = string | boolean | null;
+export type FieldValue = string | number | boolean | null;
 
 /** A uniform, storage-agnostic view of one record. */
 export interface EntityFlat {

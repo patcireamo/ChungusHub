@@ -56,6 +56,7 @@ const TOOL_MOTIONS: Record<string, WorkMotion> = {
 	edit_memory_episode: 'write',
 	read_character_versions: 'read',
 	read_lorebook_entries: 'read',
+	read_lorebook_settings: 'read',
 	read_prompt_entry: 'read',
 	read_connection_state: 'read',
 
@@ -64,6 +65,8 @@ const TOOL_MOTIONS: Record<string, WorkMotion> = {
 	set_entity: 'write',
 	update_entities: 'write',
 	edit_lorebook_entry: 'write',
+	configure_lorebook_entries: 'write',
+	configure_lorebooks: 'write',
 	manage_greetings: 'write',
 	manage_character_versions: 'write',
 	rename_chat: 'write',

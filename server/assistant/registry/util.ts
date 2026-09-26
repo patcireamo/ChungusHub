@@ -42,6 +42,23 @@ export function boolArg(v: unknown, label: string): boolean {
 	throw new ToolError(`\`${label}\` must be true or false.`);
 }
 
+/** A whole-number setting inside its range: anything else fails loud, since a value clamped into
+ *  range is one nobody asked for. Numeric strings are taken, as `boolArg` takes "true". */
+export function intArg(v: unknown, label: string, min: number, max = Number.MAX_SAFE_INTEGER): number {
+	const n = typeof v === 'string' && /^\s*-?\d+\s*$/.test(v) ? Number(v) : v;
+	if (typeof n !== 'number' || !Number.isInteger(n) || n < min || n > max) {
+		const range = max === Number.MAX_SAFE_INTEGER ? `of at least ${min}` : `from ${min} to ${max}`;
+		throw new ToolError(`\`${label}\` must be a whole number ${range}.`);
+	}
+	return n;
+}
+
+/** One of a fixed set of words, or a loud error naming the set. */
+export function oneOf<T extends string>(v: unknown, label: string, values: readonly T[]): T {
+	if (typeof v === 'string' && (values as readonly string[]).includes(v)) return v as T;
+	throw new ToolError(`\`${label}\` must be one of: ${values.join(', ')}.`);
+}
+
 /** Parse + clamp an integer argument, falling back when absent/invalid. */
 /** Pass as `clampInt`'s max for a read whose full size isn't known up front. Reads default
  *  to a small page but never carry a constant ceiling: one would leave the assistant unable

@@ -21,7 +21,8 @@ export type AssistantTarget = { kind: 'character' | 'persona' | 'message' | 'lor
 // Single-id entity ops carry their entity `kind`, so results route by that. Explicit
 // `navigate` results carry a full nav target and go through the shared service instead.
 const ENTITY_NAV = new Set(['read_entity', 'create_entity', 'edit_entity', 'set_entity', 'edit_character_images', 'manage_entry_lorebooks', 'set_active_persona']);
-const LOREBOOK_NAV = new Set(['create_lorebook_entry', 'edit_lorebook_entry']);
+// The two settings writes carry the BOOK id, so their rows open the book they changed.
+const LOREBOOK_NAV = new Set(['create_lorebook_entry', 'edit_lorebook_entry', 'configure_lorebook_entries', 'configure_lorebooks']);
 
 /** The place a settled tool row points at, or null when it points nowhere. */
 export function targetOfToolResult(tool: AssistantToolResult): AssistantTarget | null {

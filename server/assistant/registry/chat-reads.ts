@@ -13,10 +13,12 @@ import { changeImpact, episodeSeqRanges, resolveCoverage } from '../../../src/li
 import { resolveConfig } from '../../../src/lib/memory/config';
 import { describeMemoryImpact } from '../../../src/lib/memory/impact-copy';
 import type { Episode, MemoryMessage } from '../../../src/lib/memory/types';
+import { natureOf } from '../../../src/lib/lorebook/types';
 import type { AssistantContext } from '../types';
 import type { Capability } from './types';
 import type { RawChat, RawLibraryEntry, RawLorebookBook, RawLorebookEntry, RawMessage } from '../rows';
 import { getEntity } from './entities';
+import { estimateTextTokens } from './schema';
 import { stampState } from '../freshness';
 import { portraitAttachment } from './images';
 import { ToolError, str, requireStr, clampInt, ok, NO_CAP } from './util';
@@ -68,7 +70,7 @@ function chatPersona(chat: RawChat): RawLibraryEntry | null {
 }
 
 /** A claimed id list off the chat's own setup blob, skipping anything that is not one. */
-function claimedIds(chat: RawChat, key: 'lorebooks' | 'mutedLorebooks'): string[] {
+export function claimedIds(chat: RawChat, key: 'lorebooks' | 'mutedLorebooks'): string[] {
 	const raw = chatClaim(chat, key);
 	return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : [];
 }
@@ -483,12 +485,38 @@ export const readChatMessages: Capability = {
 /** Compact index line for one lorebook entry: full content stays behind read_lorebook_entries. */
 function entryIndex(e: RawLorebookEntry): Record<string, unknown> {
 	const preview = e.content.length > 120 ? e.content.slice(0, 120) + '…' : e.content;
-	return { id: e.id, comment: e.comment, keys: e.key, constant: e.constant, enabled: !e.disable, preview };
+	return { id: e.id, comment: e.comment, keys: e.key, behavior: natureOf(e), preview };
+}
+
+/**
+ * How much of a chat-context read the scene's entry index may take, in estimated tokens. A
+ * scene's books are indexed whole while they fit and named with their size once they do not:
+ * one global book of a thousand entries would otherwise be most of every chat read, landing in a
+ * conversation that asked about the cast.
+ */
+export const SCENE_LORE_INDEX_TOKENS = 2000;
+
+/** The scene's books, each indexed while the budget lasts, in the order lore is laid down. */
+function sceneLorebooks(books: RawLorebookBook[]): { books: Record<string, unknown>[]; unindexed: string[] } {
+	let left = SCENE_LORE_INDEX_TOKENS;
+	const unindexed: string[] = [];
+	const out = books.map((b) => {
+		const head = { id: b.id, name: b.name, entryCount: b.entries.length };
+		const entries = b.entries.map(entryIndex);
+		const cost = estimateTextTokens(JSON.stringify(entries));
+		if (cost > left) {
+			unindexed.push(`${b.name.trim() || 'Untitled lorebook'} (${b.entries.length} entries)`);
+			return head;
+		}
+		left -= cost;
+		return { ...head, entries };
+	});
+	return { books: out, unindexed };
 }
 
 export const readChatContext: Capability = {
 	name: 'read_chat_context',
-	summary: "Read a chat's cast: its bound character IN FULL and the personas that actually speak in its thread IN FULL (each user message is stamped with the persona it was sent with; null = unattributed, renders as \"You\"), plus an INDEX of the scene's lorebooks (book + entry ids, keys, content previews). `activePersona` is a name pointer only: who NEW messages in THIS chat will be attributed to (its own persona if it plays as one, else the app's), not necessarily who spoke earlier; read_entity it when needed. Read this before editing roleplay so you write them in character. For an entry's full text, use read_lorebook_entries.",
+	summary: "Read a chat's cast: its bound character IN FULL and the personas that actually speak in its thread IN FULL (each user message is stamped with the persona it was sent with; null = unattributed, renders as \"You\"), plus the scene's lorebooks: an INDEX of their entries (ids, keys, content previews) while it stays small, and a book's name and size once it does not. `activePersona` is a name pointer only: who NEW messages in THIS chat will be attributed to (its own persona if it plays as one, else the app's), not necessarily who spoke earlier; read_entity it when needed. Read this before editing roleplay so you write them in character. For an entry's full text, read_lorebook_entries with content:true.",
 	risk: 'read',
 	params: [{ name: 'chatId', type: 'string', describe: 'The chat to read.', required: true }],
 	run(args, ctx) {
@@ -516,10 +544,13 @@ export const readChatContext: Capability = {
 			return flat ? { id: flat.id, ...flat.fields } : { id, deleted: true };
 		});
 		const activeRaw = chatPersona(chat);
-		const books = chatLorebooks(chat);
+		const lore = sceneLorebooks(chatLorebooks(chat));
 		// Portraits for who is actually in the scene: the character + the speakers.
 		const attach = portraitAttachment([charFlat?.id, ...usedIds], ctx);
-		const noteParts = ['Lorebook entries are previews: read full text with read_lorebook_entries(lorebookId).'];
+		const noteParts: string[] = [];
+		if (lore.unindexed.length) {
+			noteParts.push(`Too big to index here: ${lore.unindexed.join(', ')}. Search them with read_lorebook_entries, or map one with read_lorebook_settings.`);
+		}
 		if (unattributed) {
 			noteParts.push(
 				`${unattributed} user message${unattributed === 1 ? '' : 's'} on this thread ${unattributed === 1 ? 'is' : 'are'} unattributed (personaId null, renders as "You"); do not assume the active persona wrote ${unattributed === 1 ? 'it' : 'them'}.`
@@ -536,13 +567,9 @@ export const readChatContext: Capability = {
 				personas,
 				...(unattributed ? { unattributedUserMessages: unattributed } : {}),
 				activePersona: activeRaw ? { id: activeRaw.id, name: activeRaw.identity.name } : null,
-				note: noteParts.join(' '),
+				...(noteParts.length ? { note: noteParts.join(' ') } : {}),
 				...(attach.note ? { portraits: attach.note } : {}),
-				lorebooks: books.map((b) => ({
-					id: b.id,
-					name: b.name,
-					entries: b.entries.map(entryIndex)
-				})),
+				lorebooks: lore.books,
 				// Claims for what arrived IN FULL: the chat, its character, the speaking
 				// personas. The lorebooks are an index with previews, not knowledge: their
 				// claims belong to read_lorebook_entries, which is what hands them over whole.

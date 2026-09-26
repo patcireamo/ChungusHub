@@ -277,7 +277,7 @@ function flattenLorebook(raw: RawLorebookBook): EntityFlat {
 	return {
 		id: raw.id,
 		kind: 'lorebook',
-		fields: { name: str(raw.name) },
+		fields: { name: str(raw.name), entryCount: Array.isArray(raw.entries) ? raw.entries.length : 0, everyChat: !!raw.global },
 		title: str(raw.name) || '(untitled lorebook)'
 	};
 }
@@ -285,12 +285,14 @@ function flattenLorebook(raw: RawLorebookBook): EntityFlat {
 const lorebookEntity: EntityDef = {
 	kind: 'lorebook',
 	describe: 'A standalone lorebook (world-info book): a named set of entries injected into a chat when their keywords appear.',
-	note: 'Rename/delete the book with the generic entity tools; read its entries in full with read_lorebook_entries; add or change entries with create/edit/delete_lorebook_entry (they take a lorebookId). A chat injects the books linked by its character + the active persona.',
+	note: 'Rename/delete the book with the generic entity tools; its entries and settings through the Lorebook tools. A chat injects the books in every chat, the ones its character and persona link, and the ones it attached itself, less any it muted.',
 	addressable: true,
 	ops: { create: true, edit: true, delete: true, bulk: false },
 	scope: 'lorebooks',
 	fields: [
-		{ key: 'name', label: 'Name', describe: 'Book title.', type: 'string', editable: true, summary: true, searchable: true }
+		{ key: 'name', label: 'Name', describe: 'Book title.', type: 'string', editable: true, summary: true, searchable: true },
+		{ key: 'entryCount', label: 'Entries', describe: 'How many entries it holds.', type: 'number', editable: false, summary: true },
+		{ key: 'everyChat', label: 'In every chat', describe: 'In every chat with nothing linking it (configure_lorebooks sets it).', type: 'boolean', editable: false, summary: true }
 	],
 
 	read(id) {

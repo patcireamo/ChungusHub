@@ -16,8 +16,9 @@
  * round-trips losslessly through SillyTavern either way.
  */
 
-import type { CharacterTraits } from '$lib/types/library';
-import type { PortraitFocus } from '$lib/utils/portrait-focus';
+// Relative, not `$lib`: the assistant's server code imports this module (architecture/lorebook.md).
+import type { CharacterTraits } from '../types/library';
+import type { PortraitFocus } from '../utils/portrait-focus';
 
 /**
  * SillyTavern's selectiveLogic enum: how primary and secondary keys combine.
@@ -847,6 +848,9 @@ export const DEFAULT_GROUP_WEIGHT = 100;
 export function lorebookGroupsOf(entry: LorebookEntry): string[] {
 	return entry.group ? parseKeys(entry.group) : [];
 }
+
+/** The settings row the defaults are stored in, written by the Global Settings page and the assistant. */
+export const LOREBOOK_SETTINGS_KEY = 'lorebookGlobalSettings';
 
 /** The engine's stock behavior: what a fresh install (and every book pre-settings) got. */
 export const DEFAULT_LOREBOOK_GLOBAL_SETTINGS: LorebookGlobalSettings = {
