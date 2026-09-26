@@ -100,6 +100,28 @@ export type LorebookBulkKnob =
 	| 'group'
 	| 'placement';
 
+/** What both selection dialogs, Edit… and Select by, call each knob: the entry row's own
+ *  names, which the row keeps by hand. */
+export const LOREBOOK_KNOB_NAMES: Record<LorebookBulkKnob, string> = {
+	nature: 'Behavior',
+	filter: 'Filter',
+	order: 'Order',
+	probability: 'Trigger %',
+	caseSensitive: 'Case-sensitive',
+	matchWholeWords: 'Whole words',
+	scanDepth: 'Scan depth',
+	scanFields: 'Also scan',
+	wokenBy: 'Woken by',
+	wakesOthers: 'Wakes others',
+	triggers: 'Fires on',
+	timing: 'Timing',
+	group: 'Inclusion group',
+	placement: 'Placement'
+};
+
+/** The knobs in the order Edit… draws them, the row's own order. */
+export const LOREBOOK_KNOBS = Object.keys(LOREBOOK_KNOB_NAMES) as LorebookBulkKnob[];
+
 /**
  * The knob each staged setting sits under: what that knob's Leave as is clears and what the
  * count of changes counts once. Exhaustive by type, so a setting added to the edit cannot be

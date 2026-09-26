@@ -307,7 +307,7 @@ export function lorebookWokenBy(recursion: ResolvedRecursion): LorebookWokenBy {
 	return recursion.delayLevel > 0 ? 'entriesOnly' : 'both';
 }
 
-const WOKEN_BY_LABELS: Record<LorebookWokenBy, string> = {
+export const WOKEN_BY_LABELS: Record<LorebookWokenBy, string> = {
 	both: 'The chat and other entries',
 	chatOnly: 'The chat only',
 	entriesOnly: 'Other entries only',
