@@ -196,6 +196,13 @@ describe('what the editor offers', () => {
 		expect(offeredEdit(filtered, { selectiveLogic: 3 })).toEqual({ selectiveLogic: 3 });
 	});
 
+	test('nor while every entry holding secondary keys is always active, which reads no keys', () => {
+		const always = [entry({ constant: true, keysecondary: ['night'] }), entry({ constant: true })];
+		expect(bulkOffers(always, {}).filter).toBe(false);
+		expect(offeredEdit(always, { selectiveLogic: 3 })).toEqual({});
+		expect(bulkOffers(always, { nature: 'keyword' }).filter).toBe(true);
+	});
+
 	test('a level is offered only while every entry waits once the edit lands', () => {
 		const mixed = [entry({ delayUntilRecursion: true }), entry()];
 		expect(bulkOffers(mixed, {}).level).toBe(false);
