@@ -52,6 +52,7 @@ Most of the suite is not integration testing at all. It works because subsystems
 | `memory/engine.ts`, `branching.ts`, `recall.ts`, `config.ts`, `prompts.ts` | `memory/memory.test.ts` (fake `MemoryDb` + scripted `LlmFn`) | `memory/store.svelte.ts` |
 | `lorebook/engine.ts` (injectable RNG) | `lorebook/engine.test.ts` | `lorebook/store.svelte.ts` |
 | `lorebook/bulk.ts` (what a selection holds, and the patch a bulk edit writes into each entry) | `lorebook/bulk.test.ts` | `components/lorebook/LorebookBulkEditor.svelte` |
+| `lorebook/select.ts` (a pick stretched across the rows between two presses) | `lorebook/select.test.ts` | `components/lorebook/LorebookView.svelte` |
 | `lorebook/sillytavern.ts` | `lorebook/sillytavern.test.ts` | none (consumed by `lorebook/io.ts`) |
 | `utils/prompt-assembly.ts` (+ `macros.ts`) | `utils/prompt-assembly.test.ts`, `utils/prompt-pruning.test.ts` | none |
 | `utils/message-tree.ts` | `utils/message-tree.test.ts` | `stores/chat.svelte.ts` |

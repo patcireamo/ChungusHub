@@ -33,6 +33,7 @@
 		type ResolvedRecursion
 	} from '$lib/lorebook/types';
 	import { autoResize } from '$lib/actions/autoResize';
+	import { longPress } from '$lib/actions/longPress';
 	import { countTokens } from '$lib/tokenizer';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
@@ -56,7 +57,9 @@
 		/** Bulk-selection mode: the row selects instead of expanding. */
 		selectMode: boolean;
 		selected: boolean;
-		onSelectToggle: () => void;
+		/** Pick this row; `extend` stretches the pick from the last row pressed (Shift, or a
+		 *  finger held on the row). */
+		onSelectToggle: (extend: boolean) => void;
 	}
 
 	let { lorebookId, entryId, expanded, onToggle, onDelete, onDuplicate, selectMode, selected, onSelectToggle }: Props =
@@ -181,6 +184,12 @@
 		if (entry) update({ disable: !entry.disable });
 	}
 
+	/** Shift stretches a pick while selecting, and the browser would also stretch a text
+	 *  selection across every row it passes. */
+	function keepTextUnselected(e: MouseEvent) {
+		if (selectMode && e.shiftKey) e.preventDefault();
+	}
+
 	// Tolerant numeric editing: drafts the user can empty out without the field snapping to a
 	// forced value mid-keystroke. Shared by the collapsed row's quick fields and the unfolded
 	// form (they can't drift: both read the same draft, both write the same entry).
@@ -303,14 +312,25 @@
 </script>
 
 {#if entry}
-	<div class="lbr" class:is-open={expanded} class:is-off={entry.disable} id="lb-row-{entry.id}">
-		<!-- Compact head: always visible, collapses/expands the editor beneath it -->
-		<div class="lbr-head">
+	<div
+		class="lbr"
+		class:is-open={expanded}
+		class:is-off={entry.disable}
+		class:is-picking={selectMode}
+		id="lb-row-{entry.id}"
+	>
+		<!-- Compact head: always visible, collapses/expands the editor beneath it. While picking, a
+		     finger held on it stretches the pick the way Shift does. -->
+		<div
+			class="lbr-head"
+			use:longPress={{ enabled: selectMode, onPress: () => onSelectToggle(true) }}
+		>
 			{#if selectMode}
 				<button
 					type="button"
 					class="lbr-glyph"
-					onclick={onSelectToggle}
+					onmousedown={keepTextUnselected}
+					onclick={(e) => onSelectToggle(e.shiftKey)}
 					aria-pressed={selected}
 					aria-label={selected ? 'Deselect entry' : 'Select entry'}
 				>
@@ -341,7 +361,8 @@
 			<button
 				type="button"
 				class="lbr-main"
-				onclick={() => (selectMode ? onSelectToggle() : onToggle())}
+				onmousedown={keepTextUnselected}
+				onclick={(e) => (selectMode ? onSelectToggle(e.shiftKey) : onToggle())}
 				aria-expanded={expanded}
 			>
 				<span class="lbr-title" class:is-untitled={!entry.comment}>
@@ -936,6 +957,14 @@
 	.lbr-head {
 		display: flex;
 		align-items: stretch;
+	}
+
+	/* A finger held on a row being picked is a press, never the start of a text selection or
+	   the system's callout. */
+	.lbr.is-picking .lbr-head {
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
 	}
 
 	.lbr-glyph {

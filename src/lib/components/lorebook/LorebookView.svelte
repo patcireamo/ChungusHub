@@ -29,6 +29,7 @@
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
 	import { lorebookSettingsStore } from '$lib/lorebook/settings.svelte';
 	import { downloadLorebook } from '$lib/lorebook/io';
+	import { extendSelection } from '$lib/lorebook/select';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 	import { chatStore } from '$lib/stores/chat.svelte';
@@ -303,18 +304,29 @@
 	let bulkDeleteOpen = $state(false);
 	let bulkBarHeight = $state(0);
 
+	/** The row a stretched pick runs from: the last one pressed. */
+	let pickAnchor: string | null = null;
+
 	// Entering/leaving select mode resets the set; entering also folds every open row so
 	// the list reads as a flat checklist.
 	$effect(() => {
 		if (selectMode) expandedIds = new Set();
 		selectedIds = new Set();
+		pickAnchor = null;
 	});
 
-	function toggleSelect(id: string) {
-		const next = new Set(selectedIds);
-		if (next.has(id)) next.delete(id);
-		else next.add(id);
-		selectedIds = next;
+	function pick(id: string, extend: boolean) {
+		const shown = entries.map((e) => e.id);
+		selectedIds = extendSelection(shown, selectedIds, extend ? pickAnchor : null, id);
+		pickAnchor = id;
+	}
+
+	/** All adds what the list shows to the pick, the Library's own All, so a search can
+	 *  gather one batch and the next search another. */
+	let allShownPicked = $derived(entries.every((e) => selectedIds.has(e.id)));
+
+	function pickShown() {
+		selectedIds = new Set([...selectedIds, ...entries.map((e) => e.id)]);
 	}
 
 	function bulkSet(patch: { disable: boolean }) {
@@ -918,9 +930,18 @@
 							<button
 								type="button"
 								class="brw-bulk-link"
-								onclick={() => (selectedIds = new Set(entries.map((e) => e.id)))}
+								onclick={pickShown}
+								disabled={allShownPicked}
 							>
-								Select all
+								All ({entries.length})
+							</button>
+							<button
+								type="button"
+								class="brw-bulk-link"
+								onclick={() => (selectedIds = new Set())}
+								disabled={selectedIds.size === 0}
+							>
+								None
 							</button>
 							<span class="brw-bulk-spacer"></span>
 							<button
@@ -1050,7 +1071,7 @@
 										onDuplicate={() => duplicateEntry(entry.id)}
 										{selectMode}
 										selected={selectedIds.has(entry.id)}
-										onSelectToggle={() => toggleSelect(entry.id)}
+										onSelectToggle={(extend) => pick(entry.id, extend)}
 									/>
 								</li>
 							{/each}
