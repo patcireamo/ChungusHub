@@ -326,9 +326,12 @@
 	/** The editor is keyed on this, so every opening starts with nothing staged. Reopened inside
 	 *  the close's fade, the dialog reverses its outro and keeps the old instance standing. */
 	let bulkEditOpening = $state(0);
+	/** Something is staged in it, so a stray press on the backdrop or Escape must not close it. */
+	let bulkEditHeld = $state(false);
 
 	function openBulkEdit() {
 		bulkEditOpening++;
+		bulkEditHeld = false;
 		bulkEditOpen = true;
 	}
 
@@ -1139,6 +1142,7 @@
 	size="lg"
 	bare
 	fill
+	held={bulkEditHeld}
 >
 	{#if selectedBook}
 		{#key bulkEditOpening}
@@ -1146,6 +1150,7 @@
 				bookId={selectedBook.id}
 				entryIds={selectedIds}
 				onClose={() => (bulkEditOpen = false)}
+				bind:held={bulkEditHeld}
 			/>
 		{/key}
 	{/if}

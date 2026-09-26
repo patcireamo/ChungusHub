@@ -10,6 +10,7 @@
 	 * back. The staging lives in this instance, so the caller mounts a fresh one per opening
 	 * (LorebookView keys it) and nothing staged outlives a Cancel.
 	 */
+	import { tick } from 'svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import InfoTip from '$lib/components/ui/InfoTip.svelte';
 	import OverrideMark from '$lib/components/ui/OverrideMark.svelte';
@@ -60,9 +61,11 @@
 		bookId: string;
 		entryIds: ReadonlySet<string>;
 		onClose: () => void;
+		/** Something is staged, for the dialog's `held`: while it is, Escape is answered here. */
+		held?: boolean;
 	}
 
-	let { bookId, entryIds, onClose }: Props = $props();
+	let { bookId, entryIds, onClose, held = $bindable(false) }: Props = $props();
 
 	let book = $derived(lorebookStore.getBook(bookId));
 	let entries = $derived(book ? book.entries.filter((e) => entryIds.has(e.id)) : []);
@@ -281,6 +284,45 @@
 		else stage('group', '', false);
 	}
 
+	// ===== leaving with something staged =====
+
+	$effect(() => {
+		held = changed.size > 0;
+	});
+
+	/** Escape asks before it throws the staging away: a reflex, often only meant to leave a
+	 *  field, should not cost what was set. A second Escape, or going back into the knobs,
+	 *  answers keep editing. Cancel and the close X still leave at once. */
+	let asking = $state(false);
+	let askedFrom: HTMLElement | null = null;
+	let footEl = $state<HTMLElement | null>(null);
+
+	$effect(() => {
+		if (changed.size === 0) asking = false;
+	});
+
+	function onKeydown(e: KeyboardEvent) {
+		// While nothing is staged the dialog answers Escape itself, by closing.
+		if (e.key !== 'Escape' || changed.size === 0) return;
+		e.preventDefault();
+		if (asking) return keepEditing();
+		askedFrom = document.activeElement as HTMLElement | null;
+		asking = true;
+		void tick().then(() => footEl?.querySelector('button')?.focus());
+	}
+
+	function keepEditing() {
+		asking = false;
+		askedFrom?.focus();
+		askedFrom = null;
+	}
+
+	let footLine = $derived(
+		asking
+			? `Discard ${changed.size} ${changed.size === 1 ? 'change' : 'changes'}?`
+			: summary
+	);
+
 	// ===== apply =====
 
 	function apply() {
@@ -358,8 +400,16 @@
 	</button>
 {/snippet}
 
+<svelte:window onkeydown={onKeydown} />
+
 <div class="bk">
-	<div class="bk-body panel-scroll">
+	<!-- Not a control: a press anywhere among the knobs only answers the footer's question. -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="bk-body panel-scroll"
+		onpointerdown={() => (asking = false)}
+		onfocusin={() => (asking = false)}
+	>
 		<div>
 			{@render head('nature', 'Behavior', undefined)}
 			{@render pills(
@@ -634,13 +684,22 @@
 		</div>
 	</div>
 
-	<footer class="bk-foot">
-		<p class="bk-sum" class:is-empty={!summary} aria-live="polite">{summary}</p>
+	<footer class="bk-foot" bind:this={footEl}>
+		<p class="bk-sum" class:is-empty={!footLine} aria-live="polite">{footLine}</p>
 		<div class="bk-acts">
-			<Button variant="ghost" onclick={onClose}>Cancel</Button>
-			<Button variant="primary" disabled={changed.size === 0 || entries.length === 0} onclick={apply}>
-				Apply to {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
-			</Button>
+			{#if asking}
+				<Button variant="ghost" onclick={keepEditing}>Keep editing</Button>
+				<Button variant="danger" onclick={onClose}>Discard</Button>
+			{:else}
+				<Button variant="ghost" onclick={onClose}>Cancel</Button>
+				<Button
+					variant="primary"
+					disabled={changed.size === 0 || entries.length === 0}
+					onclick={apply}
+				>
+					Apply to {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+				</Button>
+			{/if}
 		</div>
 	</footer>
 </div>
