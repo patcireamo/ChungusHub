@@ -358,36 +358,49 @@
 				{/if}
 			</button>
 
-			{#if !selectMode && !expanded}
+			{#if !expanded}
 				{#if entry.content && !entry.disable}
 					<span
 						class="lbr-weight"
 						title="≈ prompt tokens when this entry fires"
 					>~{contentTokens}</span>
 				{/if}
-				<!-- Quick fields: edit priority and trigger chance without unfolding the row. -->
-				<label class="lbr-mini" title="Order, lower is injected first">
-					<span class="lbr-mini-key">ord</span>
-					<input
-						type="text"
-						inputmode="numeric"
-						value={orderDraft}
-						oninput={(e) => commitOrder((e.target as HTMLInputElement).value)}
-						onblur={() => (orderDraft = entry ? String(entry.order) : '')}
-						aria-label="Order"
-					/>
-				</label>
-				<label class="lbr-mini" title="Trigger chance, 100 = always">
-					<input
-						type="text"
-						inputmode="numeric"
-						value={probabilityDraft}
-						oninput={(e) => commitProbability((e.target as HTMLInputElement).value)}
-						onblur={() => (probabilityDraft = String(effectiveProbability))}
-						aria-label="Trigger percent"
-					/>
-					<span class="lbr-mini-key">%</span>
-				</label>
+				{#if selectMode}
+					<!-- Read, not edited, while picking: they are what a pick is often made by, and
+					     a press on a row here selects it. -->
+					<span class="lbr-mini" title="Order, lower is injected first">
+						<span class="lbr-mini-key">ord</span>
+						<span class="lbr-mini-val">{entry.order}</span>
+					</span>
+					<span class="lbr-mini" title="Trigger chance, 100 = always">
+						<span class="lbr-mini-val">{effectiveProbability}</span>
+						<span class="lbr-mini-key">%</span>
+					</span>
+				{:else}
+					<!-- Quick fields: edit priority and trigger chance without unfolding the row. -->
+					<label class="lbr-mini" title="Order, lower is injected first">
+						<span class="lbr-mini-key">ord</span>
+						<input
+							type="text"
+							inputmode="numeric"
+							value={orderDraft}
+							oninput={(e) => commitOrder((e.target as HTMLInputElement).value)}
+							onblur={() => (orderDraft = entry ? String(entry.order) : '')}
+							aria-label="Order"
+						/>
+					</label>
+					<label class="lbr-mini" title="Trigger chance, 100 = always">
+						<input
+							type="text"
+							inputmode="numeric"
+							value={probabilityDraft}
+							oninput={(e) => commitProbability((e.target as HTMLInputElement).value)}
+							onblur={() => (probabilityDraft = String(effectiveProbability))}
+							aria-label="Trigger percent"
+						/>
+						<span class="lbr-mini-key">%</span>
+					</label>
+				{/if}
 			{/if}
 
 			{#if !selectMode}
@@ -1074,6 +1087,21 @@
 		border-radius: var(--radius-sm);
 		outline: none;
 		transition: border-color 130ms ease, background-color 130ms ease, color 130ms ease;
+	}
+
+	/* The field's own box without its edge, so the numbers hold their place in and out of
+	   selecting and only the edge says whether one can be typed into. */
+	.lbr-mini-val {
+		width: 2.4rem;
+		padding: 0.2rem 0.25rem;
+		overflow: hidden;
+		white-space: nowrap;
+		text-align: center;
+		font-family: var(--font-mono);
+		font-size: 0.7rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-text-secondary);
+		border: 1px solid transparent;
 	}
 
 	.lbr:hover .lbr-mini input,
