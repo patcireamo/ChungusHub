@@ -884,16 +884,17 @@
 								</div>
 							</BrowsePopover>
 
+							<!-- Worded at every width: it is the only door to everything a selection can
+							     do, and a bare glyph between two others is one a phone never learns. -->
 							<button
 								type="button"
-								class="brw-btn"
+								class="brw-btn lb-select"
 								class:is-active={selectMode}
 								onclick={() => (selectMode = !selectMode)}
 								aria-pressed={selectMode}
-								aria-label="Select entries"
-								title="Select entries"
 							>
 								<Icon name="checkCircle" class="w-4 h-4" />
+								<span>Select</span>
 							</button>
 
 							<button type="button" class="brw-new" onclick={addEntry} title="New entry">
@@ -1612,6 +1613,15 @@
 	.lb-controls-row :global(.brw-pop-panel) {
 		max-height: min(26rem, 62dvh);
 		overflow-y: auto;
+	}
+
+	.lb-select {
+		width: auto;
+		gap: 0.35rem;
+		padding: 0 0.65rem 0 0.55rem;
+		font-family: var(--font-ui);
+		font-size: 0.75rem;
+		font-weight: 600;
 	}
 
 	/* A hidden kind still names itself, but its dot stops reading as lit. */
