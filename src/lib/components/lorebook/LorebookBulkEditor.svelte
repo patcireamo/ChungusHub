@@ -95,9 +95,13 @@
 		value: LorebookBulkEdit[K],
 		unchanged: boolean
 	) {
+		if (unchanged) return unstage(key);
+		edit = { ...edit, [key]: value };
+	}
+
+	function unstage(key: keyof LorebookBulkEdit) {
 		const next = { ...edit };
-		if (unchanged) delete next[key];
-		else next[key] = value;
+		delete next[key];
 		edit = next;
 	}
 
@@ -197,9 +201,8 @@
 		return /^\d+$/.test(raw.trim()) ? parseInt(raw, 10) : undefined;
 	}
 
-	/** Empty or zero is off, which is also how the row stores a timed window left empty. */
+	/** Zero is off, which the row reads the same as a window never set. */
 	function offOrWhole(raw: string): number | null | undefined {
-		if (raw.trim() === '') return null;
 		const n = whole(raw);
 		return n === undefined ? undefined : n || null;
 	}
@@ -257,15 +260,25 @@
 	let typing = $state<NumberKey | 'group' | null>(null);
 	let draft = $state('');
 
+	// An emptied field goes back to how it opened, whatever it held: emptying is how a reader
+	// takes back what they typed, so it cannot also stage off or no group for the whole
+	// selection. Those are a 0 and the No group press.
 	function typeNumber(key: NumberKey, raw: string) {
 		draft = raw;
+		if (raw.trim() === '') return unstage(key);
 		const value = NUMBERS[key].parse(raw);
 		if (value !== undefined) stage(key, value, shared(NUMBERS[key].read) === value);
 	}
 
 	function typeGroup(raw: string) {
 		draft = raw;
-		stage('group', raw, groupNow === raw);
+		if (raw.trim() === '') unstage('group');
+		else stage('group', raw, groupNow === raw);
+	}
+
+	function toggleNoGroup() {
+		if (edit.group === '') unstage('group');
+		else stage('group', '', false);
 	}
 
 	// ===== apply =====
@@ -517,19 +530,33 @@
 
 		<div>
 			{@render head('group', 'Inclusion group', LOREBOOK_ENTRY_TIPS.group)}
-			<input
-				type="text"
-				class="input-base bk-field w-full max-w-[16rem] px-3 py-2 font-ui text-sm text-text-primary"
-				value={typing === 'group' ? draft : groupShown === MIXED ? '' : groupShown}
-				placeholder={groupShown === MIXED ? 'Mixed' : 'weather, mood…'}
-				aria-label="Inclusion group"
-				onfocus={() => {
-					typing = 'group';
-					draft = groupShown === MIXED ? '' : groupShown;
-				}}
-				oninput={(e) => typeGroup((e.target as HTMLInputElement).value)}
-				onblur={() => (typing = null)}
-			/>
+			<div class="bk-group">
+				<input
+					type="text"
+					class="input-base bk-field bk-group-field px-3 py-2 font-ui text-sm text-text-primary"
+					value={typing === 'group' ? draft : groupShown === MIXED ? '' : groupShown}
+					placeholder={groupShown === MIXED ? 'Mixed' : 'weather, mood…'}
+					aria-label="Inclusion group"
+					onfocus={() => {
+						typing = 'group';
+						draft = groupShown === MIXED ? '' : groupShown;
+					}}
+					oninput={(e) => typeGroup((e.target as HTMLInputElement).value)}
+					onblur={() => (typing = null)}
+				/>
+				<!-- Drawn while some entry is in a group, since it takes every entry out of one. -->
+				{#if groupNow !== ''}
+					<button
+						type="button"
+						class="bk-pill"
+						class:is-on={edit.group === ''}
+						aria-pressed={edit.group === ''}
+						onclick={toggleNoGroup}
+					>
+						No group
+					</button>
+				{/if}
+			</div>
 			{#if offers.groupRules}
 				<div class="bk-row mt-2.5">
 					<label class="bk-sub">
@@ -775,6 +802,19 @@
 		font-family: var(--font-ui);
 		font-style: italic;
 		color: var(--color-text-muted);
+	}
+
+	.bk-group {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+
+	.bk-group-field {
+		flex: 1 1 10rem;
+		min-width: 0;
+		max-width: 16rem;
 	}
 
 	.bk-note {
