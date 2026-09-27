@@ -685,6 +685,7 @@
 	class="message-row group fade-in"
 	class:message-archived={archived}
 	class:message-row-cursor={cursored}
+	class:message-row-menu-open={showDeleteMenu || showRegenerateMenu}
 	{hidden}
 	tabindex="-1"
 	data-hint
@@ -1161,6 +1162,16 @@
 	}
 
 	.message-archived:hover {
+		opacity: 1;
+	}
+
+	/* A menu and its click-catcher can only rise as high as their own row, and the rows below
+	   come later with the same cards (1) and stuck toolbars (3), so they would paint over it. */
+	.message-row-menu-open {
+		z-index: 20;
+	}
+
+	.message-archived.message-row-menu-open {
 		opacity: 1;
 	}
 
