@@ -10,7 +10,8 @@ import {
 	readdirSync,
 	rmSync,
 	statSync,
-	writeFileSync
+	writeFileSync,
+	type Dirent
 } from 'node:fs';
 import { basename, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -60,6 +61,20 @@ export function imageContentType(path: string): string | null {
 /** What counts as a picture in a bundled folder: workspace backgrounds, the cover art sitting
  *  beside a default preset, and an example character's portrait and sprites. */
 export const IMAGE_EXT_RE = new RegExp(`(${IMAGE_EXTENSIONS.map((e) => `\\${e}`).join('|')})$`, 'i');
+
+/**
+ * A folder's entries without its hidden ones, for every folder people copy by hand: the
+ * bundled defaults and the preset store.
+ *
+ * macOS writes a `._<name>` beside every file it copies to a volume that cannot hold its
+ * metadata (exFAT, a network share, most USB sticks), and that file is binary. It keeps the
+ * name's extension, so `._lila.json` passes an extension test, reaches `JSON.parse`, and
+ * throws at boot; `._happy.webp` would be seeded as a sprite nothing can draw. Nothing the
+ * app ships or writes starts with a dot, so skipping every such name loses nothing.
+ */
+export function visibleEntries(dir: string): Dirent[] {
+	return readdirSync(dir, { withFileTypes: true }).filter((e) => !e.name.startsWith('.'));
+}
 
 /**
  * Every thumbnail is webp, and the extension is FIXED, which is what keeps a thumbnail's
@@ -340,7 +355,7 @@ function backgroundName(filename: string): string {
 export function listBackgrounds(): BackgroundEntry[] {
 	const out: BackgroundEntry[] = [];
 	if (existsSync(DEFAULT_BACKGROUNDS_DIR)) {
-		for (const name of readdirSync(DEFAULT_BACKGROUNDS_DIR).sort()) {
+		for (const name of visibleEntries(DEFAULT_BACKGROUNDS_DIR).map((e) => e.name).sort()) {
 			if (!IMAGE_EXT_RE.test(name)) continue;
 			out.push({ path: `backgrounds/${name}`, name: backgroundName(name), source: 'default' });
 		}
@@ -411,7 +426,7 @@ function presetFileShape(data: Record<string, unknown>): Omit<PresetFileData, 'n
  * a workspace with nothing to generate with, which is a broken build, not a valid state.
  */
 function bundledDefaults(): { id: string; cover: string | null }[] {
-	const names = existsSync(DEFAULT_PRESETS_DIR) ? readdirSync(DEFAULT_PRESETS_DIR).sort() : [];
+	const names = existsSync(DEFAULT_PRESETS_DIR) ? visibleEntries(DEFAULT_PRESETS_DIR).map((e) => e.name).sort() : [];
 	const images = names.filter((name) => IMAGE_EXT_RE.test(name));
 	const defaults = names
 		.filter((name) => name.endsWith('.json'))
@@ -475,7 +490,7 @@ const PRESET_ID_RE = /[^a-z0-9_-]/gi;
 function readPresetDir(dir: string): unknown[] {
 	mkdirSync(dir, { recursive: true });
 	const out: unknown[] = [];
-	for (const name of readdirSync(dir)) {
+	for (const { name } of visibleEntries(dir)) {
 		if (!name.endsWith('.json')) continue;
 		const data = JSON.parse(readFileSync(join(dir, name), 'utf8'));
 		out.push({ id: name.replace(/\.json$/, ''), ...presetFileShape(data) });

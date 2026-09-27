@@ -16,9 +16,10 @@
  *
  * State lives in assistantSkills.json under the data dir: the list verbatim, ids and all.
  */
-import { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ASSISTANT_SKILLS_PATH, DEFAULT_SKILLS_DIR } from '../../config';
+import { visibleEntries } from '../../files';
 import { parseSkillsFile } from '../../../shared/skills-file';
 
 export interface Skill {
@@ -50,7 +51,7 @@ export interface SkillInput {
 export function listDefaultSkills(): Skill[] {
 	if (!existsSync(DEFAULT_SKILLS_DIR)) throw new Error(`Bundled skills are missing: ${DEFAULT_SKILLS_DIR}`);
 	const out: Skill[] = [];
-	for (const file of readdirSync(DEFAULT_SKILLS_DIR).sort()) {
+	for (const file of visibleEntries(DEFAULT_SKILLS_DIR).map((e) => e.name).sort()) {
 		if (!file.endsWith('.json')) continue;
 		const stem = file.replace(/\.json$/, '');
 		const entries = parseSkillsFile(readFileSync(join(DEFAULT_SKILLS_DIR, file), 'utf8'));

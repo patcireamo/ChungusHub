@@ -16,11 +16,11 @@
  * An empty or missing folder is fine, unlike the preset one: a build that ships no example
  * character is a build without one, not a broken install.
  */
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_CHARACTERS_DIR } from './config';
-import { IMAGE_EXT_RE, seedBundledImage } from './files';
+import { IMAGE_EXT_RE, seedBundledImage, visibleEntries } from './files';
 import { serverDb } from './db';
 import { labelFromFilename, normalizeSpriteLabel, resolveDefaultSprite } from '../shared/sprites';
 
@@ -69,7 +69,7 @@ function readLedger(): Set<string> {
 
 function bundledCharacters(): BundledCharacter[] {
 	if (!existsSync(DEFAULT_CHARACTERS_DIR)) return [];
-	const entries = readdirSync(DEFAULT_CHARACTERS_DIR, { withFileTypes: true });
+	const entries = visibleEntries(DEFAULT_CHARACTERS_DIR);
 	// Sorted, so an id carrying two pictures resolves to the same one on every machine instead
 	// of following the filesystem's mood.
 	const images = entries.filter((e) => e.isFile() && IMAGE_EXT_RE.test(e.name)).map((e) => e.name).sort();
@@ -86,7 +86,7 @@ function bundledCharacters(): BundledCharacter[] {
 }
 
 function spriteFilesIn(dir: string): string[] {
-	return readdirSync(dir, { withFileTypes: true })
+	return visibleEntries(dir)
 		.filter((e) => e.isFile() && IMAGE_EXT_RE.test(e.name))
 		.map((e) => e.name)
 		.sort();
@@ -94,8 +94,14 @@ function spriteFilesIn(dir: string): string[] {
 
 /** Read a bundled card, refusing anything that would land as a nameless or contentless row. */
 function readCard(id: string): BundledCard {
-	const raw = JSON.parse(readFileSync(join(DEFAULT_CHARACTERS_DIR, `${id}.json`), 'utf8')) as Record<string, unknown>;
 	const where = `defaults/characters/${id}.json`;
+	let raw: Record<string, unknown>;
+	try {
+		raw = JSON.parse(readFileSync(join(DEFAULT_CHARACTERS_DIR, `${id}.json`), 'utf8')) as Record<string, unknown>;
+	} catch (e) {
+		// A bare parse error names no file, and this runs at boot, where it is all anyone sees.
+		throw new Error(`${where} is not valid JSON: ${e instanceof Error ? e.message : String(e)}`);
+	}
 	if (typeof raw.name !== 'string' || !raw.name.trim()) throw new Error(`${where} has no name`);
 	if (!raw.traits || typeof raw.traits !== 'object') throw new Error(`${where} has no traits`);
 	return {
