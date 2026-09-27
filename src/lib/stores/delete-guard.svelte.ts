@@ -52,6 +52,9 @@ class DeleteGuardStore {
 	/** Does that surface make the heavy case a press-and-hold? */
 	holds = $derived(this.rung === 'hold');
 
+	/** Which gesture pays for the heavy rung. A kept preference, never lowered by a window. */
+	gesture = $derived(advancedSettingsStore.confirmGesture);
+
 	/** Milliseconds left, for the standing row's countdown. Zero while no window runs. */
 	remaining = $derived(this.live && this.win ? Math.max(0, this.win.endsAt - this.now) : 0);
 

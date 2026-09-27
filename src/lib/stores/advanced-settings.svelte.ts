@@ -1,4 +1,5 @@
 import { readSetting, writeSetting, registerSettingsReload } from '$lib/services/syncedSetting';
+import { CONFIRM_GESTURES, type ConfirmGesture } from '$lib/config/delete-confirm';
 
 /**
  * The destructive-act ladder's three rungs, in one setting rather than two switches
@@ -15,6 +16,9 @@ interface AdvancedSettings {
 	/** The rung that survives a reload and reaches every device. A temporary drop rides
 	 *  `stores/delete-guard.svelte.ts` instead and is deliberately never stored here. */
 	deleteConfirm: DeleteConfirmRung;
+	/** How the heavy rung is performed: a press and hold, or two presses. Only read while the
+	 *  rung is `hold`; the lower rungs never reach a heavy confirm to perform. */
+	confirmGesture: ConfirmGesture;
 	/** The Developer group under Settings → About. No control writes it: the version row's
 	 *  tap streak is its only switch, so it stays a setting nobody meets by accident. */
 	developerMode: boolean;
@@ -25,6 +29,7 @@ const SETTINGS_KEY = 'advancedSettings';
 const DEFAULT_SETTINGS: AdvancedSettings = {
 	promptDebugPanel: false,
 	deleteConfirm: 'hold',
+	confirmGesture: 'hold',
 	developerMode: false
 };
 
@@ -38,6 +43,9 @@ function normalize(raw: Partial<AdvancedSettings> | null): AdvancedSettings {
 		deleteConfirm: DELETE_CONFIRM_RUNGS.includes(raw?.deleteConfirm as DeleteConfirmRung)
 			? (raw!.deleteConfirm as DeleteConfirmRung)
 			: DEFAULT_SETTINGS.deleteConfirm,
+		confirmGesture: CONFIRM_GESTURES.includes(raw?.confirmGesture as ConfirmGesture)
+			? (raw!.confirmGesture as ConfirmGesture)
+			: DEFAULT_SETTINGS.confirmGesture,
 		developerMode:
 			typeof raw?.developerMode === 'boolean' ? raw.developerMode : DEFAULT_SETTINGS.developerMode
 	};
@@ -48,6 +56,7 @@ class AdvancedSettingsStore {
 
 	promptDebugPanel = $derived(this.settings.promptDebugPanel);
 	deleteConfirm = $derived(this.settings.deleteConfirm);
+	confirmGesture = $derived(this.settings.confirmGesture);
 	developerMode = $derived(this.settings.developerMode);
 
 	async initialize(): Promise<void> {
@@ -71,6 +80,11 @@ class AdvancedSettingsStore {
 
 	setDeleteConfirm(rung: DeleteConfirmRung): void {
 		this.settings.deleteConfirm = rung;
+		this.persist();
+	}
+
+	setConfirmGesture(gesture: ConfirmGesture): void {
+		this.settings.confirmGesture = gesture;
 		this.persist();
 	}
 

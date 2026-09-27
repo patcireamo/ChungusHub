@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { advancedSettingsStore, type DeleteConfirmRung } from '$lib/stores/advanced-settings.svelte';
 	import { deleteGuard, WINDOW_CHOICES, QUICK_WINDOW_MS } from '$lib/stores/delete-guard.svelte';
+	import { CONFIRM_GESTURES } from '$lib/config/delete-confirm';
 	import { uiStore } from '$lib/stores/ui.svelte';
 	import { promptLogStore } from '$lib/debug/promptLog.svelte';
 	import { promptHoldStore } from '$lib/stores/promptHold.svelte';
@@ -28,7 +29,15 @@
 		{ value: 'kept', label: 'Until I turn it back on' }
 	];
 
+	// The heavy rung's gesture. Pressing twice is for a pen or touchscreen that turns a long
+	// press into a right click, where a hold can never finish.
+	const GESTURES = [
+		{ value: 'hold', label: 'Press and hold', title: 'Hold the button until it fills' },
+		{ value: 'twice', label: 'Press twice', title: 'Press once to arm, again to confirm' }
+	];
+
 	let rung = $derived(deleteGuard.rung);
+	let gesture = $derived(deleteGuard.gesture);
 	let length = $derived(deleteGuard.timed ? String(deleteGuard.windowMs) : 'kept');
 
 	// Lowering from the default starts a window rather than a kept setting, so the safe shape
@@ -43,6 +52,11 @@
 		if (deleteGuard.timed) deleteGuard.openWindow(value, deleteGuard.windowMs);
 		else if (rung === 'hold') deleteGuard.openWindow(value, QUICK_WINDOW_MS);
 		else deleteGuard.keep(value);
+	}
+
+	function pickGesture(next: string): void {
+		const value = CONFIRM_GESTURES.find((g) => g === next);
+		if (value) advancedSettingsStore.setConfirmGesture(value);
 	}
 
 	function pickLength(next: string): void {
@@ -114,12 +128,22 @@
 		<div class="card-head">
 			<span class="card-title">Delete confirmations</span>
 			<InfoTip
-				text="How hard a delete is to fire. Nothing in this app can be undone once it is gone, so the default asks before every delete and makes a big one wait for a press and hold. Lowering this starts as a window that puts itself back, since most reasons to lower it last a few minutes. While it is lowered a row at the top of the app says so."
+				text="How hard a delete is to fire. Nothing in this app can be undone once it is gone, so the default asks before every delete and makes a big one wait for a press and hold, or for a second press if holding does not work on your device. Lowering this starts as a window that puts itself back, since most reasons to lower it last a few minutes. While it is lowered a row at the top of the app says so."
 			/>
 		</div>
 		<div class="card-body">
 			<PillRow options={RUNGS} current={rung} onpick={pickRung} label="Delete confirmations" />
-			{#if rung !== 'hold'}
+			{#if rung === 'hold'}
+				<div class="len">
+					<span class="section-label">Confirm a big delete with</span>
+					<PillRow
+						options={GESTURES}
+						current={gesture}
+						onpick={pickGesture}
+						label="Confirm gesture"
+					/>
+				</div>
+			{:else}
 				<div class="len">
 					<span class="section-label">For how long</span>
 					<PillRow options={LENGTHS} current={length} onpick={pickLength} label="How long" />
