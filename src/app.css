@@ -1023,6 +1023,12 @@
 		padding: 1.05em 1.15em;
 		border-radius: var(--radius-lg);
 		border: 1px solid var(--color-border-subtle);
+		/* Wrapped rather than scrolled sideways: on a phone a scrolled block hides most of
+		   each line, and a sideways swipe inside the transcript is easy to miss. Indentation
+		   and line breaks are kept; only an over-long line folds. `overflow-x` stays as the
+		   fallback for anything that still cannot fit. */
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 		overflow-x: auto;
 		margin: 1.2em 0;
 	}
@@ -1031,6 +1037,71 @@
 		background: transparent;
 		padding: 0;
 		border: 0;
+	}
+
+	/* A code block and its copy button (utils/code-blocks.ts). The wrapper takes the
+	   block's outer margin so the button can be placed against the block itself. */
+	.prose .code-block {
+		position: relative;
+		margin: 1.2em 0;
+	}
+
+	/* The right padding keeps a wrapped first line clear of the copy button. */
+	.prose .code-block > pre {
+		margin: 0;
+		padding-right: 2.4rem;
+	}
+
+	/* Revealed on hover/focus, and always visible where there is no hover at all, by the
+	   same rule as a turn's own action icons (Message.svelte). Opaque enough to sit over a
+	   long first line legibly. */
+	.prose .code-copy {
+		position: absolute;
+		top: 0.4rem;
+		right: 0.4rem;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.3rem;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--color-border-subtle);
+		background: color-mix(in srgb, var(--color-bg-tertiary) 92%, transparent);
+		color: var(--color-text-muted);
+		line-height: 1;
+		cursor: pointer;
+		opacity: 0;
+		transition: opacity 110ms ease, color 110ms ease;
+	}
+
+	.prose .code-block:hover > .code-copy,
+	.prose .code-copy:focus-visible,
+	.prose .code-copy[data-copied] {
+		opacity: 1;
+	}
+
+	.prose .code-copy:hover {
+		color: var(--color-text-primary);
+	}
+
+	@media (hover: none) {
+		.prose .code-copy {
+			opacity: 1;
+		}
+	}
+
+	.prose .code-copy svg {
+		display: block;
+		width: 0.9rem;
+		height: 0.9rem;
+	}
+
+	.prose .code-copy .code-copy-done,
+	.prose .code-copy[data-copied] .code-copy-idle {
+		display: none;
+	}
+
+	.prose .code-copy[data-copied] .code-copy-done {
+		display: block;
 	}
 
 	.prose blockquote {

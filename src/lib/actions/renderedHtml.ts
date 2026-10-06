@@ -23,7 +23,12 @@
  * The HTML is trusted to be sanitized already (`utils/markdown.ts` is the only source);
  * nothing here relaxes that, and `<template>` is inert, so nothing in the string can run
  * while it is being parsed.
+ *
+ * Every code block gets a copy button on the way through (`utils/code-blocks.ts`). It is
+ * added to the parsed copy before the reconcile, so the button is part of what is compared
+ * and survives a patch like any other node.
  */
+import { decorateCodeBlocks, handleCodeCopyClick } from '$lib/utils/code-blocks';
 
 /** One parser for the app, made on first use. Reused rather than created per patch, and
  *  emptied after each one so a discarded subtree isn't held alive by it. Lazy because a
@@ -94,15 +99,22 @@ function patchChildren(target: Node, source: Node): void {
 function patch(node: HTMLElement, html: string): void {
 	parser ??= document.createElement('template');
 	parser.innerHTML = html;
+	decorateCodeBlocks(parser.content);
 	patchChildren(node, parser.content);
 	parser.innerHTML = '';
 }
 
 export function renderedHtml(node: HTMLElement, html: string) {
 	patch(node, html);
+	// Delegated rather than bound per button: a patch can replace a block's button, and a
+	// listener on the container never has to be re-attached for it.
+	node.addEventListener('click', handleCodeCopyClick);
 	return {
 		update(next: string) {
 			patch(node, next);
+		},
+		destroy() {
+			node.removeEventListener('click', handleCodeCopyClick);
 		}
 	};
 }

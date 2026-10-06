@@ -1,4 +1,4 @@
-<script lang="ts">
+<script module lang="ts">
 	import type { SVGAttributes } from 'svelte/elements';
 
 	// Exported so components that take an icon as a prop (ui/EmptyState) can name
@@ -101,15 +101,10 @@
 		| 'arrowUpDown'
 		| 'tag';
 
-	interface Props extends SVGAttributes<SVGSVGElement> {
-		name: IconName;
-		class?: string;
-		strokeWidth?: number | string;
-	}
-
-	let { name, class: className = '', strokeWidth = 2, ...rest }: Props = $props();
-
-	const icons: Record<IconName, { paths: string[]; fill?: boolean }> = {
+	// Exported, and module-level so it can be, for the one place an icon is drawn outside a
+	// component: the copy button on a rendered code block (utils/code-blocks.ts), which is
+	// built into the reply's HTML and so cannot use this component.
+	export const icons: Record<IconName, { paths: string[]; fill?: boolean }> = {
 		close: {
 			paths: ['M6 18L18 6M6 6l12 12']
 		},
@@ -496,6 +491,16 @@
 			]
 		}
 	};
+</script>
+
+<script lang="ts">
+	interface Props extends SVGAttributes<SVGSVGElement> {
+		name: IconName;
+		class?: string;
+		strokeWidth?: number | string;
+	}
+
+	let { name, class: className = '', strokeWidth = 2, ...rest }: Props = $props();
 
 	const icon = $derived(icons[name]);
 </script>
