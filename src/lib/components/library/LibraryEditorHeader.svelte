@@ -7,6 +7,7 @@
 	 * icons stay, nothing wraps.
 	 */
 	import type { Snippet } from 'svelte';
+	import { hangUnder } from '$lib/actions/hangUnder';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import LorebookLinkPicker from '$lib/components/lorebook/LorebookLinkPicker.svelte';
 	import { lorebookStore } from '$lib/lorebook/store.svelte';
@@ -75,6 +76,10 @@
 	let lorebookOpen = $state(false);
 	let menuOpen = $state(false);
 	let lorebookRef = $state<HTMLDivElement | null>(null);
+	// The Lorebooks popover hangs from its button across the header (hangUnder), so a phone,
+	// where the button sits nearer the middle, cannot push it off the left edge.
+	let headerElement = $state<HTMLElement | undefined>(undefined);
+	let lorebookButton = $state<HTMLButtonElement | undefined>(undefined);
 	let menuRef = $state<HTMLDivElement | null>(null);
 
 	// Deleting a book leaves its id on the entry (architecture/lorebook.md), so the count
@@ -122,7 +127,7 @@
 	}
 </script>
 
-<header class="editor-header">
+<header class="editor-header" bind:this={headerElement}>
 	<div class="editor-header-identity">
 		<!-- Which of the three editors this is. The bar is shared with the open lorebook's, so
 		     the glyph is what answers that without reading the page under it. -->
@@ -156,6 +161,7 @@
 		<!-- Lorebooks: link standalone world-info books to this entry, right from the bar. -->
 		<div class="edh-anchor" bind:this={lorebookRef}>
 			<button
+				bind:this={lorebookButton}
 				type="button"
 				class="edh-chip"
 				class:is-open={lorebookOpen}
@@ -172,7 +178,12 @@
 				{/if}
 			</button>
 			{#if lorebookOpen}
-				<div class="edh-popover surface-float" role="dialog" aria-label="Linked lorebooks">
+				<div
+					class="edh-popover surface-float"
+					role="dialog"
+					aria-label="Linked lorebooks"
+					use:hangUnder={{ trigger: lorebookButton, column: headerElement }}
+				>
 					<div class="edh-popover-head">
 						<p class="edh-popover-title">Lorebooks</p>
 					</div>
@@ -412,6 +423,8 @@
 
 	/* ---- Popovers ---- */
 
+	/* Down from its button; across, hangUnder lines it up with that button and keeps it
+	   inside the first box that clips, so `right: 0` only holds until it has placed it. */
 	.edh-popover {
 		position: absolute;
 		top: calc(100% + 0.4rem);

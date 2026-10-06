@@ -1,8 +1,10 @@
 /**
- * Svelte action: lines a turn's dropdown up under the button that opened it.
+ * Svelte action: lines a dropdown up under the button that opened it. A turn's delete and
+ * regenerate menus (architecture/chat-sessions.md), and the library editor's Lorebooks popover
+ * (architecture/library.md).
  *
  * Unlike `anchorTo` the panel stays in the layout, so it scrolls with the story and the caller
- * keeps deciding whether it opens up or down; only `left` is written (architecture/chat-sessions.md).
+ * keeps deciding whether it opens up or down; only `left` is written.
  */
 
 /** Panel → scroller edge, the margin `anchorTo` keeps off the viewport. */

@@ -53,3 +53,23 @@ describe('hangLeft', () => {
 		expect(hangLeft(at, MENU)).toBe(8);
 	});
 });
+
+/**
+ * The library editor's Lorebooks popover: a 336px panel whose trigger sits alone in its
+ * wrapper, so its "row" is the button itself and the side comes from the header's middle.
+ */
+describe('hangLeft, the editor header popover', () => {
+	const POPOVER = 336;
+
+	test('on a wide header it opens flush with the right edge of its button', () => {
+		const trigger = { left: 900, right: 960 };
+		const at = { trigger, row: trigger, column: { left: 300, right: 1100 }, bounds: { left: 300, right: 1100 } };
+		expect(hangLeft(at, POPOVER) + POPOVER).toBe(trigger.right);
+	});
+
+	test('on a phone it moves right until its left edge is on screen', () => {
+		const trigger = { left: 233, right: 287 };
+		const at = { trigger, row: trigger, column: { left: 0, right: 411 }, bounds: { left: 0, right: 411 } };
+		expect(hangLeft(at, POPOVER)).toBe(8);
+	});
+});
