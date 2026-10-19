@@ -20,6 +20,7 @@ import {
 import { formatDate } from '$lib/utils/date';
 import { convertSillyTavernChat } from '$lib/services/sillyTavernChatImport';
 import { toastStore } from '$lib/stores/toast.svelte';
+import { featurePromptsStore } from '$lib/stores/featurePrompts.svelte';
 import { characterLibraryStore } from '$lib/stores/characterLibrary.svelte';
 import { lorebookStore } from '$lib/lorebook/store.svelte';
 import { chatCastStore } from '$lib/stores/chatCast.svelte';
@@ -148,6 +149,17 @@ class ChatStore {
 		await db.insertChat(chat);
 		this.chats = [chat, ...this.chats];
 		chatCastStore.setForChat(chat.id, characterId);
+		// Before the chat is selected, so the memory panel loads it already on. Like the other
+		// app-wide engine settings this asks the engine switch too: an engine switched off for the
+		// whole app is not quietly turned on for a chat. A broken template leaves the chat
+		// without memory and says why, rather than failing the chat it was creating.
+		if (featurePromptsStore.memoryEnabled && featurePromptsStore.memoryOnNewChats) {
+			try {
+				await memoryStore.enableForNewChat(chat.id);
+			} catch (e) {
+				toastStore.failed('turn memory on for the new chat', e);
+			}
+		}
 		// The chat opens on its greeting: the First Message becomes message 1 and any
 		// alternate greetings become its sibling branches (swipeable).
 		await this.seedCharacterGreetings(chat, characterId);

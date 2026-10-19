@@ -53,7 +53,7 @@ import {
 	type Coverage
 } from './branching';
 import { buildRecall } from './recall';
-import { AUTO_MAX_BATCHES, resolveConfig } from './config';
+import { AUTO_MAX_BATCHES, enableState, resolveConfig } from './config';
 import type { Episode, LlmFn, MemoryConfig, MemoryMessage } from './types';
 
 export interface ChatCtx {
@@ -797,12 +797,7 @@ class MemoryStore {
 		// chat switched off and back on already has numbers of its own, and seeding over them
 		// would throw away tuning the reader did on this very chat.
 		const stored = await memoryDb.getState(ctx.chatId);
-		const patch: { enabled: true; config?: Partial<MemoryConfig> } = { enabled: true };
-		// Nothing is seeded when the chat already has numbers, and nothing when the defaults are
-		// untouched, in which case this writes exactly what it wrote before app-wide defaults
-		// existed: the switch, and no override.
-		const seed = featurePromptsStore.memoryDefaults;
-		if (!own(stored?.config ?? null) && Object.keys(seed).length > 0) patch.config = { ...seed };
+		const patch = enableState(stored?.config, featurePromptsStore.memoryDefaults);
 		await memoryDb.setState(ctx.chatId, patch);
 		// The user can switch chats through that round trip.
 		if (ctx.chatId !== this.activeChatId) return;
@@ -811,6 +806,22 @@ class MemoryStore {
 		if (patch.config) this.configOverride = { ...patch.config };
 		this.enabled = true;
 		await this.build(ctx);
+	}
+
+	/**
+	 * Switch memory on for a chat that has just been created, when Settings asks for that in
+	 * every new chat.
+	 *
+	 * The panel's switch without its two extra steps, and neither is skipped by accident. There
+	 * is no cost confirm because there is nothing to price: a new chat holds at most its
+	 * greetings, which is under the confirm's threshold anyway. There is no build because there
+	 * is nothing to read; summarising starts after the turns that give it something, exactly as
+	 * it does in a chat switched on by hand. Templates are still checked, and it throws on a
+	 * broken one, so the caller can say why the chat started without memory.
+	 */
+	async enableForNewChat(chatId: string): Promise<void> {
+		assertTemplates(featurePromptsStore.promptFor('memoryExtract'), featurePromptsStore.promptFor('memoryPromote'));
+		await memoryDb.setState(chatId, enableState(null, featurePromptsStore.memoryDefaults));
 	}
 
 	async disable(chatId: string): Promise<void> {

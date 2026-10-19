@@ -276,6 +276,17 @@
 				<span class="card-title">Starting defaults</span>
 			</div>
 			<div class="card-body">
+				<!-- Whether a chat starts with memory on at all. Here rather than in a card of its
+				     own because it is the same question the sliders answer: what a chat begins with.
+				     Seeded from the sliders below, through the same rule the chat's own switch uses. -->
+				<div class="toggle-row" use:toggleRow>
+					<span class="slider-label">Turn on in every new chat</span>
+					<Toggle
+						checked={featurePromptsStore.memoryOnNewChats}
+						onchange={(v) => featurePromptsStore.setMemoryOnNewChats(v)}
+						label="Turn Chat Memory on in every new chat"
+					/>
+				</div>
 				{#each MEMORY_CONFIG_FIELDS as f (f.key)}
 					<div class="slider-block">
 						<div class="slider-top">
@@ -307,9 +318,10 @@
 					</div>
 				{/each}
 				<p class="placement-note">
-					Copied into a chat when memory is switched on for it. Double-click a slider to put it
-					back to the shipped default. Chats that already have memory keep the numbers they were
-					enabled under; change those in the chat's own Memory panel.
+					Copied into a chat when memory is switched on for it, by hand or because it starts on.
+					Double-click a slider to put it back to the shipped default. Chats that already have
+					memory keep the numbers they were enabled under; change those in the chat's own Memory
+					panel. Starting on affects only chats created from now on.
 				</p>
 			</div>
 		</section>

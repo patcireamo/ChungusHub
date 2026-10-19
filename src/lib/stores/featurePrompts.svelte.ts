@@ -110,6 +110,15 @@ interface FeaturePromptsState {
 	 * one here would otherwise silently owe merges on every chat that never touched it.
 	 */
 	memoryDefaults: Partial<MemoryConfig>;
+	/**
+	 * Whether a new chat starts with memory already on, seeded from `memoryDefaults` exactly as
+	 * the chat's own switch would seed it.
+	 *
+	 * Off by default, for the reason Sprites ships off: memory spends calls as a story grows,
+	 * and that is a cost the reader opts into rather than one a new chat starts paying on its
+	 * own. Only chats created after it is turned on are affected.
+	 */
+	memoryOnNewChats: boolean;
 }
 
 function normalize(raw: Partial<FeaturePromptsState> | null): FeaturePromptsState {
@@ -127,7 +136,8 @@ function normalize(raw: Partial<FeaturePromptsState> | null): FeaturePromptsStat
 		steeringDefaultRole: STEERING_ROLES.includes(raw?.steeringDefaultRole as SteeringRole)
 			? (raw?.steeringDefaultRole as SteeringRole)
 			: 'system',
-		memoryDefaults: sanitizeMemoryDefaults(raw?.memoryDefaults)
+		memoryDefaults: sanitizeMemoryDefaults(raw?.memoryDefaults),
+		memoryOnNewChats: raw?.memoryOnNewChats === true
 	};
 }
 
@@ -144,7 +154,8 @@ class FeaturePromptsStore {
 		spritesRereadOnContinue: false,
 		steeringDefaultDepth: 0,
 		steeringDefaultRole: 'system',
-		memoryDefaults: {}
+		memoryDefaults: {},
+		memoryOnNewChats: false
 	});
 	loaded = $state(false);
 
@@ -174,6 +185,11 @@ class FeaturePromptsStore {
 	 *  shipped default are present; `resolveConfig` fills the rest. */
 	get memoryDefaults(): Partial<MemoryConfig> {
 		return this.state.memoryDefaults;
+	}
+
+	/** Whether a chat starts with memory on. Read once, when the chat is created. */
+	get memoryOnNewChats(): boolean {
+		return this.state.memoryOnNewChats;
 	}
 
 	get steeringEnabled(): boolean {
@@ -244,6 +260,11 @@ class FeaturePromptsStore {
 	setMemoryDefault(key: keyof MemoryConfig, value: number): void {
 		const memoryDefaults = sanitizeMemoryDefaults({ ...this.state.memoryDefaults, [key]: value });
 		this.state = { ...this.state, memoryDefaults };
+		this.persist();
+	}
+
+	setMemoryOnNewChats(value: boolean): void {
+		this.state = { ...this.state, memoryOnNewChats: value };
 		this.persist();
 	}
 

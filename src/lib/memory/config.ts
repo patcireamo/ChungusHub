@@ -150,6 +150,24 @@ export function followsInherited(
  * empty object here, and enabling memory on a chat writes no override at all, exactly as it
  * did before app-wide defaults existed.
  */
+/**
+ * What switching memory on writes for a chat: the switch, plus the app-wide defaults when the
+ * chat has no numbers of its own yet.
+ *
+ * Nothing is seeded over numbers the chat already has, since a chat switched off and back on
+ * keeps the tuning done on it. Nothing is seeded from untouched defaults either, which writes
+ * exactly what enabling wrote before app-wide defaults existed: the switch, and no override.
+ * The panel's switch and a chat started with memory on both go through here, so the two can
+ * never disagree about what a chat begins with.
+ */
+export function enableState(
+	stored: Partial<MemoryConfig> | null | undefined,
+	seed: Partial<MemoryConfig>
+): { enabled: true; config?: Partial<MemoryConfig> } {
+	const hasOwn = !!stored && Object.keys(stored).length > 0;
+	return !hasOwn && Object.keys(seed).length > 0 ? { enabled: true, config: { ...seed } } : { enabled: true };
+}
+
 export function sanitizeMemoryDefaults(raw: unknown): Partial<MemoryConfig> {
 	const out: Partial<MemoryConfig> = {};
 	if (!raw || typeof raw !== 'object') return out;

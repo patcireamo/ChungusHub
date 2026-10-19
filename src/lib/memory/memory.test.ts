@@ -27,6 +27,7 @@ import {
 import { describeMemoryImpact } from './impact-copy';
 import { buildRecall } from './recall';
 import {
+	enableState,
 	resolveConfig,
 	sanitizeMemoryDefaults,
 	followsInherited,
@@ -306,6 +307,29 @@ describe('app-wide defaults: what a chat is handed when memory is switched on', 
 		expect(memorySliderMax('promoteCount', 5)).toBe(5);
 		expect(memorySliderMax('promoteCount', 40)).toBe(20); // its own max still wins
 		expect(memorySliderMax('batchSize', 5)).toBe(40); // unaffected by maxPerLayer
+	});
+
+	test('switching memory on copies the defaults into a chat with no numbers of its own', () => {
+		// A new chat started with memory on goes through this too, so it begins exactly where a
+		// chat switched on by hand would.
+		expect(enableState(null, { batchSize: 12 })).toEqual({ enabled: true, config: { batchSize: 12 } });
+		expect(enableState({}, { batchSize: 12 })).toEqual({ enabled: true, config: { batchSize: 12 } });
+	});
+
+	test('switching memory on never seeds over a chat that already has numbers', () => {
+		// Off and back on keeps the tuning done on this very chat.
+		expect(enableState({ batchSize: 20 }, { batchSize: 12 })).toEqual({ enabled: true });
+	});
+
+	test('untouched defaults write the switch alone, as enabling did before defaults existed', () => {
+		expect(enableState(null, {})).toEqual({ enabled: true });
+	});
+
+	test('the seeded config is a copy, so a later edit to the defaults cannot reach the chat', () => {
+		const defaults = { batchSize: 12 };
+		const state = enableState(null, defaults);
+		defaults.batchSize = 30;
+		expect(state.config).toEqual({ batchSize: 12 });
 	});
 });
 
